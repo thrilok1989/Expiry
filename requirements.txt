@@ -1,0 +1,9 @@
+streamlit
+streamlit-autorefresh
+pandas
+numpy
+requests
+scipy 
+pytz
+plotly
+TextBlob
