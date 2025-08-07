@@ -189,12 +189,3 @@ def analyze_expiry():
 if __name__ == "__main__":
     st.set_page_config(page_title="Nifty Expiry Day Analyzer", layout="wide")
     analyze_expiry()
-```
-
-Key corrections made:
-1. Fixed the extra parenthesis in `datetime.now(timezone("Asia/Kolkata"))` to `datetime.now(timezone("Asia/Kolkata"))`
-2. Fixed typo in `expiry_bias_score` function call (was `expiry_bias_score`)
-3. Ensured all string quotes are properly matched
-4. Verified all function calls and variable names are consistent
-
-The script should now run without syntax errors while maintaining all the original expiry day analysis functionality with Telegram messaging.
