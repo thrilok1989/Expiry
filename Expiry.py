@@ -18,6 +18,35 @@ def send_telegram_message(message):
     except Exception as e:
         st.error(f"❌ Telegram error: {e}")
 
+def get_nse_option_chain():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive"
+    }
+    
+    session = requests.Session()
+    session.headers.update(headers)
+    
+    try:
+        # First request to get cookies
+        session.get("https://www.nseindia.com", timeout=10)
+        # Second request to get option chain data
+        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+        response = session.get(url, timeout=15)
+        response.raise_for_status()
+        
+        # Verify response contains valid JSON
+        if not response.text.strip():
+            raise ValueError("Empty response from NSE API")
+            
+        return response.json()
+    except Exception as e:
+        st.error(f"Failed to fetch NSE data: {str(e)}")
+        send_telegram_message(f"❌ NSE Data Fetch Error: {str(e)}")
+        return None
+
 def determine_level(row):
     ce_oi = row['openInterest_CE']
     pe_oi = row['openInterest_PE']
@@ -30,165 +59,166 @@ def determine_level(row):
 
 def expiry_bias_score(row):
     score = 0
-    # OI + Price Based Bias Logic
     if row['changeinOpenInterest_CE'] > 0 and row['lastPrice_CE'] > row['previousClose_CE']:
-        score += 1  # New CE longs → Bullish
+        score += 1
     if row['changeinOpenInterest_PE'] > 0 and row['lastPrice_PE'] > row['previousClose_PE']:
-        score -= 1  # New PE longs → Bearish
+        score -= 1
     if row['changeinOpenInterest_CE'] > 0 and row['lastPrice_CE'] < row['previousClose_CE']:
-        score -= 1  # CE writing → Bearish
+        score -= 1
     if row['changeinOpenInterest_PE'] > 0 and row['lastPrice_PE'] < row['previousClose_PE']:
-        score += 1  # PE writing → Bullish
+        score += 1
 
-    # Bid Volume Dominance
     if 'bidQty_CE' in row and 'bidQty_PE' in row:
         if row['bidQty_CE'] > row['bidQty_PE'] * 1.5:
-            score += 1  # CE Bid dominance → Bullish
+            score += 1
         if row['bidQty_PE'] > row['bidQty_CE'] * 1.5:
-            score -= 1  # PE Bid dominance → Bearish
+            score -= 1
 
-    # Volume Churn vs OI
     if row['totalTradedVolume_CE'] > 2 * row['openInterest_CE']:
-        score -= 0.5  # CE churn → Possibly noise
+        score -= 0.5
     if row['totalTradedVolume_PE'] > 2 * row['openInterest_PE']:
-        score += 0.5  # PE churn → Possibly noise
+        score += 0.5
 
-    # Bid-Ask Pressure
     if 'underlyingValue' in row:
         if abs(row['lastPrice_CE'] - row['underlyingValue']) < abs(row['lastPrice_PE'] - row['underlyingValue']):
-            score += 0.5  # CE closer to spot → Bullish
+            score += 0.5
         else:
-            score -= 0.5  # PE closer to spot → Bearish
+            score -= 0.5
     return score
-
-def expiry_entry_signal(df, atm_strike, score_threshold=1.5):
-    entries = []
-    # Filter only ATM ±5 strikes
-    df = df[df['strikePrice'].between(atm_strike - 5*50, atm_strike + 5*50)]
-    
-    for _, row in df.iterrows():
-        strike = row['strikePrice']
-        score = expiry_bias_score(row)
-        level = row['Level']
-
-        if score >= score_threshold and level == "Support":
-            entries.append({
-                'type': 'BUY CALL',
-                'strike': strike,
-                'score': score,
-                'ltp': row['lastPrice_CE'],
-                'reason': f'Bullish score (ATM±5) at support: {strike}'
-            })
-
-        if score <= -score_threshold and level == "Resistance":
-            entries.append({
-                'type': 'BUY PUT',
-                'strike': strike,
-                'score': score,
-                'ltp': row['lastPrice_PE'],
-                'reason': f'Bearish score (ATM±5) at resistance: {strike}'
-            })
-    return entries
 
 def analyze_expiry():
     try:
+        # Get current time and check market hours
         now = datetime.now(timezone("Asia/Kolkata"))
-        headers = {"User-Agent": "Mozilla/5.0"}
-        session = requests.Session()
-        session.headers.update(headers)
-        session.get("https://www.nseindia.com", timeout=5)
-        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-        response = session.get(url, timeout=10)
-        data = response.json()
+        current_time = now.time()
+        market_open = timezone("Asia/Kolkata").localize(datetime.strptime("09:15", "%H:%M")).time()
+        market_close = timezone("Asia/Kolkata").localize(datetime.strptime("15:30", "%H:%M")).time()
+        
+        if not (market_open <= current_time <= market_close):
+            st.warning("❌ Market is closed now. Analysis available only between 9:15 AM to 3:30 PM IST.")
+            return
+
+        # Fetch option chain data
+        data = get_nse_option_chain()
+        if data is None:
+            return
 
         records = data['records']['data']
         expiry = data['records']['expiryDates'][0]
         underlying = data['records']['underlyingValue']
-        atm_strike = min(data['records']['strikePrices'], key=lambda x: abs(x - underlying))
+        
+        # Find ATM strike (nearest strike to underlying value)
+        strike_prices = sorted(list(set(item['strikePrice'] for item in records if 'strikePrice' in item)))
+        atm_strike = min(strike_prices, key=lambda x: abs(x - underlying))
         
         # Check if today is expiry day
-        today = datetime.now(timezone("Asia/Kolkata"))
         expiry_date = timezone("Asia/Kolkata").localize(datetime.strptime(expiry, "%d-%b-%Y"))
-        is_expiry_day = today.date() == expiry_date.date()
+        is_expiry_day = now.date() == expiry_date.date()
         
         if not is_expiry_day:
             st.warning("❌ Today is NOT an expiry day. This script only works on expiry days.")
             return
 
         st.info(f"""
-📅 **EXPIRY DAY DETECTED**
-- Analyzing ATM ±5 strikes only
-- Current ATM: {atm_strike}
+📅 **EXPIRY DAY ANALYSIS - ATM ±5 STRIKES**
+- Current ATM Strike: {atm_strike}
 - Spot Price: {underlying}
+- Analysis Range: {atm_strike - 250} to {atm_strike + 250}
 """)
-        send_telegram_message(f"⚠️ Expiry Day Detected. Analyzing ATM {atm_strike}±5 strikes")
 
         # Get previous close data
         prev_close_url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
+        session = requests.Session()
         prev_close_data = session.get(prev_close_url, timeout=10).json()
         prev_close = prev_close_data['data'][0]['previousClose']
 
-        # Process records with expiry day logic
+        # Process records for ATM ±5 strikes only
         calls, puts = [], []
         for item in records:
+            if 'strikePrice' not in item:
+                continue
+                
+            if abs(item['strikePrice'] - atm_strike) > 250:  # ±5 strikes (50×5)
+                continue
+                
             if 'CE' in item and item['CE']['expiryDate'] == expiry:
                 ce = item['CE']
                 ce['previousClose_CE'] = prev_close
                 ce['underlyingValue'] = underlying
                 calls.append(ce)
+                
             if 'PE' in item and item['PE']['expiryDate'] == expiry:
                 pe = item['PE']
                 pe['previousClose_PE'] = prev_close
                 pe['underlyingValue'] = underlying
                 puts.append(pe)
 
+        # Create merged dataframe
         df_ce = pd.DataFrame(calls)
         df_pe = pd.DataFrame(puts)
         df = pd.merge(df_ce, df_pe, on='strikePrice', suffixes=('_CE', '_PE')).sort_values('strikePrice')
-
-        # Get support/resistance levels
         df['Level'] = df.apply(determine_level, axis=1)
-        
-        # Generate expiry day signals for ATM ±5 strikes only
-        expiry_signals = expiry_entry_signal(df, atm_strike)
+        df['ExpiryBiasScore'] = df.apply(expiry_bias_score, axis=1)
 
-        # Display ATM ±5 strikes data
-        st.markdown(f"### 🎯 ATM {atm_strike} ±5 Strikes Analysis")
-        atm_df = df[df['strikePrice'].between(atm_strike - 5*50, atm_strike + 5*50)]
-        atm_df['ExpiryBiasScore'] = atm_df.apply(expiry_bias_score, axis=1)
-        st.dataframe(atm_df[['strikePrice', 'ExpiryBiasScore', 'Level', 
-                           'lastPrice_CE', 'lastPrice_PE',
-                           'changeinOpenInterest_CE', 'changeinOpenInterest_PE']])
-        
+        # Display ATM ±5 strikes
+        st.markdown("### 📊 ATM ±5 Strikes Option Chain")
+        display_cols = ['strikePrice', 'ExpiryBiasScore', 'Level', 
+                       'lastPrice_CE', 'changeinOpenInterest_CE', 'openInterest_CE',
+                       'lastPrice_PE', 'changeinOpenInterest_PE', 'openInterest_PE']
+        st.dataframe(df[display_cols], height=500)
+
+        # Generate signals
+        bullish_signals = df[(df['ExpiryBiasScore'] >= 1.5) & (df['Level'] == "Support")]
+        bearish_signals = df[(df['ExpiryBiasScore'] <= -1.5) & (df['Level'] == "Resistance")]
+
         # Display signals
-        st.markdown("### 🔔 Trading Signals (ATM±5)")
-        if expiry_signals:
-            for signal in expiry_signals:
-                st.success(f"""
-                **{signal['type']}** at {signal['strike']} 
-                - Score: {signal['score']:.1f} 
-                - LTP: ₹{signal['ltp']}
-                - Reason: {signal['reason']}
+        st.markdown("### 🔔 Trading Signals")
+        if not bullish_signals.empty:
+            st.success("**Bullish Signals (BUY CALL)**")
+            for _, row in bullish_signals.iterrows():
+                st.write(f"""
+                - Strike: {row['strikePrice']} CE
+                - Score: {row['ExpiryBiasScore']:.1f}
+                - LTP: ₹{row['lastPrice_CE']}
+                - OI Change: {row['changeinOpenInterest_CE']:+,}
+                - Reason: Strong bullish bias at support level
                 """)
-                
-                # Send Telegram alert
                 send_telegram_message(
-                    f"📅 EXPIRY DAY SIGNAL (ATM±5)\n"
-                    f"Type: {signal['type']}\n"
-                    f"Strike: {signal['strike']}\n"
-                    f"Score: {signal['score']:.1f}\n"
-                    f"LTP: ₹{signal['ltp']}\n"
-                    f"Reason: {signal['reason']}\n"
+                    f"📈 Bullish Signal (ATM±5)\n"
+                    f"BUY {row['strikePrice']} CE\n"
+                    f"Score: {row['ExpiryBiasScore']:.1f}\n"
+                    f"LTP: ₹{row['lastPrice_CE']}\n"
+                    f"OI Change: {row['changeinOpenInterest_CE']:+,}\n"
                     f"Spot: {underlying}"
                 )
-        else:
+
+        if not bearish_signals.empty:
+            st.error("**Bearish Signals (BUY PUT)**")
+            for _, row in bearish_signals.iterrows():
+                st.write(f"""
+                - Strike: {row['strikePrice']} PE
+                - Score: {row['ExpiryBiasScore']:.1f}
+                - LTP: ₹{row['lastPrice_PE']}
+                - OI Change: {row['changeinOpenInterest_PE']:+,}
+                - Reason: Strong bearish bias at resistance level
+                """)
+                send_telegram_message(
+                    f"📉 Bearish Signal (ATM±5)\n"
+                    f"BUY {row['strikePrice']} PE\n"
+                    f"Score: {row['ExpiryBiasScore']:.1f}\n"
+                    f"LTP: ₹{row['lastPrice_PE']}\n"
+                    f"OI Change: {row['changeinOpenInterest_PE']:+,}\n"
+                    f"Spot: {underlying}"
+                )
+
+        if bullish_signals.empty and bearish_signals.empty:
             st.warning("No strong signals detected in ATM±5 strikes")
 
     except Exception as e:
-        st.error(f"❌ Error: {e}")
-        send_telegram_message(f"❌ Expiry Day Analysis Error: {str(e)}")
+        st.error(f"❌ Analysis Error: {str(e)}")
+        send_telegram_message(f"❌ Analysis Error: {str(e)}")
 
-# === Main Function Call ===
 if __name__ == "__main__":
     st.set_page_config(page_title="Nifty Expiry ATM±5 Analyzer", layout="wide")
+    st.title("NIFTY Expiry Day Analysis - ATM ±5 Strikes")
     analyze_expiry()
