@@ -61,28 +61,32 @@ def expiry_bias_score(row):
             score -= 0.5  # PE closer to spot → Bearish
     return score
 
-def expiry_entry_signal(df, support_levels, resistance_levels, score_threshold=1.5):
+def expiry_entry_signal(df, atm_strike, score_threshold=1.5):
     entries = []
+    # Filter only ATM ±5 strikes
+    df = df[df['strikePrice'].between(atm_strike - 5*50, atm_strike + 5*50)]
+    
     for _, row in df.iterrows():
         strike = row['strikePrice']
         score = expiry_bias_score(row)
+        level = row['Level']
 
-        if score >= score_threshold and strike in support_levels:
+        if score >= score_threshold and level == "Support":
             entries.append({
                 'type': 'BUY CALL',
                 'strike': strike,
                 'score': score,
                 'ltp': row['lastPrice_CE'],
-                'reason': 'Bullish score + support zone'
+                'reason': f'Bullish score (ATM±5) at support: {strike}'
             })
 
-        if score <= -score_threshold and strike in resistance_levels:
+        if score <= -score_threshold and level == "Resistance":
             entries.append({
                 'type': 'BUY PUT',
                 'strike': strike,
                 'score': score,
                 'ltp': row['lastPrice_PE'],
-                'reason': 'Bearish score + resistance zone'
+                'reason': f'Bearish score (ATM±5) at resistance: {strike}'
             })
     return entries
 
@@ -100,6 +104,7 @@ def analyze_expiry():
         records = data['records']['data']
         expiry = data['records']['expiryDates'][0]
         underlying = data['records']['underlyingValue']
+        atm_strike = min(data['records']['strikePrices'], key=lambda x: abs(x - underlying))
         
         # Check if today is expiry day
         today = datetime.now(timezone("Asia/Kolkata"))
@@ -110,13 +115,13 @@ def analyze_expiry():
             st.warning("❌ Today is NOT an expiry day. This script only works on expiry days.")
             return
 
-        st.info("""
+        st.info(f"""
 📅 **EXPIRY DAY DETECTED**
-- Using specialized expiry day analysis
-- IV Collapse, OI Unwind, Volume Spike expected
-- Modified signals will be generated
+- Analyzing ATM ±5 strikes only
+- Current ATM: {atm_strike}
+- Spot Price: {underlying}
 """)
-        send_telegram_message("⚠️ Expiry Day Detected. Using special expiry analysis.")
+        send_telegram_message(f"⚠️ Expiry Day Detected. Analyzing ATM {atm_strike}±5 strikes")
 
         # Get previous close data
         prev_close_url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
@@ -143,27 +148,32 @@ def analyze_expiry():
 
         # Get support/resistance levels
         df['Level'] = df.apply(determine_level, axis=1)
-        support_levels = df[df['Level'] == "Support"]['strikePrice'].unique()
-        resistance_levels = df[df['Level'] == "Resistance"]['strikePrice'].unique()
-
-        # Generate expiry day signals
-        expiry_signals = expiry_entry_signal(df, support_levels, resistance_levels)
-
-        # Display expiry day specific UI
-        st.markdown("### 🎯 Expiry Day Signals")
-        st.markdown(f"### 📍 Spot Price: {underlying}")
         
+        # Generate expiry day signals for ATM ±5 strikes only
+        expiry_signals = expiry_entry_signal(df, atm_strike)
+
+        # Display ATM ±5 strikes data
+        st.markdown(f"### 🎯 ATM {atm_strike} ±5 Strikes Analysis")
+        atm_df = df[df['strikePrice'].between(atm_strike - 5*50, atm_strike + 5*50)]
+        atm_df['ExpiryBiasScore'] = atm_df.apply(expiry_bias_score, axis=1)
+        st.dataframe(atm_df[['strikePrice', 'ExpiryBiasScore', 'Level', 
+                           'lastPrice_CE', 'lastPrice_PE',
+                           'changeinOpenInterest_CE', 'changeinOpenInterest_PE']])
+        
+        # Display signals
+        st.markdown("### 🔔 Trading Signals (ATM±5)")
         if expiry_signals:
             for signal in expiry_signals:
                 st.success(f"""
-                {signal['type']} at {signal['strike']} 
-                (Score: {signal['score']:.1f}, LTP: ₹{signal['ltp']})
-                Reason: {signal['reason']}
+                **{signal['type']}** at {signal['strike']} 
+                - Score: {signal['score']:.1f} 
+                - LTP: ₹{signal['ltp']}
+                - Reason: {signal['reason']}
                 """)
                 
                 # Send Telegram alert
                 send_telegram_message(
-                    f"📅 EXPIRY DAY SIGNAL\n"
+                    f"📅 EXPIRY DAY SIGNAL (ATM±5)\n"
                     f"Type: {signal['type']}\n"
                     f"Strike: {signal['strike']}\n"
                     f"Score: {signal['score']:.1f}\n"
@@ -172,14 +182,7 @@ def analyze_expiry():
                     f"Spot: {underlying}"
                 )
         else:
-            st.warning("No strong expiry day signals detected")
-
-        # Show expiry day specific data
-        with st.expander("📊 Expiry Day Option Chain"):
-            df['ExpiryBiasScore'] = df.apply(expiry_bias_score, axis=1)
-            st.dataframe(df[['strikePrice', 'ExpiryBiasScore', 'lastPrice_CE', 'lastPrice_PE', 
-                           'changeinOpenInterest_CE', 'changeinOpenInterest_PE',
-                           'bidQty_CE', 'bidQty_PE']])
+            st.warning("No strong signals detected in ATM±5 strikes")
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
@@ -187,5 +190,5 @@ def analyze_expiry():
 
 # === Main Function Call ===
 if __name__ == "__main__":
-    st.set_page_config(page_title="Nifty Expiry Day Analyzer", layout="wide")
+    st.set_page_config(page_title="Nifty Expiry ATM±5 Analyzer", layout="wide")
     analyze_expiry()
