@@ -283,10 +283,20 @@ st.markdown('<h1 class="main-header">NIFTY ATM Call SuperTrend - Live Analysis</
 # Sidebar
 st.sidebar.header("⚙️ Configuration")
 
-# Credentials
+# Credentials - Use Streamlit Secrets
 st.sidebar.subheader("DhanHQ Credentials")
-access_token = st.sidebar.text_input("Access Token", type="password", help="Your DhanHQ access token")
-client_id = st.sidebar.text_input("Client ID", help="Your DhanHQ client ID")
+
+# Try to get credentials from Streamlit secrets first
+try:
+    access_token = st.secrets["DHAN_ACCESS_TOKEN"]
+    client_id = st.secrets["DHAN_CLIENT_ID"]
+    st.sidebar.success("✅ Using credentials from Streamlit secrets")
+    st.sidebar.info(f"Client ID: {client_id[:8]}...")
+except KeyError:
+    # Fallback to manual input if secrets not configured
+    st.sidebar.warning("⚠️ Streamlit secrets not configured. Using manual input.")
+    access_token = st.sidebar.text_input("Access Token", type="password", help="Your DhanHQ access token")
+    client_id = st.sidebar.text_input("Client ID", help="Your DhanHQ client ID")
 
 # SuperTrend Parameters
 st.sidebar.subheader("SuperTrend Settings")
