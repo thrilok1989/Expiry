@@ -576,7 +576,7 @@ if st.sidebar.checkbox("Show Debug Info"):
         "SuperTrend Signal": st.session_state.supertrend_signal
     }
     
-    st.json(debug_info)d price line
+    st.json(debug_info)
         fig.add_trace(go.Scatter(
             x=timestamps,
             y=prices,
