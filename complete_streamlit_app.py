@@ -369,17 +369,17 @@ with col1:
                     current_expiry = expiry_data['data'][0]
                     st.success(f"Using expiry: {current_expiry}")
                     
-                    # Load instrument master in parallel
-                    with st.spinner("Loading instrument master for Security ID lookup..."):
-                        instrument_df = get_instrument_master()
-                        if instrument_df is not None:
-                            st.success(f"Loaded {len(instrument_df)} instruments from master file")
-                        else:
-                            st.warning("Could not load instrument master. Security IDs will need manual entry.")
-                    
                     option_chain_data = get_option_chain(access_token, client_id, current_expiry)
                     
                     if option_chain_data:
+                        # Load instrument master for Security ID lookup
+                        with st.spinner("Loading instrument master for Security ID lookup..."):
+                            instrument_df = get_instrument_master()
+                            if instrument_df is not None:
+                                st.success(f"Loaded {len(instrument_df)} instruments from master file")
+                            else:
+                                st.warning("Could not load instrument master. Security IDs will need manual entry.")
+                        
                         strikes, nifty_ltp = process_option_chain(option_chain_data, current_expiry)
                         st.session_state.strikes_data = strikes
                         
