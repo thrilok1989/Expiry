@@ -1,9 +1,27 @@
-streamlit
-streamlit-autorefresh
-pandas
-numpy
-requests
-scipy 
-pytz
-plotly
-TextBlob
+# Streamlit DhanHQ SuperTrend App Dependencies
+# For deployment on Streamlit Cloud or local development
+
+# Core framework
+streamlit>=1.28.0
+
+# Data manipulation and analysis
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Plotting and visualization
+plotly>=5.15.0
+
+# HTTP requests for API calls
+requests>=2.31.0
+
+# WebSocket client for live data
+websocket-client>=1.6.0
+
+# Optional: Additional utilities
+python-dateutil>=2.8.0
+pytz>=2023.3
+
+# Development dependencies (optional)
+# Uncomment for local development
+# streamlit-autorefresh>=0.0.1
+# streamlit-option-menu>=0.3.0
