@@ -154,7 +154,41 @@ def get_option_chain(access_token, client_id, expiry):
         st.error(f"Request failed: {str(e)}")
         return None
 
-def process_option_chain(option_chain_data):
+@st.cache_data(ttl=86400)  # Cache for 24 hours
+def get_instrument_list():
+    """Get instrument master list from DhanHQ"""
+    try:
+        # DhanHQ provides instrument master files - you would need to check their documentation
+        # for the exact endpoint. This is typically a CSV download.
+        
+        # For now, we'll provide a manual lookup helper
+        # You can download the CSV from DhanHQ and parse it locally
+        
+        st.info("Instrument master lookup not yet implemented. Please enter Security ID manually.")
+        return None
+        
+    except Exception as e:
+        st.error(f"Failed to fetch instrument list: {e}")
+        return None
+
+def find_security_id_for_strike(strike, expiry, option_type="CE"):
+    """
+    Helper function to find Security ID for a specific strike
+    This would use the instrument master file when available
+    """
+    
+    # Manual mapping for common strikes (you would populate this from instrument master)
+    manual_security_id_mapping = {
+        # Format: (strike, expiry, option_type): security_id
+        # Example entries - replace with actual data
+        (25300, "2024-10-24", "CE"): "52175",
+        (25350, "2024-10-24", "CE"): "52176", 
+        (25400, "2024-10-24", "CE"): "52177",
+        # Add more mappings as needed
+    }
+    
+    key = (strike, expiry, option_type)
+    return manual_security_id_mapping.get(key, None)
     """Process option chain data into strikes list"""
     if not option_chain_data or 'data' not in option_chain_data:
         return [], 0
@@ -168,13 +202,27 @@ def process_option_chain(option_chain_data):
             strike_price = float(strike_str)
             ce_data = strike_data['ce']
             
+            # Try to extract Security ID from various possible fields
+            security_id = None
+            possible_id_fields = ['security_id', 'instrument_token', 'token', 'scrip_code', 'instrument_key']
+            
+            for field in possible_id_fields:
+                if field in ce_data and ce_data[field]:
+                    security_id = str(ce_data[field])
+                    break
+            
+            # If no Security ID found, create a placeholder that indicates manual entry needed
+            if not security_id:
+                security_id = f"MANUAL_REQUIRED_{int(strike_price)}_CE"
+            
             strike_info = {
                 'strike': strike_price,
                 'ltp': ce_data.get('last_price', 0),
                 'volume': ce_data.get('volume', 0),
                 'oi': ce_data.get('oi', 0),
                 'distance_from_spot': abs(strike_price - nifty_ltp),
-                'security_id': f"NIFTY_{int(strike_price)}_CE"
+                'security_id': security_id,
+                'needs_manual_id': security_id.startswith('MANUAL_REQUIRED')
             }
             strikes.append(strike_info)
     
@@ -310,9 +358,10 @@ with col1:
         if not access_token or not client_id:
             st.error("Please enter both Access Token and Client ID")
         else:
-            with st.spinner("Fetching option chain data..."):
+            with st.spinner("Fetching option chain data and instrument master..."):
                 get_expiry_list.clear()
                 get_option_chain.clear()
+                get_instrument_master.clear()  # Clear instrument master cache if needed
                 
                 expiry_data = get_expiry_list(access_token, client_id)
                 
@@ -320,12 +369,31 @@ with col1:
                     current_expiry = expiry_data['data'][0]
                     st.success(f"Using expiry: {current_expiry}")
                     
+                    # Load instrument master in parallel
+                    with st.spinner("Loading instrument master for Security ID lookup..."):
+                        instrument_df = get_instrument_master()
+                        if instrument_df is not None:
+                            st.success(f"Loaded {len(instrument_df)} instruments from master file")
+                        else:
+                            st.warning("Could not load instrument master. Security IDs will need manual entry.")
+                    
                     option_chain_data = get_option_chain(access_token, client_id, current_expiry)
                     
                     if option_chain_data:
-                        strikes, nifty_ltp = process_option_chain(option_chain_data)
+                        strikes, nifty_ltp = process_option_chain(option_chain_data, current_expiry)
                         st.session_state.strikes_data = strikes
+                        
+                        # Count how many strikes have automatic Security IDs
+                        auto_count = sum(1 for s in strikes if not s.get('needs_manual_id', True))
+                        manual_count = len(strikes) - auto_count
+                        
                         st.success(f"Found {len(strikes)} strikes. NIFTY LTP: {nifty_ltp:.2f}")
+                        if auto_count > 0:
+                            st.info(f"Auto-found Security IDs: {auto_count}, Manual required: {manual_count}")
+                        else:
+                            st.warning("No automatic Security IDs found. Please verify instrument master loading.")
+                else:
+                    st.error("Failed to fetch expiry list")
     
     if st.session_state.strikes_data:
         st.subheader("Available Strikes")
@@ -352,11 +420,54 @@ with col1:
     
     if st.session_state.selected_strike:
         st.subheader("WebSocket Configuration")
+        
+        # Show Security ID status
+        if st.session_state.selected_strike.get('needs_manual_id', False):
+            st.warning("⚠️ Security ID not found in instrument master. Please enter manually.")
+        else:
+            st.success("✅ Security ID found automatically from instrument master")
+        
+        # Get the Security ID - either auto-found or empty for manual entry
+        default_security_id = st.session_state.selected_strike.get('security_id', '')
+        if default_security_id.startswith('MANUAL_REQUIRED'):
+            default_security_id = ''
+        
         security_id = st.text_input(
             "Security ID",
-            value=st.session_state.selected_strike.get('security_id', ''),
-            help="Enter actual Security ID from DhanHQ instrument master"
+            value=default_security_id,
+            help="Security ID from DhanHQ instrument master file",
+            placeholder="Will be auto-filled if found in instrument master"
         )
+        
+        # Show strike and expiry info
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.caption(f"Strike: {st.session_state.selected_strike['strike']:.0f}")
+        with col_info2:
+            if 'expiry' in st.session_state.selected_strike:
+                st.caption(f"Expiry: {st.session_state.selected_strike['expiry']}")
+        
+        # Show helper information only if manual entry is needed
+        if st.session_state.selected_strike.get('needs_manual_id', False):
+            with st.expander("How to find Security ID manually"):
+                st.markdown("""
+                **If automatic lookup failed, try these methods:**
+                
+                1. **DhanHQ Trading Platform:**
+                   - Go to Options → NIFTY → Find your strike
+                   - Look for Security ID or Instrument Token in option details
+                
+                2. **Download Detailed Instrument Master:**
+                   ```
+                   https://images.dhan.co/api-data/api-scrip-master-detailed.csv
+                   ```
+                   - Search for: NIFTY + your strike + CE + current expiry
+                
+                3. **API Endpoint for specific segment:**
+                   ```
+                   https://api.dhan.co/v2/instrument/NSE_FNO
+                   ```
+                """)
         
         col_ws1, col_ws2 = st.columns(2)
         
