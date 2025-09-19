@@ -73,7 +73,7 @@ st.markdown("""
 def initialize_session_state():
     default_states = {
         'strikes_data': [],
-        'price_data': deque(maxlen=200),  # Store last 200 price points
+        'price_data': deque(maxlen=200),
         'ws_connected': False,
         'selected_strike': None,
         'ws_client': None,
@@ -186,10 +186,9 @@ def calculate_supertrend(prices, period=10, multiplier=3.0):
     if len(prices) < period + 1:
         return [], [], None
     
-    # Convert deque to list for calculations
     price_list = list(prices)
     
-    # Generate high/low from prices (simulate with small variations)
+    # Generate high/low from prices
     high = [p * 1.002 for p in price_list]
     low = [p * 0.998 for p in price_list]
     
@@ -248,9 +247,7 @@ def calculate_supertrend(prices, period=10, multiplier=3.0):
             supertrend_up.append(None)
             supertrend_down.append(upper_band)
     
-    # Determine current signal
     current_signal = "BULLISH" if trend_direction[-1] == 1 else "BEARISH"
-    
     return supertrend_up, supertrend_down, current_signal
 
 # WebSocket callback functions
@@ -262,7 +259,6 @@ def on_price_update(price_data):
         st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
         st.session_state.message_count += 1
         
-        # Calculate SuperTrend with current data
         if len(st.session_state.price_data) > 10:
             period = st.session_state.get('st_period', 10)
             multiplier = st.session_state.get('st_multiplier', 3.0)
@@ -286,14 +282,12 @@ st.sidebar.header("⚙️ Configuration")
 # Credentials - Use Streamlit Secrets
 st.sidebar.subheader("DhanHQ Credentials")
 
-# Try to get credentials from Streamlit secrets first
 try:
     access_token = st.secrets["DHAN_ACCESS_TOKEN"]
     client_id = st.secrets["DHAN_CLIENT_ID"]
     st.sidebar.success("✅ Using credentials from Streamlit secrets")
     st.sidebar.info(f"Client ID: {client_id[:8]}...")
 except KeyError:
-    # Fallback to manual input if secrets not configured
     st.sidebar.warning("⚠️ Streamlit secrets not configured. Using manual input.")
     access_token = st.sidebar.text_input("Access Token", type="password", help="Your DhanHQ access token")
     client_id = st.sidebar.text_input("Client ID", help="Your DhanHQ client ID")
@@ -303,7 +297,6 @@ st.sidebar.subheader("SuperTrend Settings")
 st_period = st.sidebar.selectbox("Period", [10, 14, 21], index=0)
 st_multiplier = st.sidebar.selectbox("Multiplier", [2.0, 3.0, 4.0], index=1)
 
-# Store in session state for callbacks
 st.session_state.st_period = st_period
 st.session_state.st_multiplier = st_multiplier
 
@@ -313,7 +306,6 @@ col1, col2 = st.columns([1, 2])
 with col1:
     st.subheader("Strike Selection & Connection")
     
-    # Fetch strikes
     if st.button("🔄 Fetch Available Strikes", type="primary"):
         if not access_token or not client_id:
             st.error("Please enter both Access Token and Client ID")
@@ -335,7 +327,6 @@ with col1:
                         st.session_state.strikes_data = strikes
                         st.success(f"Found {len(strikes)} strikes. NIFTY LTP: {nifty_ltp:.2f}")
     
-    # Display strikes
     if st.session_state.strikes_data:
         st.subheader("Available Strikes")
         
@@ -349,7 +340,6 @@ with col1:
         if selected_idx is not None:
             st.session_state.selected_strike = st.session_state.strikes_data[selected_idx]
             
-            # Strike details
             with st.container():
                 st.markdown("**Selected Strike:**")
                 col_a, col_b = st.columns(2)
@@ -360,7 +350,6 @@ with col1:
                     st.metric("Volume", f"{st.session_state.selected_strike['volume']:,}")
                     st.metric("OI", f"{st.session_state.selected_strike['oi']:,}")
     
-    # Security ID input
     if st.session_state.selected_strike:
         st.subheader("WebSocket Configuration")
         security_id = st.text_input(
@@ -369,7 +358,6 @@ with col1:
             help="Enter actual Security ID from DhanHQ instrument master"
         )
         
-        # WebSocket connection controls
         col_ws1, col_ws2 = st.columns(2)
         
         with col_ws1:
@@ -377,13 +365,12 @@ with col1:
                 if not access_token or not client_id or not security_id:
                     st.error("Please provide all credentials and Security ID")
                 else:
-                    # Create WebSocket client
                     st.session_state.ws_client = DhanWebSocketClient(access_token, client_id)
                     st.session_state.ws_client.add_price_callback(on_price_update)
                     st.session_state.ws_client.add_connection_callback(on_connection_change)
                     
                     if st.session_state.ws_client.connect():
-                        time.sleep(1)  # Wait for connection
+                        time.sleep(1)
                         st.session_state.ws_client.subscribe_instrument("NSE_FNO", security_id)
                         st.success("WebSocket connected and subscribed!")
                     else:
@@ -397,7 +384,6 @@ with col1:
                     st.session_state.ws_connected = False
                     st.info("WebSocket disconnected")
     
-    # Connection status
     st.subheader("Connection Status")
     if st.session_state.ws_connected:
         st.markdown('<span class="live-indicator"></span>**LIVE**', unsafe_allow_html=True)
@@ -412,20 +398,25 @@ with col2:
     st.subheader("Live SuperTrend Chart")
     
     if st.session_state.price_data and len(st.session_state.price_data) > 1:
-        # Prepare data for chart
         prices = list(st.session_state.price_data)
         timestamps = [f"{i:03d}" for i in range(len(prices))]
         
-        # Calculate SuperTrend
         st_up, st_down, current_signal = calculate_supertrend(prices, st_period, st_multiplier)
         
-        # Create chart
         fig = make_subplots(
             rows=1, cols=1,
             subplot_titles=[f"Live SuperTrend - {st.session_state.selected_strike['strike']:.0f} CE" if st.session_state.selected_strike else "Live SuperTrend"]
         )
         
-        # Add SuperTrend lines
+        fig.add_trace(go.Scatter(
+            x=timestamps,
+            y=prices,
+            mode='lines+markers',
+            name='Option Price',
+            line=dict(color='blue', width=2),
+            marker=dict(size=3)
+        ))
+        
         fig.add_trace(go.Scatter(
             x=timestamps,
             y=st_up,
@@ -455,7 +446,6 @@ with col2:
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # Display current metrics
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         
         with col_m1:
@@ -473,7 +463,6 @@ with col2:
         with col_m4:
             st.metric("Messages", st.session_state.message_count)
         
-        # Signal indicator
         if current_signal:
             if current_signal == "BULLISH":
                 st.success("📈 Current Signal: BULLISH")
@@ -483,7 +472,6 @@ with col2:
     elif st.session_state.selected_strike and not st.session_state.ws_connected:
         st.info("Connect to WebSocket to see live SuperTrend analysis")
         
-        # Show sample chart with static data
         if st.button("Show Sample Chart"):
             sample_prices = np.random.normal(100, 5, 50).cumsum() + st.session_state.selected_strike['ltp']
             sample_timestamps = [f"{i:03d}" for i in range(len(sample_prices))]
@@ -509,16 +497,12 @@ with col2:
     else:
         st.info("Select a strike and connect to WebSocket to view live data")
 
-# Footer section
 st.markdown("---")
 
-# Real-time updates (auto-refresh)
 if st.session_state.ws_connected:
-    # Auto-refresh every 2 seconds when connected
     time.sleep(2)
     st.rerun()
 
-# Instructions and deployment info
 with st.expander("📋 Instructions & Setup"):
     st.markdown("""
     ### How to Use:
@@ -530,38 +514,11 @@ with st.expander("📋 Instructions & Setup"):
     6. **Monitor**: Watch the SuperTrend chart update in real-time
     
     ### Files for GitHub Repository:
-    
-    **1. streamlit_app.py** (Main application)
-    **2. websocket_handler.py** (WebSocket client)
-    **3. requirements.txt** (Dependencies)
-    
-    ### Deployment on Streamlit Cloud:
-    1. Push all files to your GitHub repository
-    2. Go to [share.streamlit.io](https://share.streamlit.io)
-    3. Connect your GitHub account and select your repository
-    4. Choose `streamlit_app.py` as the main file
-    5. Click "Deploy"
+    - streamlit_app.py (Main application)
+    - websocket_handler.py (WebSocket client)
+    - requirements.txt (Dependencies)
     """)
 
-with st.expander("⚠️ Important Notes"):
-    st.markdown("""
-    ### Security ID Requirements:
-    - The Security ID must be the actual ID from DhanHQ's instrument master file
-    - Option Chain API doesn't provide Security IDs directly
-    - You may need to manually look up the correct ID
-    
-    ### WebSocket Limitations:
-    - DhanHQ allows up to 5 WebSocket connections per user
-    - Each connection can subscribe to up to 5000 instruments
-    - Market data is only available during trading hours
-    
-    ### Deployment Considerations:
-    - Streamlit Cloud has resource limitations
-    - WebSocket connections may timeout on free tier
-    - Consider using Streamlit Community Cloud or self-hosting for production use
-    """)
-
-# Debug information (only show in development)
 if st.sidebar.checkbox("Show Debug Info"):
     st.subheader("Debug Information")
     
@@ -577,13 +534,3 @@ if st.sidebar.checkbox("Show Debug Info"):
     }
     
     st.json(debug_info)
-        fig.add_trace(go.Scatter(
-            x=timestamps,
-            y=prices,
-            mode='lines+markers',
-            name='Option Price',
-            line=dict(color='blue', width=2),
-            marker=dict(size=3)
-        ))
-        
-        # Ad
