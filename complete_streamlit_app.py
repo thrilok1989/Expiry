@@ -361,7 +361,7 @@ with col1:
             with st.spinner("Fetching option chain data and instrument master..."):
                 get_expiry_list.clear()
                 get_option_chain.clear()
-                get_instrument_master.clear()  # Clear instrument master cache if needed
+                # Note: get_instrument_master cache will auto-expire after 24 hours
                 
                 expiry_data = get_expiry_list(access_token, client_id)
                 
