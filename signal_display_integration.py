@@ -1621,6 +1621,85 @@ def display_final_assessment(
     st.markdown("## 🔥 CONFLUENCE ENTRY CHECK")
     st.caption("**Highest probability setups: Volume Order Blocks + HTF Support/Resistance + XGBoost Regime alignment**")
 
+    # Display ATM ±2 Strike Bias Tabulation FIRST (Critical Decision Data)
+    st.markdown("### 📊 ATM ±2 Strikes - 14 Bias Metrics Tabulation")
+
+    if atm_bias_data:
+        atm_verdict = atm_bias_data.get('overall_bias', 'NEUTRAL')
+        atm_score = atm_bias_data.get('total_score', 0)
+        atm_strike_val = atm_bias_data.get('atm_strike', atm_strike)
+
+        # Count bullish and bearish metrics
+        bias_scores = atm_bias_data.get('bias_scores', {})
+        bullish_count = sum(1 for score in bias_scores.values() if score > 0.3)
+        bearish_count = sum(1 for score in bias_scores.values() if score < -0.3)
+        total_metrics = len(bias_scores) if bias_scores else 14
+
+        bullish_pct = (bullish_count / total_metrics * 100) if total_metrics > 0 else 0
+        bearish_pct = (bearish_count / total_metrics * 100) if total_metrics > 0 else 0
+
+        # Determine verdict color and emoji
+        if 'BULLISH' in atm_verdict:
+            verdict_color = "#00ff88"
+            verdict_emoji = "🐂"
+            verdict_bg = "#1a2e1a"
+        elif 'BEARISH' in atm_verdict:
+            verdict_color = "#ff6666"
+            verdict_emoji = "🐻"
+            verdict_bg = "#2e1a1a"
+        else:
+            verdict_color = "#ffa500"
+            verdict_emoji = "⚖️"
+            verdict_bg = "#2e2e1a"
+
+        # Display ATM Bias Card
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.markdown(f"""
+            <div style='padding: 15px; background: {verdict_bg}; border-radius: 10px; border-left: 4px solid {verdict_color};'>
+                <h4 style='margin: 0; color: {verdict_color};'>{verdict_emoji} {atm_verdict}</h4>
+                <p style='margin: 5px 0 0 0; color: #888; font-size: 12px;'>ATM STRIKE VERDICT</p>
+                <p style='margin: 5px 0 0 0; color: #ccc; font-size: 11px;'>Strike: {atm_strike_val} | Score: {atm_score:+.2f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            st.markdown(f"""
+            <div style='padding: 15px; background: #1a2e1a; border-radius: 10px; border-left: 4px solid #00ff88;'>
+                <h4 style='margin: 0; color: #00ff88;'>{bullish_count} / {total_metrics}</h4>
+                <p style='margin: 5px 0 0 0; color: #888; font-size: 12px;'>🐂 BULLISH METRICS</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            st.markdown(f"""
+            <div style='padding: 15px; background: #2e1a1a; border-radius: 10px; border-left: 4px solid #ff6666;'>
+                <h4 style='margin: 0; color: #ff6666;'>{bearish_count} / {total_metrics}</h4>
+                <p style='margin: 5px 0 0 0; color: #888; font-size: 12px;'>🐻 BEARISH METRICS</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col4:
+            st.markdown(f"""
+            <div style='padding: 15px; background: #1e1e1e; border-radius: 10px;'>
+                <p style='margin: 0; color: #00ff88; font-size: 14px;'><strong>BULLISH:</strong> {bullish_pct:.1f}%</p>
+                <p style='margin: 5px 0 0 0; color: #ff6666; font-size: 14px;'><strong>BEARISH:</strong> {bearish_pct:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Show interpretation
+        if bullish_pct > 40:
+            st.success(f"✅ **Strong Bullish Bias** - {bullish_count}/{total_metrics} metrics support LONG positions")
+        elif bearish_pct > 40:
+            st.error(f"✅ **Strong Bearish Bias** - {bearish_count}/{total_metrics} metrics support SHORT positions")
+        else:
+            st.info(f"⚠️ **Neutral/Mixed Bias** - No clear directional edge from ATM strikes")
+    else:
+        st.warning("⚠️ ATM Bias data unavailable - Check NIFTY Option Screener tab")
+
+    st.markdown("---")
+
     # Get regime for directional bias
     regime_direction = "UNKNOWN"
     regime_conf = 0
