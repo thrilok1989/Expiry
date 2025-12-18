@@ -212,16 +212,24 @@ def display_final_assessment(
     # Get Expiry Context
     days_to_expiry = expiry_data.get('days_to_expiry', 7)
 
-    # Get Support/Resistance from liquidity
-    support_level = current_price - 50
-    resistance_level = current_price + 50
+    # Get Support/Resistance from liquidity (use reasonable defaults based on current price)
+    # Default: Support ~100-150 points below, Resistance ~100-150 points above
+    support_level = round((current_price - 100) / 50) * 50  # Round to nearest 50
+    resistance_level = round((current_price + 100) / 50) * 50  # Round to nearest 50
+
     if liquidity_result:
         support_zones = liquidity_result.support_zones if hasattr(liquidity_result, 'support_zones') else []
         resistance_zones = liquidity_result.resistance_zones if hasattr(liquidity_result, 'resistance_zones') else []
         if support_zones:
-            support_level = max([s for s in support_zones if s < current_price], default=support_level)
+            # Find the strongest support below current price
+            valid_supports = [s for s in support_zones if s < current_price]
+            if valid_supports:
+                support_level = max(valid_supports)
         if resistance_zones:
-            resistance_level = min([r for r in resistance_zones if r > current_price], default=resistance_level)
+            # Find the strongest resistance above current price
+            valid_resistances = [r for r in resistance_zones if r > current_price]
+            if valid_resistances:
+                resistance_level = min(valid_resistances)
 
     # Get Max OI Walls
     max_call_strike = atm_strike + 500
