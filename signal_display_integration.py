@@ -148,9 +148,9 @@ def display_final_assessment(
     """
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
-    moment_data = nifty_screener_data.get('moment_detector', {}) if nifty_screener_data else {}
-    expiry_data = nifty_screener_data.get('expiry_context', {}) if nifty_screener_data else {}
-    oi_pcr_data = nifty_screener_data.get('oi_pcr', {}) if nifty_screener_data else {}
+    moment_data = nifty_screener_data.get('moment_metrics', {}) if nifty_screener_data else {}  # Fixed: moment_metrics not moment_detector
+    expiry_data = nifty_screener_data.get('expiry_spike_data', {}) if nifty_screener_data else {}  # Fixed: expiry_spike_data not expiry_context
+    oi_pcr_data = nifty_screener_data.get('oi_pcr_metrics', {}) if nifty_screener_data else {}  # Fixed: oi_pcr_metrics not oi_pcr
     market_depth = nifty_screener_data.get('market_depth', {}) if nifty_screener_data else {}
 
     # Get regime from ML result
@@ -185,10 +185,24 @@ def display_final_assessment(
     else:
         atm_emoji = "⚖️"
 
-    # Get Moment Detector
-    moment_verdict = moment_data.get('verdict', 'NEUTRAL')
-    moment_score = moment_data.get('total_score', 0)
-    orderbook_pressure = market_depth.get('pressure', 'NEUTRAL')
+    # Get Moment Detector (extract from moment_metrics structure)
+    moment_verdict = 'NEUTRAL'
+    moment_score = 0
+    orderbook_pressure = 'NEUTRAL'
+
+    if moment_data:
+        # moment_metrics has structure: {momentum_burst: {}, orderbook: {}, gamma_cluster: {}, oi_accel: {}}
+        if 'orderbook' in moment_data and moment_data['orderbook'].get('available'):
+            orderbook_pressure = moment_data['orderbook'].get('pressure', 0)
+        if 'momentum_burst' in moment_data:
+            moment_score = moment_data['momentum_burst'].get('score', 0)
+            # Determine verdict from score
+            if moment_score > 50:
+                moment_verdict = 'BULLISH'
+            elif moment_score < -50:
+                moment_verdict = 'BEARISH'
+            else:
+                moment_verdict = 'NEUTRAL'
 
     # Get OI/PCR metrics (fixed key names from Tab 8)
     pcr_value = oi_pcr_data.get('pcr_total', 0.9)  # Correct key: pcr_total
@@ -210,8 +224,8 @@ def display_final_assessment(
     else:
         pcr_sentiment = "STRONG BEARISH"
 
-    # Get Expiry Context
-    days_to_expiry = expiry_data.get('days_to_expiry', 7)
+    # Get Expiry Context (stored directly in nifty_screener_data)
+    days_to_expiry = nifty_screener_data.get('days_to_expiry', 7) if nifty_screener_data else 7
 
     # Get Support/Resistance using multiple data sources for accuracy
     # Priority: 1) nearest_sup/nearest_res from Tab 8, 2) liquidity zones, 3) calculated default
