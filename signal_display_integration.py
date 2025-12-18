@@ -190,11 +190,13 @@ def display_final_assessment(
     moment_score = moment_data.get('total_score', 0)
     orderbook_pressure = market_depth.get('pressure', 'NEUTRAL')
 
-    # Get OI/PCR metrics
-    pcr_value = oi_pcr_data.get('pcr', 0.9)
-    call_oi = oi_pcr_data.get('total_call_oi', 0)
-    put_oi = oi_pcr_data.get('total_put_oi', 0)
-    atm_concentration = oi_pcr_data.get('atm_concentration_pct', 0)
+    # Get OI/PCR metrics (fixed key names from Tab 8)
+    pcr_value = oi_pcr_data.get('pcr_total', 0.9)  # Correct key: pcr_total
+    call_oi = oi_pcr_data.get('total_ce_oi', 0)  # Correct key: total_ce_oi
+    put_oi = oi_pcr_data.get('total_pe_oi', 0)  # Correct key: total_pe_oi
+    atm_total_oi = oi_pcr_data.get('atm_total_oi', 0)
+    total_oi = call_oi + put_oi
+    atm_concentration = (atm_total_oi / total_oi * 100) if total_oi > 0 else 0
 
     # Determine PCR interpretation
     if pcr_value > 1.2:
@@ -242,16 +244,22 @@ def display_final_assessment(
             if valid_resistances:
                 resistance_level = min(valid_resistances)
 
-    # Get Max OI Walls
+    # Get Max OI Walls (fixed key names from Tab 8)
     max_call_strike = atm_strike + 500
     max_put_strike = atm_strike - 500
-    if oi_pcr_data.get('max_call_oi_strike'):
-        max_call_strike = oi_pcr_data['max_call_oi_strike']
-    if oi_pcr_data.get('max_put_oi_strike'):
-        max_put_strike = oi_pcr_data['max_put_oi_strike']
+    if oi_pcr_data.get('max_ce_strike'):  # Correct key: max_ce_strike
+        max_call_strike = oi_pcr_data['max_ce_strike']
+    if oi_pcr_data.get('max_pe_strike'):  # Correct key: max_pe_strike
+        max_put_strike = oi_pcr_data['max_pe_strike']
 
-    # Get Max Pain
-    max_pain = oi_pcr_data.get('max_pain', atm_strike)
+    # Get Max Pain (check if seller_max_pain exists in nifty_screener_data)
+    max_pain = atm_strike
+    if nifty_screener_data and 'seller_max_pain' in nifty_screener_data:
+        seller_max_pain_data = nifty_screener_data['seller_max_pain']
+        if isinstance(seller_max_pain_data, dict):
+            max_pain = seller_max_pain_data.get('max_pain_strike', atm_strike)
+        elif isinstance(seller_max_pain_data, (int, float)):
+            max_pain = seller_max_pain_data
 
     # --- Market Makers Narrative ---
     if atm_bias_verdict == "CALL SELLERS":
