@@ -134,17 +134,23 @@ def display_final_assessment(
     liquidity_result: Optional[any],
     current_price: float,
     atm_strike: int,
-    option_chain: Optional[Dict] = None
+    option_chain: Optional[Dict] = None,
+    money_flow_signals: Optional[Dict] = None,
+    deltaflow_signals: Optional[Dict] = None,
+    cvd_result: Optional[any] = None,
+    volatility_result: Optional[any] = None,
+    oi_trap_result: Optional[any] = None,
+    participant_result: Optional[any] = None
 ):
     """
     Display FINAL ASSESSMENT with Market Makers narrative.
 
-    Format includes:
-    - Seller Activity + ATM Bias + Moment + Expiry + OI/PCR
-    - Market Makers interpretation
-    - ATM Zone Analysis
-    - Game plan
-    - Key levels and entry prices
+    Now integrates ALL analysis from all tabs:
+    - Tab 7: Volume Footprint, Money Flow, DeltaFlow, HTF S/R
+    - Tab 8: All 10 sub-tabs (OI/PCR, ATM Bias, Seller, Moment, Depth, Expiry, etc.)
+    - Tab 9: Enhanced market data, VIX, sectors
+
+    Uses comprehensive multi-factor analysis for scoring and entries.
     """
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
@@ -901,6 +907,132 @@ def display_final_assessment(
                 ce_score += 8
                 ce_factors['Trend Align'] = "~ Range"
 
+            # Factor 7: Money Flow Profile (0-10 pts)
+            if money_flow_signals:
+                mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+                mf_strength = money_flow_signals.get('strength', 0)
+                if mf_signal == 'BUY' and strike <= atm_strike_base:  # Calls align with buy flow
+                    ce_score += 10
+                    ce_factors['Money Flow'] = "✓ Buy Flow"
+                elif mf_signal == 'SELL':
+                    ce_factors['Money Flow'] = "✗ Sell Flow"
+                else:
+                    ce_score += 5
+                    ce_factors['Money Flow'] = "~ Neutral"
+            else:
+                ce_factors['Money Flow'] = "N/A"
+
+            # Factor 8: DeltaFlow Profile (0-10 pts)
+            if deltaflow_signals:
+                df_signal = deltaflow_signals.get('signal', 'NEUTRAL')
+                df_delta = deltaflow_signals.get('cumulative_delta', 0)
+                if df_delta > 0 and strike <= atm_strike_base:  # Positive delta favors calls
+                    ce_score += 10
+                    ce_factors['DeltaFlow'] = f"✓ +{abs(df_delta):.0f}"
+                elif df_delta < 0:
+                    ce_factors['DeltaFlow'] = f"✗ -{abs(df_delta):.0f}"
+                else:
+                    ce_score += 5
+                    ce_factors['DeltaFlow'] = "~ Flat"
+            else:
+                ce_factors['DeltaFlow'] = "N/A"
+
+            # Factor 9: CVD (Cumulative Volume Delta) (0-10 pts)
+            if cvd_result and hasattr(cvd_result, 'signal'):
+                cvd_signal = cvd_result.signal
+                if cvd_signal in ['BULLISH', 'STRONG_BULLISH'] and strike <= atm_strike_base:
+                    ce_score += 10
+                    ce_factors['CVD'] = "✓ Bullish"
+                elif cvd_signal in ['BEARISH', 'STRONG_BEARISH']:
+                    ce_factors['CVD'] = "✗ Bearish"
+                else:
+                    ce_score += 5
+                    ce_factors['CVD'] = "~ Neutral"
+            else:
+                ce_factors['CVD'] = "N/A"
+
+            # Factor 10: Volatility Regime + VIX (0-10 pts)
+            vix_value = 15.0
+            if enhanced_market_data and 'vix' in enhanced_market_data:
+                vix_data = enhanced_market_data['vix']
+                vix_value = vix_data.get('lastPrice', 15.0) if isinstance(vix_data, dict) else vix_data
+
+            # Low VIX favors selling, High VIX favors buying
+            if vix_value < 12 and strike > atm_strike_base:  # Low VIX + OTM call = good for selling
+                ce_score += 10
+                ce_factors['VIX Regime'] = f"✓ Low ({vix_value:.1f})"
+            elif vix_value > 20 and strike <= atm_strike_base:  # High VIX + ATM/ITM call = good for buying
+                ce_score += 10
+                ce_factors['VIX Regime'] = f"✓ High ({vix_value:.1f})"
+            else:
+                ce_score += 5
+                ce_factors['VIX Regime'] = f"~ Normal ({vix_value:.1f})"
+
+            # Factor 11: Sector Rotation (0-5 pts)
+            if enhanced_market_data and 'sectors' in enhanced_market_data:
+                sectors = enhanced_market_data['sectors']
+                if sectors.get('success'):
+                    sector_data = sectors.get('data', [])
+                    bullish_count = sum(1 for s in sector_data if s.get('change_pct', 0) > 0.5)
+                    bearish_count = sum(1 for s in sector_data if s.get('change_pct', 0) < -0.5)
+
+                    if bullish_count > bearish_count + 2 and strike <= atm_strike_base:  # Sector rotation bullish
+                        ce_score += 5
+                        ce_factors['Sector'] = "✓ Bullish Rotation"
+                    elif bearish_count > bullish_count + 2:
+                        ce_factors['Sector'] = "✗ Bearish Rotation"
+                    else:
+                        ce_score += 2
+                        ce_factors['Sector'] = "~ Mixed"
+                else:
+                    ce_factors['Sector'] = "N/A"
+            else:
+                ce_factors['Sector'] = "N/A"
+
+            # Factor 12: GEX (Gamma Exposure) (0-10 pts)
+            total_gex_net = nifty_screener_data.get('total_gex_net', 0) if nifty_screener_data else 0
+            if total_gex_net > 1000000:  # Positive GEX = Stabilizing, favors selling OTM
+                if strike > atm_strike_base:  # OTM call selling
+                    ce_score += 10
+                    ce_factors['GEX'] = f"✓ +GEX ({total_gex_net/1e6:.1f}M)"
+                else:  # ATM/ITM less favorable
+                    ce_score += 3
+                    ce_factors['GEX'] = f"~ +GEX ({total_gex_net/1e6:.1f}M)"
+            elif total_gex_net < -1000000:  # Negative GEX = Destabilizing, favors buying ATM/ITM
+                if strike <= atm_strike_base:  # ATM/ITM call buying
+                    ce_score += 10
+                    ce_factors['GEX'] = f"✓ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+                else:  # OTM less favorable
+                    ce_score += 3
+                    ce_factors['GEX'] = f"~ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+            else:  # Neutral GEX
+                ce_score += 5
+                ce_factors['GEX'] = f"~ Neutral ({abs(total_gex_net)/1e6:.1f}M)"
+
+            # Factor 13: Market Depth/Orderbook Pressure (0-10 pts)
+            if moment_data and 'orderbook' in moment_data:
+                orderbook = moment_data['orderbook']
+                if orderbook.get('available', False):
+                    pressure = orderbook.get('pressure', 'NEUTRAL')
+                    pressure_score = orderbook.get('pressure_score', 0)
+
+                    if pressure == 'BUY' and pressure_score > 60:  # Strong buy pressure
+                        if strike <= atm_strike_base:  # Favors calls
+                            ce_score += 10
+                            ce_factors['Depth'] = f"✓ Buy ({pressure_score}%)"
+                        else:
+                            ce_score += 5
+                            ce_factors['Depth'] = f"~ Buy ({pressure_score}%)"
+                    elif pressure == 'SELL':
+                        ce_factors['Depth'] = f"✗ Sell ({pressure_score}%)"
+                    else:
+                        ce_score += 5
+                        ce_factors['Depth'] = "~ Neutral"
+                else:
+                    ce_factors['Depth'] = "N/A"
+            else:
+                ce_factors['Depth'] = "N/A"
+
         # === PUT SCORING ===
         pe_score = 0
         pe_factors = {}
@@ -983,6 +1115,130 @@ def display_final_assessment(
                 pe_score += 8
                 pe_factors['Trend Align'] = "~ Range"
 
+            # Factor 7: Money Flow Profile (0-10 pts)
+            if money_flow_signals:
+                mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+                if mf_signal == 'SELL' and strike >= atm_strike_base:  # Puts align with sell flow
+                    pe_score += 10
+                    pe_factors['Money Flow'] = "✓ Sell Flow"
+                elif mf_signal == 'BUY':
+                    pe_factors['Money Flow'] = "✗ Buy Flow"
+                else:
+                    pe_score += 5
+                    pe_factors['Money Flow'] = "~ Neutral"
+            else:
+                pe_factors['Money Flow'] = "N/A"
+
+            # Factor 8: DeltaFlow Profile (0-10 pts)
+            if deltaflow_signals:
+                df_delta = deltaflow_signals.get('cumulative_delta', 0)
+                if df_delta < 0 and strike >= atm_strike_base:  # Negative delta favors puts
+                    pe_score += 10
+                    pe_factors['DeltaFlow'] = f"✓ -{abs(df_delta):.0f}"
+                elif df_delta > 0:
+                    pe_factors['DeltaFlow'] = f"✗ +{abs(df_delta):.0f}"
+                else:
+                    pe_score += 5
+                    pe_factors['DeltaFlow'] = "~ Flat"
+            else:
+                pe_factors['DeltaFlow'] = "N/A"
+
+            # Factor 9: CVD (Cumulative Volume Delta) (0-10 pts)
+            if cvd_result and hasattr(cvd_result, 'signal'):
+                cvd_signal = cvd_result.signal
+                if cvd_signal in ['BEARISH', 'STRONG_BEARISH'] and strike >= atm_strike_base:
+                    pe_score += 10
+                    pe_factors['CVD'] = "✓ Bearish"
+                elif cvd_signal in ['BULLISH', 'STRONG_BULLISH']:
+                    pe_factors['CVD'] = "✗ Bullish"
+                else:
+                    pe_score += 5
+                    pe_factors['CVD'] = "~ Neutral"
+            else:
+                pe_factors['CVD'] = "N/A"
+
+            # Factor 10: Volatility Regime + VIX (0-10 pts)
+            vix_value = 15.0
+            if enhanced_market_data and 'vix' in enhanced_market_data:
+                vix_data = enhanced_market_data['vix']
+                vix_value = vix_data.get('lastPrice', 15.0) if isinstance(vix_data, dict) else vix_data
+
+            # Low VIX favors selling, High VIX favors buying
+            if vix_value < 12 and strike < atm_strike_base:  # Low VIX + OTM put = good for selling
+                pe_score += 10
+                pe_factors['VIX Regime'] = f"✓ Low ({vix_value:.1f})"
+            elif vix_value > 20 and strike >= atm_strike_base:  # High VIX + ATM/ITM put = good for buying
+                pe_score += 10
+                pe_factors['VIX Regime'] = f"✓ High ({vix_value:.1f})"
+            else:
+                pe_score += 5
+                pe_factors['VIX Regime'] = f"~ Normal ({vix_value:.1f})"
+
+            # Factor 11: Sector Rotation (0-5 pts)
+            if enhanced_market_data and 'sectors' in enhanced_market_data:
+                sectors = enhanced_market_data['sectors']
+                if sectors.get('success'):
+                    sector_data = sectors.get('data', [])
+                    bullish_count = sum(1 for s in sector_data if s.get('change_pct', 0) > 0.5)
+                    bearish_count = sum(1 for s in sector_data if s.get('change_pct', 0) < -0.5)
+
+                    if bearish_count > bullish_count + 2 and strike >= atm_strike_base:  # Sector rotation bearish
+                        pe_score += 5
+                        pe_factors['Sector'] = "✓ Bearish Rotation"
+                    elif bullish_count > bearish_count + 2:
+                        pe_factors['Sector'] = "✗ Bullish Rotation"
+                    else:
+                        pe_score += 2
+                        pe_factors['Sector'] = "~ Mixed"
+                else:
+                    pe_factors['Sector'] = "N/A"
+            else:
+                pe_factors['Sector'] = "N/A"
+
+            # Factor 12: GEX (Gamma Exposure) (0-10 pts)
+            total_gex_net = nifty_screener_data.get('total_gex_net', 0) if nifty_screener_data else 0
+            if total_gex_net > 1000000:  # Positive GEX = Stabilizing, favors selling OTM
+                if strike < atm_strike_base:  # OTM put selling
+                    pe_score += 10
+                    pe_factors['GEX'] = f"✓ +GEX ({total_gex_net/1e6:.1f}M)"
+                else:  # ATM/ITM less favorable
+                    pe_score += 3
+                    pe_factors['GEX'] = f"~ +GEX ({total_gex_net/1e6:.1f}M)"
+            elif total_gex_net < -1000000:  # Negative GEX = Destabilizing, favors buying ATM/ITM
+                if strike >= atm_strike_base:  # ATM/ITM put buying
+                    pe_score += 10
+                    pe_factors['GEX'] = f"✓ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+                else:  # OTM less favorable
+                    pe_score += 3
+                    pe_factors['GEX'] = f"~ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+            else:  # Neutral GEX
+                pe_score += 5
+                pe_factors['GEX'] = f"~ Neutral ({abs(total_gex_net)/1e6:.1f}M)"
+
+            # Factor 13: Market Depth/Orderbook Pressure (0-10 pts)
+            if moment_data and 'orderbook' in moment_data:
+                orderbook = moment_data['orderbook']
+                if orderbook.get('available', False):
+                    pressure = orderbook.get('pressure', 'NEUTRAL')
+                    pressure_score = orderbook.get('pressure_score', 0)
+
+                    if pressure == 'SELL' and pressure_score > 60:  # Strong sell pressure
+                        if strike >= atm_strike_base:  # Favors puts
+                            pe_score += 10
+                            pe_factors['Depth'] = f"✓ Sell ({pressure_score}%)"
+                        else:
+                            pe_score += 5
+                            pe_factors['Depth'] = f"~ Sell ({pressure_score}%)"
+                    elif pressure == 'BUY':
+                        pe_factors['Depth'] = f"✗ Buy ({pressure_score}%)"
+                    else:
+                        pe_score += 5
+                        pe_factors['Depth'] = "~ Neutral"
+                else:
+                    pe_factors['Depth'] = "N/A"
+            else:
+                pe_factors['Depth'] = "N/A"
+
         # Store scores
         if strike_data_ce:
             option_scores.append({
@@ -1006,18 +1262,21 @@ def display_final_assessment(
     option_scores = sorted(option_scores, key=lambda x: x['score'], reverse=True)
 
     # Display top 5 options
-    st.markdown("**🏆 TOP 5 HIGHEST SCORING OPTIONS (Based on Multi-Factor Analysis)**")
+    st.markdown("**🏆 TOP 5 HIGHEST SCORING OPTIONS (13-Factor Comprehensive Analysis)**")
+    st.caption("Max Score: 165 pts | Factors: OI, Liquidity, ATM Dist, Max Pain, Bias, Trend, Money Flow, DeltaFlow, CVD, VIX, Sector, GEX, Market Depth")
 
     for i, opt in enumerate(option_scores[:5], 1):
-        score_color = "success" if opt['score'] >= 70 else "warning" if opt['score'] >= 50 else "error"
-        score_label = "EXCELLENT" if opt['score'] >= 70 else "GOOD" if opt['score'] >= 50 else "WEAK"
+        # Updated thresholds for 165-point scale
+        score_color = "success" if opt['score'] >= 110 else "warning" if opt['score'] >= 85 else "error"
+        score_label = "EXCELLENT" if opt['score'] >= 110 else "GOOD" if opt['score'] >= 85 else "WEAK"
+        score_pct = (opt['score'] / 165) * 100
 
         # Create detailed breakdown
         factors_text = "\n".join([f"   • {k}: {v}" for k, v in opt['factors'].items()])
 
         if score_color == "success":
             st.success(f"""
-**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/165 ({score_pct:.0f}%) - {score_label}**
 
 **Premium:** ₹{opt['premium']:.2f}
 
@@ -1026,7 +1285,7 @@ def display_final_assessment(
             """)
         elif score_color == "warning":
             st.warning(f"""
-**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/165 ({score_pct:.0f}%) - {score_label}**
 
 **Premium:** ₹{opt['premium']:.2f}
 
@@ -1035,7 +1294,7 @@ def display_final_assessment(
             """)
         else:
             st.info(f"""
-**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/165 ({score_pct:.0f}%) - {score_label}**
 
 **Premium:** ₹{opt['premium']:.2f}
 
