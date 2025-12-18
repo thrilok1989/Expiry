@@ -1142,7 +1142,8 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
                 ml_regime_result=ml_regime_result,
                 liquidity_result=liquidity_result,
                 current_price=current_price if current_price > 0 else 24500,
-                atm_strike=atm_strike if atm_strike else 24500
+                atm_strike=atm_strike if atm_strike else 24500,
+                option_chain=option_chain  # Pass option chain for real premiums
             )
 
         # Generate signal if we have data
