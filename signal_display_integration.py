@@ -789,55 +789,293 @@ def display_final_assessment(
 
     st.markdown("---")
 
-    # --- Entry Price Recommendations ---
-    st.markdown("### 🎯 Entry Price Recommendations")
+    # --- ELITE OPTION SCORER (Multi-Factor Analysis) ---
+    st.markdown("### 🎯 ELITE OPTION SCORER (OI + Depth + Liquidity + GEX + ATM + Bias + Indicators)")
 
-    # ===== ENTRY PERMISSION LOGIC (CRITICAL) =====
-    # Check multiple conditions before allowing entries
+    # Get ATM and surrounding strikes
+    atm_strike_base = round(current_price / 50) * 50
+    strikes_to_analyze = [
+        atm_strike_base - 150,
+        atm_strike_base - 100,
+        atm_strike_base - 50,
+        atm_strike_base,
+        atm_strike_base + 50,
+        atm_strike_base + 100,
+        atm_strike_base + 150
+    ]
 
-    # Condition 1: Confidence threshold
-    confidence_ok = confidence_score >= 60
+    # Score each strike
+    option_scores = []
 
-    # Condition 2: Distance to levels (not in mid-zone)
-    distance_to_sup = current_price - support_level
-    distance_to_res = resistance_level - current_price
-    in_mid_zone = distance_to_sup > 50 and distance_to_res > 50
+    for strike in strikes_to_analyze:
+        # Get data for this strike from option chain
+        strike_data_ce = None
+        strike_data_pe = None
 
-    # Condition 3: Flow data available
-    flow_available = total_volume > 0
+        if option_chain and 'data' in option_chain:
+            for opt in option_chain['data']:
+                if opt.get('strikePrice') == strike:
+                    strike_data_ce = opt.get('CE', {})
+                    strike_data_pe = opt.get('PE', {})
+                    break
 
-    # Condition 4: Market session (not post-market)
-    from datetime import datetime
-    import pytz
-    ist = pytz.timezone('Asia/Kolkata')
-    current_time_check = datetime.now(ist)
-    is_market_hours = 9 <= current_time_check.hour < 16
+        # === CALL SCORING ===
+        ce_score = 0
+        ce_factors = {}
 
-    # Condition 5: Check if near-spot levels exist (within 50 pts)
-    has_nearby_support = distance_to_sup <= 50
-    has_nearby_resistance = distance_to_res <= 50
+        if strike_data_ce:
+            # Factor 1: OI Concentration (0-20 pts)
+            ce_oi = strike_data_ce.get('openInterest', 0)
+            if total_oi > 0:
+                oi_pct = (ce_oi / total_oi) * 100
+                ce_factors['OI %'] = f"{oi_pct:.2f}%"
+                if oi_pct > 5:
+                    ce_score += 20
+                elif oi_pct > 2:
+                    ce_score += 15
+                elif oi_pct > 1:
+                    ce_score += 10
+                else:
+                    ce_score += 5
 
-    # Master permission flags
-    allow_call_entry = confidence_ok and has_nearby_support and (flow_available or confidence_score >= 70) and is_market_hours
-    allow_put_entry = confidence_ok and has_nearby_resistance and (flow_available or confidence_score >= 70) and is_market_hours
+            # Factor 2: Liquidity (Bid-Ask Spread) (0-15 pts)
+            ce_bid = strike_data_ce.get('bidprice', 0)
+            ce_ask = strike_data_ce.get('askPrice', 0)
+            if ce_ask > 0:
+                spread_pct = ((ce_ask - ce_bid) / ce_ask) * 100
+                ce_factors['Spread'] = f"{spread_pct:.1f}%"
+                if spread_pct < 2:
+                    ce_score += 15
+                elif spread_pct < 5:
+                    ce_score += 10
+                else:
+                    ce_score += 5
 
-    # ===== REGIME-BASED RR (DYNAMIC) =====
-    # Adjust SL/Target based on market regime
-    if regime in ['TRENDING_UP', 'TRENDING_DOWN', 'STRONG_TRENDING_UP', 'STRONG_TRENDING_DOWN']:
-        sl_pct = 0.30  # 30% for trending
-        target_pct = 0.60  # 60% for trending
-        rr_mode = "BREAKOUT MODE"
-    elif regime in ['RANGING', 'CONSOLIDATING']:
-        sl_pct = 0.18  # 18% for ranging
-        target_pct = 0.30  # 30% for ranging
-        rr_mode = "RANGE SCALP MODE"
+            # Factor 3: Distance from ATM (0-15 pts) - closer is better for scalping
+            distance_from_atm = abs(strike - atm_strike_base)
+            ce_factors['ATM Dist'] = f"{distance_from_atm} pts"
+            if distance_from_atm == 0:
+                ce_score += 15
+            elif distance_from_atm <= 50:
+                ce_score += 12
+            elif distance_from_atm <= 100:
+                ce_score += 8
+            else:
+                ce_score += 3
+
+            # Factor 4: Max Pain Alignment (0-15 pts)
+            distance_from_max_pain = abs(strike - max_pain)
+            ce_factors['MaxPain Dist'] = f"{distance_from_max_pain} pts"
+            if distance_from_max_pain < 50:
+                ce_score += 15
+            elif distance_from_max_pain < 100:
+                ce_score += 10
+            else:
+                ce_score += 5
+
+            # Factor 5: ATM Bias Alignment (0-20 pts)
+            if strike < current_price and atm_bias_verdict == "PUT SELLERS":  # Bullish setup
+                ce_score += 20
+                ce_factors['Bias Align'] = "✓ Bullish"
+            elif strike >= current_price and atm_bias_verdict == "CALL SELLERS":  # Bearish, favor lower strikes
+                ce_score += 10
+                ce_factors['Bias Align'] = "~ Neutral"
+            else:
+                ce_factors['Bias Align'] = "✗ Against"
+
+            # Factor 6: Technical Trend Alignment (0-15 pts)
+            if regime in ['TRENDING_UP', 'STRONG_TRENDING_UP']:
+                if strike <= atm_strike_base:  # ATM or ITM calls in uptrend
+                    ce_score += 15
+                    ce_factors['Trend Align'] = "✓ With Trend"
+                else:
+                    ce_score += 5
+                    ce_factors['Trend Align'] = "~ Weak"
+            elif regime in ['TRENDING_DOWN', 'STRONG_TRENDING_DOWN']:
+                if strike > atm_strike_base:  # OTM calls in downtrend (premium selling)
+                    ce_score += 10
+                    ce_factors['Trend Align'] = "~ Counter"
+                else:
+                    ce_factors['Trend Align'] = "✗ Against"
+            else:
+                ce_score += 8
+                ce_factors['Trend Align'] = "~ Range"
+
+        # === PUT SCORING ===
+        pe_score = 0
+        pe_factors = {}
+
+        if strike_data_pe:
+            # Factor 1: OI Concentration (0-20 pts)
+            pe_oi = strike_data_pe.get('openInterest', 0)
+            if total_oi > 0:
+                oi_pct = (pe_oi / total_oi) * 100
+                pe_factors['OI %'] = f"{oi_pct:.2f}%"
+                if oi_pct > 5:
+                    pe_score += 20
+                elif oi_pct > 2:
+                    pe_score += 15
+                elif oi_pct > 1:
+                    pe_score += 10
+                else:
+                    pe_score += 5
+
+            # Factor 2: Liquidity (Bid-Ask Spread) (0-15 pts)
+            pe_bid = strike_data_pe.get('bidprice', 0)
+            pe_ask = strike_data_pe.get('askPrice', 0)
+            if pe_ask > 0:
+                spread_pct = ((pe_ask - pe_bid) / pe_ask) * 100
+                pe_factors['Spread'] = f"{spread_pct:.1f}%"
+                if spread_pct < 2:
+                    pe_score += 15
+                elif spread_pct < 5:
+                    pe_score += 10
+                else:
+                    pe_score += 5
+
+            # Factor 3: Distance from ATM (0-15 pts)
+            distance_from_atm = abs(strike - atm_strike_base)
+            pe_factors['ATM Dist'] = f"{distance_from_atm} pts"
+            if distance_from_atm == 0:
+                pe_score += 15
+            elif distance_from_atm <= 50:
+                pe_score += 12
+            elif distance_from_atm <= 100:
+                pe_score += 8
+            else:
+                pe_score += 3
+
+            # Factor 4: Max Pain Alignment (0-15 pts)
+            distance_from_max_pain = abs(strike - max_pain)
+            pe_factors['MaxPain Dist'] = f"{distance_from_max_pain} pts"
+            if distance_from_max_pain < 50:
+                pe_score += 15
+            elif distance_from_max_pain < 100:
+                pe_score += 10
+            else:
+                pe_score += 5
+
+            # Factor 5: ATM Bias Alignment (0-20 pts)
+            if strike > current_price and atm_bias_verdict == "CALL SELLERS":  # Bearish setup
+                pe_score += 20
+                pe_factors['Bias Align'] = "✓ Bearish"
+            elif strike <= current_price and atm_bias_verdict == "PUT SELLERS":  # Bullish, favor higher strikes
+                pe_score += 10
+                pe_factors['Bias Align'] = "~ Neutral"
+            else:
+                pe_factors['Bias Align'] = "✗ Against"
+
+            # Factor 6: Technical Trend Alignment (0-15 pts)
+            if regime in ['TRENDING_DOWN', 'STRONG_TRENDING_DOWN']:
+                if strike >= atm_strike_base:  # ATM or ITM puts in downtrend
+                    pe_score += 15
+                    pe_factors['Trend Align'] = "✓ With Trend"
+                else:
+                    pe_score += 5
+                    pe_factors['Trend Align'] = "~ Weak"
+            elif regime in ['TRENDING_UP', 'STRONG_TRENDING_UP']:
+                if strike < atm_strike_base:  # OTM puts in uptrend
+                    pe_score += 10
+                    pe_factors['Trend Align'] = "~ Counter"
+                else:
+                    pe_factors['Trend Align'] = "✗ Against"
+            else:
+                pe_score += 8
+                pe_factors['Trend Align'] = "~ Range"
+
+        # Store scores
+        if strike_data_ce:
+            option_scores.append({
+                'strike': strike,
+                'type': 'CE',
+                'score': ce_score,
+                'factors': ce_factors,
+                'premium': strike_data_ce.get('lastPrice', 0)
+            })
+
+        if strike_data_pe:
+            option_scores.append({
+                'strike': strike,
+                'type': 'PE',
+                'score': pe_score,
+                'factors': pe_factors,
+                'premium': strike_data_pe.get('lastPrice', 0)
+            })
+
+    # Sort by score (highest first)
+    option_scores = sorted(option_scores, key=lambda x: x['score'], reverse=True)
+
+    # Display top 5 options
+    st.markdown("**🏆 TOP 5 HIGHEST SCORING OPTIONS (Based on Multi-Factor Analysis)**")
+
+    for i, opt in enumerate(option_scores[:5], 1):
+        score_color = "success" if opt['score'] >= 70 else "warning" if opt['score'] >= 50 else "error"
+        score_label = "EXCELLENT" if opt['score'] >= 70 else "GOOD" if opt['score'] >= 50 else "WEAK"
+
+        # Create detailed breakdown
+        factors_text = "\n".join([f"   • {k}: {v}" for k, v in opt['factors'].items()])
+
+        if score_color == "success":
+            st.success(f"""
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+
+**Premium:** ₹{opt['premium']:.2f}
+
+**Score Breakdown:**
+{factors_text}
+            """)
+        elif score_color == "warning":
+            st.warning(f"""
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+
+**Premium:** ₹{opt['premium']:.2f}
+
+**Score Breakdown:**
+{factors_text}
+            """)
+        else:
+            st.info(f"""
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+
+**Premium:** ₹{opt['premium']:.2f}
+
+**Score Breakdown:**
+{factors_text}
+            """)
+
+    st.markdown("---")
+
+    # --- Entry Price Recommendations (INTRADAY/SCALPING) ---
+    st.markdown("### ⚡ INTRADAY/SCALPING Entry Recommendations (1-Hour Trades)")
+
+    # ===== USE INTRADAY NEAR-SPOT LEVELS (NOT POSITION LEVELS) =====
+    # Get nearest intraday support and resistance (within 30 pts)
+    intraday_support_levels = [l for l in intraday_levels if l['price'] < current_price] if intraday_levels else []
+    intraday_resistance_levels = [l for l in intraday_levels if l['price'] > current_price] if intraday_levels else []
+
+    # Use nearest intraday levels for scalping entries
+    if intraday_support_levels:
+        scalp_support = intraday_support_levels[0]['price']  # Nearest support
     else:
-        sl_pct = 0.25  # 25% default
-        target_pct = 0.45  # 45% default
-        rr_mode = "BALANCED MODE"
+        scalp_support = support_level  # Fallback to structural support
 
-    # Display RR mode
-    st.info(f"🎯 **Risk/Reward Mode:** {rr_mode} (SL: {sl_pct*100:.0f}% | Target: {target_pct*100:.0f}%)")
+    if intraday_resistance_levels:
+        scalp_resistance = intraday_resistance_levels[0]['price']  # Nearest resistance
+    else:
+        scalp_resistance = resistance_level  # Fallback to structural resistance
+
+    # ===== SCALPING RR (TIGHTER THAN POSITION TRADES) =====
+    # Scalping uses tighter stops and targets
+    scalp_sl_pct = 0.10  # 10% stop for scalping
+    scalp_target_pct = 0.20  # 20% target for scalping
+
+    # Display scalping parameters
+    st.info(f"""
+**📊 Scalping Parameters:**
+**Stop Loss:** {scalp_sl_pct*100:.0f}% | **Target:** {scalp_target_pct*100:.0f}%
+**Timeframe:** 1-Hour | **Style:** Quick In-Out
+**Nearest Support:** ₹{scalp_support:,.0f} | **Nearest Resistance:** ₹{scalp_resistance:,.0f}
+    """)
 
     # Helper function to get option premium from chain
     def get_option_premium(chain: Dict, strike: int, option_type: str) -> float:
@@ -856,159 +1094,167 @@ def display_final_assessment(
     col1, col2 = st.columns(2)
 
     with col1:
-        # CALL Entry (at support) - using current_price not support for strike
+        # CALL Entry (SCALP at nearest intraday support)
         call_strike = round(current_price / 50) * 50  # ATM strike based on spot
         call_premium = get_option_premium(option_chain, call_strike, 'CE') if option_chain else 0.0
 
         # Use real premium if available, otherwise estimate
         if call_premium > 0:
             call_entry_estimate = call_premium
-            call_sl = call_premium * (1 - sl_pct)  # Dynamic SL
-            call_target = call_premium * (1 + target_pct)  # Dynamic Target
+            call_sl = call_premium * (1 - scalp_sl_pct)  # 10% SL for scalping
+            call_target = call_premium * (1 + scalp_target_pct)  # 20% target for scalping
         else:
             # Estimate based on distance from spot
             distance = abs(call_strike - current_price)
-            call_entry_estimate = max(50, 300 - (distance / 10))
-            call_sl = call_entry_estimate * (1 - sl_pct)
-            call_target = call_entry_estimate * (1 + target_pct)
+            call_entry_estimate = max(50, 250 - (distance / 10))
+            call_sl = call_entry_estimate * (1 - scalp_sl_pct)
+            call_target = call_entry_estimate * (1 + scalp_target_pct)
 
-        # Calculate INTELLIGENT trigger zones using market data
-        # Use orderbook pressure and distance to support for dynamic buffer
-        orderbook_pressure_val = market_depth.get('pressure', 0) if market_depth else 0
-        distance_to_support = current_price - support_level
+        # Calculate distance to INTRADAY support
+        distance_to_scalp_support = current_price - scalp_support
 
-        # Dynamic buffer: closer support = tighter buffer, strong selling pressure = wider buffer
-        base_buffer = min(50, distance_to_support * 0.15)  # 15% of distance, max 50 points
-        pressure_adjustment = abs(orderbook_pressure_val) * 10 if orderbook_pressure_val < 0 else 0  # Add buffer if selling pressure
+        # Entry trigger zone (tight for scalping - 5-10 pts buffer)
+        scalp_support_trigger_low = int(scalp_support - 5)
+        scalp_support_trigger_high = int(scalp_support + 5)
 
-        support_trigger_low = int(support_level - (base_buffer + pressure_adjustment))
-        support_trigger_high = int(support_level - (base_buffer * 0.5))
-
-        # Calculate distance to entry
-        call_entry_distance = distance_to_support
-
-        # ===== CONDITIONAL DISPLAY: CALL ENTRY =====
-        if not allow_call_entry:
-            # Show why entry is disabled
-            st.error("🔒 **CALL ENTRY DISABLED**")
-
-            reasons = []
-            if confidence_score < 60:
-                reasons.append(f"❌ Low confidence ({confidence_score:.0f}/100 < 60)")
-            if not has_nearby_support:
-                reasons.append(f"❌ No nearby support (Support {distance_to_sup:.0f} pts away > 50)")
-            if not flow_available:
-                reasons.append("❌ Flow data unavailable")
-            if not is_market_hours:
-                reasons.append("❌ Market closed")
-
-            for reason in reasons:
-                st.caption(reason)
-
-            st.caption("💡 Entries will activate when conditions improve")
-        else:
-            # Check distance to entry
-            if call_entry_distance > 50:
-                st.warning(f"""
-🟡 **CALL Entry (PENDING)**
-
-**Support:** ₹{support_level:,.0f}
-**Distance:** {call_entry_distance:.0f} pts away ⚠️
-**Status:** NOT ACTIONABLE (too far)
-
-💡 Wait for price to approach support (<50 pts)
-                """)
-            else:
-                # Entry is ACTIVE and NEAR
-                st.success(f"""
-**🟢 CALL Entry (ACTIVE)**
+        # ===== ALWAYS SHOW CALL SCALP ENTRY =====
+        st.success(f"""
+**🟢 CALL Scalp Entry (Intraday Support)**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {call_strike} CE (ATM)
 **Entry Price:** ₹{call_entry_estimate:.2f}
-**Stop Loss:** ₹{call_sl:.2f} (-{sl_pct*100:.0f}%)
-**Target:** ₹{call_target:.2f} (+{target_pct*100:.0f}%)
-**Support Zone:** ₹{support_level:,.0f}
-**Distance to Entry:** {call_entry_distance:.0f} pts ✅
-**Trigger:** Price dips to ₹{support_trigger_low:,.0f}-{support_trigger_high:,.0f} and bounces back
-                """)
+**Stop Loss:** ₹{call_sl:.2f} (-{scalp_sl_pct*100:.0f}%) **[TIGHT]**
+**Target:** ₹{call_target:.2f} (+{scalp_target_pct*100:.0f}%) **[QUICK]**
+**Intraday Support:** ₹{scalp_support:,.0f}
+**Distance:** {distance_to_scalp_support:.0f} pts away
+**Entry Zone:** ₹{scalp_support_trigger_low:,.0f}-{scalp_support_trigger_high:,.0f}
+**Timeframe:** 1-Hour Scalp
+        """)
 
     with col2:
-        # PUT Entry (at resistance) - using current_price not resistance for strike
+        # PUT Entry (SCALP at nearest intraday resistance)
         put_strike = round(current_price / 50) * 50  # ATM strike based on spot
         put_premium = get_option_premium(option_chain, put_strike, 'PE') if option_chain else 0.0
 
         # Use real premium if available, otherwise estimate
         if put_premium > 0:
             put_entry_estimate = put_premium
-            put_sl = put_premium * (1 - sl_pct)  # Dynamic SL
-            put_target = put_premium * (1 + target_pct)  # Dynamic Target
+            put_sl = put_premium * (1 - scalp_sl_pct)  # 10% SL for scalping
+            put_target = put_premium * (1 + scalp_target_pct)  # 20% target for scalping
         else:
             # Estimate based on distance from spot
             distance = abs(put_strike - current_price)
-            put_entry_estimate = max(50, 300 - (distance / 10))
-            put_sl = put_entry_estimate * (1 - sl_pct)
-            put_target = put_entry_estimate * (1 + target_pct)
+            put_entry_estimate = max(50, 250 - (distance / 10))
+            put_sl = put_entry_estimate * (1 - scalp_sl_pct)
+            put_target = put_entry_estimate * (1 + scalp_target_pct)
 
-        # Calculate INTELLIGENT trigger zones using market data
-        # Use orderbook pressure and distance to resistance for dynamic buffer
-        distance_to_resistance_calc = resistance_level - current_price
+        # Calculate distance to INTRADAY resistance
+        distance_to_scalp_resistance = scalp_resistance - current_price
 
-        # Dynamic buffer: closer resistance = tighter buffer, strong buying pressure = wider buffer
-        base_buffer_res = min(50, distance_to_resistance_calc * 0.15)  # 15% of distance, max 50 points
-        pressure_adjustment_res = abs(orderbook_pressure_val) * 10 if orderbook_pressure_val > 0 else 0  # Add buffer if buying pressure
+        # Entry trigger zone (tight for scalping - 5-10 pts buffer)
+        scalp_resistance_trigger_low = int(scalp_resistance - 5)
+        scalp_resistance_trigger_high = int(scalp_resistance + 5)
 
-        resistance_trigger_low = int(resistance_level + (base_buffer_res * 0.5))
-        resistance_trigger_high = int(resistance_level + (base_buffer_res + pressure_adjustment_res))
-
-        # Calculate distance to entry
-        put_entry_distance = distance_to_res
-
-        # ===== CONDITIONAL DISPLAY: PUT ENTRY =====
-        if not allow_put_entry:
-            # Show why entry is disabled
-            st.error("🔒 **PUT ENTRY DISABLED**")
-
-            reasons = []
-            if confidence_score < 60:
-                reasons.append(f"❌ Low confidence ({confidence_score:.0f}/100 < 60)")
-            if not has_nearby_resistance:
-                reasons.append(f"❌ No nearby resistance (Resistance {distance_to_res:.0f} pts away > 50)")
-            if not flow_available:
-                reasons.append("❌ Flow data unavailable")
-            if not is_market_hours:
-                reasons.append("❌ Market closed")
-
-            for reason in reasons:
-                st.caption(reason)
-
-            st.caption("💡 Entries will activate when conditions improve")
-        else:
-            # Check distance to entry
-            if put_entry_distance > 50:
-                st.warning(f"""
-🟡 **PUT Entry (PENDING)**
-
-**Resistance:** ₹{resistance_level:,.0f}
-**Distance:** {put_entry_distance:.0f} pts away ⚠️
-**Status:** NOT ACTIONABLE (too far)
-
-💡 Wait for price to approach resistance (<50 pts)
-                """)
-            else:
-                # Entry is ACTIVE and NEAR
-                st.error(f"""
-**🔴 PUT Entry (ACTIVE)**
+        # ===== ALWAYS SHOW PUT SCALP ENTRY =====
+        st.error(f"""
+**🔴 PUT Scalp Entry (Intraday Resistance)**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {put_strike} PE (ATM)
 **Entry Price:** ₹{put_entry_estimate:.2f}
-**Stop Loss:** ₹{put_sl:.2f} (-{sl_pct*100:.0f}%)
-**Target:** ₹{put_target:.2f} (+{target_pct*100:.0f}%)
-**Resistance Zone:** ₹{resistance_level:,.0f}
-**Distance to Entry:** {put_entry_distance:.0f} pts ✅
-**Trigger:** Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
-                """)
+**Stop Loss:** ₹{put_sl:.2f} (-{scalp_sl_pct*100:.0f}%) **[TIGHT]**
+**Target:** ₹{put_target:.2f} (+{scalp_target_pct*100:.0f}%) **[QUICK]**
+**Intraday Resistance:** ₹{scalp_resistance:,.0f}
+**Distance:** {distance_to_scalp_resistance:.0f} pts away
+**Entry Zone:** ₹{scalp_resistance_trigger_low:,.0f}-{scalp_resistance_trigger_high:,.0f}
+**Timeframe:** 1-Hour Scalp
+        """)
+
+    st.markdown("---")
+
+    # --- POSITION TRADE Entry Recommendations (SWING/MULTI-DAY) ---
+    st.markdown("### 📈 POSITION TRADE Entry Recommendations (Swing/Multi-Day)")
+
+    # ===== POSITION TRADE RR (WIDER STOPS AND TARGETS) =====
+    position_sl_pct = 0.25  # 25% stop for position
+    position_target_pct = 0.70  # 70% target for position
+
+    # Display position parameters
+    st.info(f"""
+**📊 Position Trade Parameters:**
+**Stop Loss:** {position_sl_pct*100:.0f}% | **Target:** {position_target_pct*100:.0f}%
+**Timeframe:** Multi-Day/Week | **Style:** Swing Trade
+**Structural Support:** ₹{support_level:,.0f} | **Structural Resistance:** ₹{resistance_level:,.0f}
+    """)
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        # CALL Entry (POSITION at structural support)
+        call_strike_pos = round(current_price / 50) * 50
+        call_premium_pos = get_option_premium(option_chain, call_strike_pos, 'CE') if option_chain else 0.0
+
+        if call_premium_pos > 0:
+            call_entry_pos = call_premium_pos
+            call_sl_pos = call_premium_pos * (1 - position_sl_pct)
+            call_target_pos = call_premium_pos * (1 + position_target_pct)
+        else:
+            distance_pos = abs(call_strike_pos - current_price)
+            call_entry_pos = max(50, 300 - (distance_pos / 10))
+            call_sl_pos = call_entry_pos * (1 - position_sl_pct)
+            call_target_pos = call_entry_pos * (1 + position_target_pct)
+
+        distance_to_position_support = current_price - support_level
+        position_support_trigger_low = int(support_level - 30)
+        position_support_trigger_high = int(support_level + 10)
+
+        st.success(f"""
+**🟢 CALL Position Entry (Structural Support)**
+
+**Spot Price:** ₹{current_price:,.2f}
+**Strike:** {call_strike_pos} CE (ATM)
+**Entry Price:** ₹{call_entry_pos:.2f}
+**Stop Loss:** ₹{call_sl_pos:.2f} (-{position_sl_pct*100:.0f}%) **[WIDE]**
+**Target:** ₹{call_target_pos:.2f} (+{position_target_pct*100:.0f}%) **[BIG MOVE]**
+**Structural Support:** ₹{support_level:,.0f}
+**Distance:** {distance_to_position_support:.0f} pts away
+**Entry Zone:** ₹{position_support_trigger_low:,.0f}-{position_support_trigger_high:,.0f}
+**Timeframe:** Multi-Day Swing
+        """)
+
+    with col4:
+        # PUT Entry (POSITION at structural resistance)
+        put_strike_pos = round(current_price / 50) * 50
+        put_premium_pos = get_option_premium(option_chain, put_strike_pos, 'PE') if option_chain else 0.0
+
+        if put_premium_pos > 0:
+            put_entry_pos = put_premium_pos
+            put_sl_pos = put_premium_pos * (1 - position_sl_pct)
+            put_target_pos = put_premium_pos * (1 + position_target_pct)
+        else:
+            distance_pos = abs(put_strike_pos - current_price)
+            put_entry_pos = max(50, 300 - (distance_pos / 10))
+            put_sl_pos = put_entry_pos * (1 - position_sl_pct)
+            put_target_pos = put_entry_pos * (1 + position_target_pct)
+
+        distance_to_position_resistance = resistance_level - current_price
+        position_resistance_trigger_low = int(resistance_level - 10)
+        position_resistance_trigger_high = int(resistance_level + 30)
+
+        st.error(f"""
+**🔴 PUT Position Entry (Structural Resistance)**
+
+**Spot Price:** ₹{current_price:,.2f}
+**Strike:** {put_strike_pos} PE (ATM)
+**Entry Price:** ₹{put_entry_pos:.2f}
+**Stop Loss:** ₹{put_sl_pos:.2f} (-{position_sl_pct*100:.0f}%) **[WIDE]**
+**Target:** ₹{put_target_pos:.2f} (+{position_target_pct*100:.0f}%) **[BIG MOVE]**
+**Structural Resistance:** ₹{resistance_level:,.0f}
+**Distance:** {distance_to_position_resistance:.0f} pts away
+**Entry Zone:** ₹{position_resistance_trigger_low:,.0f}-{position_resistance_trigger_high:,.0f}
+**Timeframe:** Multi-Day Swing
+        """)
 
     # --- WHAT NOT TO DO (Elite-level UX) ---
     st.markdown("---")
