@@ -1076,6 +1076,124 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
+    # AI TRADING SIGNAL - PHASE 4 INTEGRATION
+    # ═══════════════════════════════════════════════════════════════════
+
+    st.markdown("## 🎯 AI Trading Signal")
+
+    try:
+        from signal_display_integration import (
+            generate_trading_signal,
+            display_signal_card,
+            display_signal_history,
+            display_telegram_stats,
+            display_final_assessment
+        )
+
+        # Get all required data for signal generation
+        if 'bias_analysis_results' in st.session_state:
+            bias_analysis = st.session_state.bias_analysis_results
+            df = bias_analysis.get('df')
+            bias_results = bias_analysis.get('bias_results')
+        else:
+            df = None
+            bias_results = None
+
+        # Get other data from session state
+        option_chain = st.session_state.get('overall_option_data', {}).get('NIFTY', {})
+        volatility_result = st.session_state.get('volatility_regime_result')
+        oi_trap_result = st.session_state.get('oi_trap_result')
+        cvd_result = st.session_state.get('cvd_result')
+        participant_result = st.session_state.get('participant_result')
+        liquidity_result = st.session_state.get('liquidity_result')
+        ml_regime_result = st.session_state.get('ml_regime_result')
+        money_flow_signals = st.session_state.get('money_flow_signals')
+        deltaflow_signals = st.session_state.get('deltaflow_signals')
+        enhanced_market_data = st.session_state.get('enhanced_market_data')
+        nifty_screener_data = st.session_state.get('nifty_option_screener_data')
+
+        # Get current price and ATM strike
+        current_price = 0.0
+        atm_strike = None
+        if df is not None and len(df) > 0:
+            current_price = df['close'].iloc[-1]
+            atm_strike = round(current_price / 50) * 50  # Round to nearest 50
+
+        # Calculate sentiment score
+        sentiment_score = result.get('overall_score', 0.0)
+
+        # Display FINAL ASSESSMENT first
+        if nifty_screener_data or enhanced_market_data:
+            display_final_assessment(
+                nifty_screener_data=nifty_screener_data,
+                enhanced_market_data=enhanced_market_data,
+                ml_regime_result=ml_regime_result,
+                liquidity_result=liquidity_result,
+                current_price=current_price if current_price > 0 else 24500,
+                atm_strike=atm_strike if atm_strike else 24500
+            )
+
+        # Generate signal if we have data
+        if df is not None and len(df) > 10:
+            with st.spinner("🤖 Generating AI trading signal..."):
+                signal = generate_trading_signal(
+                    df=df,
+                    bias_results=bias_results,
+                    option_chain=option_chain,
+                    volatility_result=volatility_result,
+                    oi_trap_result=oi_trap_result,
+                    cvd_result=cvd_result,
+                    participant_result=participant_result,
+                    liquidity_result=liquidity_result,
+                    ml_regime_result=ml_regime_result,
+                    sentiment_score=sentiment_score,
+                    option_screener_data=None,  # Will be extracted from nifty_screener_data
+                    money_flow_signals=money_flow_signals,
+                    deltaflow_signals=deltaflow_signals,
+                    overall_sentiment_data=result,
+                    enhanced_market_data=enhanced_market_data,
+                    nifty_screener_data=nifty_screener_data,
+                    current_price=current_price,
+                    atm_strike=atm_strike
+                )
+
+                if signal:
+                    # Display signal card
+                    display_signal_card(signal)
+
+                    # Auto-create Active Signal entry if ENTRY signal
+                    if signal.signal_type == "ENTRY" and 'signal_manager' in st.session_state:
+                        from signal_display_integration import create_active_signal_from_trading_signal
+
+                        # Check if already auto-created
+                        if not hasattr(signal, '_auto_created'):
+                            signal_id = create_active_signal_from_trading_signal(
+                                signal,
+                                st.session_state.signal_manager
+                            )
+                            if signal_id:
+                                st.success(f"✅ Auto-created Active Signal! View in Active Signals tab (ID: {signal_id[:20]}...)")
+                                signal._auto_created = True  # Mark to prevent duplicate creation
+
+                    # Show signal history in expander
+                    with st.expander("📊 Signal History & Statistics"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            display_signal_history()
+                        with col2:
+                            display_telegram_stats()
+                else:
+                    st.warning("⚠️ Unable to generate signal. Insufficient data.")
+        else:
+            st.info("💡 Signal generation requires bias analysis data. Run 'Re-run All Analyses' to enable signal generation.")
+
+    except Exception as e:
+        st.error(f"❌ Signal generation error: {e}")
+        st.caption("Signal system requires all indicator data to be loaded. Please ensure all analyses have completed successfully.")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
     # BIAS METRICS SUMMARY - NEW SECTION
     # ═══════════════════════════════════════════════════════════════════
 
