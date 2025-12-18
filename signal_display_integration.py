@@ -190,11 +190,13 @@ def display_final_assessment(
     moment_score = moment_data.get('total_score', 0)
     orderbook_pressure = market_depth.get('pressure', 'NEUTRAL')
 
-    # Get OI/PCR metrics
-    pcr_value = oi_pcr_data.get('pcr', 0.9)
-    call_oi = oi_pcr_data.get('total_call_oi', 0)
-    put_oi = oi_pcr_data.get('total_put_oi', 0)
-    atm_concentration = oi_pcr_data.get('atm_concentration_pct', 0)
+    # Get OI/PCR metrics (fixed key names from Tab 8)
+    pcr_value = oi_pcr_data.get('pcr_total', 0.9)  # Correct key: pcr_total
+    call_oi = oi_pcr_data.get('total_ce_oi', 0)  # Correct key: total_ce_oi
+    put_oi = oi_pcr_data.get('total_pe_oi', 0)  # Correct key: total_pe_oi
+    atm_total_oi = oi_pcr_data.get('atm_total_oi', 0)
+    total_oi = call_oi + put_oi
+    atm_concentration = (atm_total_oi / total_oi * 100) if total_oi > 0 else 0
 
     # Determine PCR interpretation
     if pcr_value > 1.2:
@@ -242,16 +244,22 @@ def display_final_assessment(
             if valid_resistances:
                 resistance_level = min(valid_resistances)
 
-    # Get Max OI Walls
+    # Get Max OI Walls (fixed key names from Tab 8)
     max_call_strike = atm_strike + 500
     max_put_strike = atm_strike - 500
-    if oi_pcr_data.get('max_call_oi_strike'):
-        max_call_strike = oi_pcr_data['max_call_oi_strike']
-    if oi_pcr_data.get('max_put_oi_strike'):
-        max_put_strike = oi_pcr_data['max_put_oi_strike']
+    if oi_pcr_data.get('max_ce_strike'):  # Correct key: max_ce_strike
+        max_call_strike = oi_pcr_data['max_ce_strike']
+    if oi_pcr_data.get('max_pe_strike'):  # Correct key: max_pe_strike
+        max_put_strike = oi_pcr_data['max_pe_strike']
 
-    # Get Max Pain
-    max_pain = oi_pcr_data.get('max_pain', atm_strike)
+    # Get Max Pain (check if seller_max_pain exists in nifty_screener_data)
+    max_pain = atm_strike
+    if nifty_screener_data and 'seller_max_pain' in nifty_screener_data:
+        seller_max_pain_data = nifty_screener_data['seller_max_pain']
+        if isinstance(seller_max_pain_data, dict):
+            max_pain = seller_max_pain_data.get('max_pain_strike', atm_strike)
+        elif isinstance(seller_max_pain_data, (int, float)):
+            max_pain = seller_max_pain_data
 
     # --- Market Makers Narrative ---
     if atm_bias_verdict == "CALL SELLERS":
@@ -284,6 +292,109 @@ def display_final_assessment(
             st.info(f"**🔵 Preferred price level:**\n\n₹{max_pain:,} (Max Pain)")
             st.warning(f"**🟡 Regime (Advanced Chart Analysis):**\n\n{regime}")
             st.success(f"**🟢 Sector Rotation Analysis:**\n\n{sector_bias} bias detected")
+
+    # --- Comprehensive Liquidity & Support/Resistance Levels ---
+    st.markdown("### 📊 Comprehensive Liquidity Analysis")
+
+    # Extract all available S/R levels from different sources
+    liquidity_levels = []
+
+    # From liquidity zones (Advanced Chart Analysis)
+    if liquidity_result:
+        if hasattr(liquidity_result, 'support_zones'):
+            for level in liquidity_result.support_zones:
+                if isinstance(level, (int, float)):
+                    liquidity_levels.append({
+                        'price': level,
+                        'type': 'Support',
+                        'strength': 'Major' if abs(level - current_price) > 100 else 'Minor',
+                        'source': 'Liquidity Zone'
+                    })
+        if hasattr(liquidity_result, 'resistance_zones'):
+            for level in liquidity_result.resistance_zones:
+                if isinstance(level, (int, float)):
+                    liquidity_levels.append({
+                        'price': level,
+                        'type': 'Resistance',
+                        'strength': 'Major' if abs(level - current_price) > 100 else 'Minor',
+                        'source': 'Liquidity Zone'
+                    })
+
+    # From OI data (Max OI walls)
+    if max_call_strike != atm_strike + 500:  # Not default value
+        liquidity_levels.append({
+            'price': max_call_strike,
+            'type': 'Resistance',
+            'strength': 'Major',
+            'source': 'Max CALL OI Wall'
+        })
+    if max_put_strike != atm_strike - 500:  # Not default value
+        liquidity_levels.append({
+            'price': max_put_strike,
+            'type': 'Support',
+            'strength': 'Major',
+            'source': 'Max PUT OI Wall'
+        })
+
+    # Add current support/resistance
+    liquidity_levels.append({
+        'price': support_level,
+        'type': 'Support',
+        'strength': 'Key',
+        'source': 'Nearest Support'
+    })
+    liquidity_levels.append({
+        'price': resistance_level,
+        'type': 'Resistance',
+        'strength': 'Key',
+        'source': 'Nearest Resistance'
+    })
+
+    # Add Max Pain
+    liquidity_levels.append({
+        'price': max_pain,
+        'type': 'Magnet',
+        'strength': 'Critical',
+        'source': 'Max Pain'
+    })
+
+    # Sort by price
+    liquidity_levels = sorted(liquidity_levels, key=lambda x: x['price'])
+
+    # Separate into above and below current price
+    levels_below = [l for l in liquidity_levels if l['price'] < current_price]
+    levels_above = [l for l in liquidity_levels if l['price'] > current_price]
+
+    # Display in two columns
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**🔽 Levels BELOW Current Price**")
+        if levels_below:
+            # Show closest 5 levels
+            closest_below = sorted(levels_below, key=lambda x: x['price'], reverse=True)[:5]
+            for level in closest_below:
+                distance = current_price - level['price']
+                color = "🔴" if level['type'] == 'Support' else "🔵" if level['type'] == 'Magnet' else "⚪"
+                st.text(f"{color} ₹{level['price']:,.0f} ({level['strength']} {level['type']})")
+                st.caption(f"   -{distance:.0f} pts | {level['source']}")
+        else:
+            st.caption("No significant levels below")
+
+    with col2:
+        st.markdown("**🔼 Levels ABOVE Current Price**")
+        if levels_above:
+            # Show closest 5 levels
+            closest_above = sorted(levels_above, key=lambda x: x['price'])[:5]
+            for level in closest_above:
+                distance = level['price'] - current_price
+                color = "🟢" if level['type'] == 'Resistance' else "🔵" if level['type'] == 'Magnet' else "⚪"
+                st.text(f"{color} ₹{level['price']:,.0f} ({level['strength']} {level['type']})")
+                st.caption(f"   +{distance:.0f} pts | {level['source']}")
+        else:
+            st.caption("No significant levels above")
+
+    st.markdown("---")
 
     # --- Entry Price Recommendations ---
     st.markdown("### 🎯 Entry Price Recommendations")
