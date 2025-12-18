@@ -383,6 +383,10 @@ def display_final_assessment(
             call_sl = call_entry_estimate * 0.70
             call_target = call_entry_estimate * 1.60
 
+        # Calculate realistic trigger zones (price overshoots support/resistance by 20-30 points)
+        support_trigger_low = support_level - 30  # Dips 30 points below support
+        support_trigger_high = support_level - 10  # But stays above this
+
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, #1a5f1a 0%, #0d3d0d 100%);
                     border-radius: 12px; padding: 20px; border-left: 4px solid #00ff88;'>
@@ -393,7 +397,8 @@ def display_final_assessment(
                 <strong>Entry Price:</strong> ₹{call_entry_estimate:.2f}<br>
                 <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{call_sl:.2f}</span> (-30%)<br>
                 <strong>Target:</strong> <span style='color: #00ff88;'>₹{call_target:.2f}</span> (+60%)<br>
-                <strong>Trigger:</strong> Price holds above Support ₹{support_level:,.0f}
+                <strong>Support Zone:</strong> ₹{support_level:,.0f}<br>
+                <strong>Trigger:</strong> Price dips to ₹{support_trigger_low:,.0f}-{support_trigger_high:,.0f} and bounces back
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -415,6 +420,10 @@ def display_final_assessment(
             put_sl = put_entry_estimate * 0.70
             put_target = put_entry_estimate * 1.60
 
+        # Calculate realistic trigger zones (price overshoots resistance by 20-30 points)
+        resistance_trigger_low = resistance_level + 10  # Rises 10 points above resistance
+        resistance_trigger_high = resistance_level + 30  # Up to 30 points above
+
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, #5f1a1a 0%, #3d0d0d 100%);
                     border-radius: 12px; padding: 20px; border-left: 4px solid #ff4444;'>
@@ -425,7 +434,8 @@ def display_final_assessment(
                 <strong>Entry Price:</strong> ₹{put_entry_estimate:.2f}<br>
                 <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{put_sl:.2f}</span> (-30%)<br>
                 <strong>Target:</strong> <span style='color: #00ff88;'>₹{put_target:.2f}</span> (+60%)<br>
-                <strong>Trigger:</strong> Price rejects at Resistance ₹{resistance_level:,.0f}
+                <strong>Resistance Zone:</strong> ₹{resistance_level:,.0f}<br>
+                <strong>Trigger:</strong> Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
             </p>
         </div>
         """, unsafe_allow_html=True)
