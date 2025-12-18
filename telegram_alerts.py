@@ -1,0 +1,430 @@
+import requests
+import os
+import aiohttp
+import html
+import streamlit as st
+from config import get_telegram_credentials, IST, get_current_time_ist
+from datetime import datetime
+from typing import Dict, Any, Optional
+
+class TelegramBot:
+    def __init__(self):
+        """Initialize Telegram bot"""
+        creds = get_telegram_credentials()
+        self.enabled = creds['enabled']
+        
+        if self.enabled:
+            self.bot_token = creds['bot_token']
+            self.chat_id = creds['chat_id']
+            self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
+    
+    def send_message(self, message: str, parse_mode: str = "HTML"):
+        """Send Telegram message"""
+        if not self.enabled:
+            return False
+        
+        try:
+            url = f"{self.base_url}/sendMessage"
+            payload = {
+                "chat_id": self.chat_id,
+                "text": message,
+                "parse_mode": parse_mode
+            }
+            response = requests.post(url, json=payload, timeout=5)
+            return response.status_code == 200
+        except:
+            return False
+    
+    async def send_message_async(self, message: str, parse_mode: str = "HTML"):
+        """Send Telegram message asynchronously"""
+        if not self.enabled:
+            return False
+        
+        try:
+            url = f"{self.base_url}/sendMessage"
+            payload = {
+                "chat_id": self.chat_id,
+                "text": message,
+                "parse_mode": parse_mode
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=10) as response:
+                    return response.status == 200
+        except:
+            return False
+    
+    def send_signal_ready(self, setup: dict):
+        """Send signal ready alert"""
+        message = f"""
+🎯 <b>SIGNAL READY - 3/3 Received</b>
+
+<b>Index:</b> {setup['index']}
+<b>Direction:</b> {setup['direction']}
+
+<b>VOB Support:</b> {setup['vob_support']}
+<b>VOB Resistance:</b> {setup['vob_resistance']}
+
+<b>Status:</b> ✅ Ready to Trade
+<b>Time (IST):</b> {get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')}
+
+📱 Open app to execute trade
+        """
+        return self.send_message(message.strip())
+    
+    def send_vob_touch_alert(self, setup: dict, current_price: float):
+        """Send VOB touch alert"""
+        vob_level = setup['vob_support'] if setup['direction'] == 'CALL' else setup['vob_resistance']
+        vob_type = "Support" if setup['direction'] == 'CALL' else "Resistance"
+        
+        message = f"""
+🔥 <b>VOB TOUCHED - ENTRY SIGNAL!</b>
+
+<b>Index:</b> {setup['index']}
+<b>Direction:</b> {setup['direction']}
+
+<b>Current Price:</b> {current_price}
+<b>VOB {vob_type}:</b> {vob_level}
+
+<b>Status:</b> 🚀 Ready to Execute
+<b>Time (IST):</b> {get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')}
+
+⚡ Execute trade NOW!
+        """
+        return self.send_message(message.strip())
+    
+    def send_order_placed(self, setup: dict, order_id: str, strike: int, 
+                         sl: float, target: float):
+        """Send order placed confirmation"""
+        message = f"""
+✅ <b>ORDER PLACED SUCCESSFULLY</b>
+
+<b>Order ID:</b> {order_id}
+
+<b>Index:</b> {setup['index']}
+<b>Direction:</b> {setup['direction']}
+<b>Strike:</b> {strike}
+
+<b>Stop Loss:</b> {sl}
+<b>Target:</b> {target}
+
+<b>Time (IST):</b> {get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')}
+
+📊 Monitor position in app
+        """
+        return self.send_message(message.strip())
+    
+    def send_order_failed(self, setup: dict, error: str):
+        """Send order failure alert"""
+        message = f"""
+❌ <b>ORDER PLACEMENT FAILED</b>
+
+<b>Index:</b> {setup['index']}
+<b>Direction:</b> {setup['direction']}
+
+<b>Error:</b> {error}
+
+<b>Time (IST):</b> {get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')}
+
+⚠️ Check app for details
+        """
+        return self.send_message(message.strip())
+    
+    def send_position_exit(self, order_id: str, pnl: float):
+        """Send position exit alert"""
+        pnl_emoji = "💰" if pnl > 0 else "📉"
+        message = f"""
+{pnl_emoji} <b>POSITION EXITED</b>
+
+<b>Order ID:</b> {order_id}
+<b>P&L:</b> ₹{pnl:,.2f}
+
+<b>Time (IST):</b> {get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')}
+        """
+        return self.send_message(message.strip())
+
+    def send_vob_entry_signal(self, signal: dict):
+        """Send VOB-based entry signal alert"""
+        signal_emoji = "🟢" if signal['direction'] == 'CALL' else "🔴"
+        direction_label = "BULLISH" if signal['direction'] == 'CALL' else "BEARISH"
+
+        message = f"""
+{signal_emoji} <b>VOB ENTRY SIGNAL - {direction_label}</b>
+
+<b>Index:</b> {signal['index']}
+<b>Direction:</b> {signal['direction']}
+<b>Market Sentiment:</b> {signal['market_sentiment']}
+
+💰 <b>ENTRY LEVELS</b>
+<b>Entry Price:</b> {signal['entry_price']}
+<b>Stop Loss:</b> {signal['stop_loss']}
+<b>Target:</b> {signal['target']}
+<b>Risk:Reward:</b> {signal['risk_reward']}
+
+📊 <b>VOB DETAILS</b>
+<b>VOB Level:</b> {signal['vob_level']}
+<b>Distance from VOB:</b> {signal['distance_from_vob']} points
+<b>VOB Volume:</b> {signal['vob_volume']:,.0f}
+
+<b>Time:</b> {signal['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
+
+⚡ <b>Execute trade NOW!</b>
+        """
+        return self.send_message(message.strip())
+
+    def send_htf_sr_entry_signal(self, signal: dict):
+        """Send HTF Support/Resistance entry signal alert"""
+        signal_emoji = "🟢" if signal['direction'] == 'CALL' else "🔴"
+        direction_label = "BULLISH" if signal['direction'] == 'CALL' else "BEARISH"
+
+        # Format timeframe for display
+        timeframe_display = {
+            '5T': '5 Min',
+            '10T': '10 Min',
+            '15T': '15 Min'
+        }.get(signal.get('timeframe', ''), signal.get('timeframe', 'N/A'))
+
+        # Determine if it's support or resistance signal
+        if signal['direction'] == 'CALL':
+            level_type = "Support"
+            level_value = signal['support_level']
+        else:
+            level_type = "Resistance"
+            level_value = signal['resistance_level']
+
+        message = f"""
+{signal_emoji} <b>HTF S/R ENTRY SIGNAL - {direction_label}</b>
+
+<b>Index:</b> {signal['index']}
+<b>Direction:</b> {signal['direction']}
+<b>Market Sentiment:</b> {signal['market_sentiment']}
+
+💰 <b>ENTRY LEVELS</b>
+<b>Entry Price:</b> {signal['entry_price']}
+<b>Stop Loss:</b> {signal['stop_loss']}
+<b>Target:</b> {signal['target']}
+<b>Risk:Reward:</b> {signal['risk_reward']}
+
+📊 <b>HTF S/R DETAILS</b>
+<b>Timeframe:</b> {timeframe_display}
+<b>{level_type} Level:</b> {level_value}
+<b>Distance from Level:</b> {signal['distance_from_level']} points
+
+<b>Time:</b> {signal['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
+
+⚡ <b>Execute trade NOW!</b>
+        """
+        return self.send_message(message.strip())
+
+    def send_vob_status_summary(self, nifty_data: dict, sensex_data: dict):
+        """Send VOB status summary for both NIFTY and SENSEX"""
+
+        def format_vob_block(symbol: str, vob_type: str, block_data: dict):
+            """Format a single VOB block display"""
+            emoji = "🟢" if vob_type == "Bullish" else "🔴"
+            strength = block_data.get('strength_score', 0)
+            trend = block_data.get('trend', 'STABLE')
+            lower = block_data.get('lower', 0)
+            upper = block_data.get('upper', 0)
+
+            # Determine trend emoji
+            if trend == "STRENGTHENING":
+                trend_emoji = "🔺"
+                trend_text = "STRENGTHENING"
+            elif trend == "WEAKENING":
+                trend_emoji = "🔻"
+                trend_text = "WEAKENING"
+            else:
+                trend_emoji = "➖"
+                trend_text = "STABLE"
+
+            return f"""
+{emoji} <b>{vob_type} VOB:</b> ₹{lower:.2f} - ₹{upper:.2f}
+
+<b>Strength:</b> {strength:.1f}/100 {trend_emoji} {trend_text}"""
+
+        message_parts = [
+            "<b>📊 Volume Order Block Status</b>",
+            "",
+            "<b>NIFTY VOB</b>"
+        ]
+
+        # Add NIFTY VOB data
+        if nifty_data.get('bullish'):
+            message_parts.append(format_vob_block("NIFTY", "Bullish", nifty_data['bullish']))
+        else:
+            message_parts.append("🟢 <b>Bullish VOB:</b> No data available")
+
+        if nifty_data.get('bearish'):
+            message_parts.append(format_vob_block("NIFTY", "Bearish", nifty_data['bearish']))
+        else:
+            message_parts.append("🔴 <b>Bearish VOB:</b> No data available")
+
+        message_parts.extend(["", "<b>SENSEX VOB</b>"])
+
+        # Add SENSEX VOB data
+        if sensex_data.get('bullish'):
+            message_parts.append(format_vob_block("SENSEX", "Bullish", sensex_data['bullish']))
+        else:
+            message_parts.append("🟢 <b>Bullish VOB:</b> No data available")
+
+        if sensex_data.get('bearish'):
+            message_parts.append(format_vob_block("SENSEX", "Bearish", sensex_data['bearish']))
+        else:
+            message_parts.append("🔴 <b>Bearish VOB:</b> No data available")
+
+        message_parts.extend([
+            "",
+            f"<i>Updated (IST): {get_current_time_ist().strftime('%I:%M:%S %p %Z')}</i>"
+        ])
+
+        message = "\n".join(message_parts)
+        return self.send_message(message)
+
+    def send_htf_sr_status_summary(self, nifty_htf: dict, sensex_htf: dict):
+        """Send HTF Support/Resistance status summary"""
+
+        def format_htf_levels(symbol: str, htf_data: dict):
+            """Format HTF S/R levels for display"""
+            lines = [f"<b>{symbol}</b>"]
+
+            for timeframe, levels in htf_data.items():
+                if not levels:
+                    continue
+
+                # Format timeframe for display
+                tf_display = timeframe.replace('T', 'min')
+
+                support = levels.get('support')
+                resistance = levels.get('resistance')
+                support_strength = levels.get('support_strength', {})
+                resistance_strength = levels.get('resistance_strength', {})
+
+                if support:
+                    s_score = support_strength.get('strength_score', 0)
+                    s_trend = support_strength.get('trend', 'STABLE')
+                    s_emoji = "🔺" if s_trend == "STRENGTHENING" else "🔻" if s_trend == "WEAKENING" else "➖"
+                    lines.append(f"  🟢 {tf_display} Support: ₹{support:.2f} ({s_score:.1f}/100 {s_emoji})")
+
+                if resistance:
+                    r_score = resistance_strength.get('strength_score', 0)
+                    r_trend = resistance_strength.get('trend', 'STABLE')
+                    r_emoji = "🔺" if r_trend == "STRENGTHENING" else "🔻" if r_trend == "WEAKENING" else "➖"
+                    lines.append(f"  🔴 {tf_display} Resistance: ₹{resistance:.2f} ({r_score:.1f}/100 {r_emoji})")
+
+            return "\n".join(lines) if len(lines) > 1 else f"<b>{symbol}</b>\n  No HTF data available"
+
+        message_parts = [
+            "<b>📊 HTF Support/Resistance Status</b>",
+            "<b>5min, 10min, 15min Timeframes</b>",
+            ""
+        ]
+
+        # Add NIFTY HTF data
+        message_parts.append(format_htf_levels("NIFTY", nifty_htf))
+        message_parts.append("")
+
+        # Add SENSEX HTF data
+        message_parts.append(format_htf_levels("SENSEX", sensex_htf))
+
+        message_parts.extend([
+            "",
+            f"<i>Updated (IST): {get_current_time_ist().strftime('%I:%M:%S %p %Z')}</i>"
+        ])
+
+        message = "\n".join(message_parts)
+        return self.send_message(message)
+
+    async def send_ai_market_alert(self, report: Dict[str, Any], confidence_thresh: float = 0.60) -> bool:
+        """
+        Send AI market alert to Telegram
+        """
+        if not report:
+            return False
+        
+        confidence = float(report.get("confidence", 0.0) or 0.0)
+        if confidence < confidence_thresh:
+            return False
+        
+        label = report.get("label", "UNKNOWN")
+        rec = report.get("recommendation", "HOLD")
+        tech = report.get("technical_score", 0.0)
+        news = report.get("news_score", 0.0)
+        ai_score = report.get("ai_score", 0.0)
+        reasons = report.get("ai_reasons", []) or []
+        ai_summary = report.get("ai_summary", "") or ""
+
+        # Format top reasons
+        top_reasons = "\n".join(f"{i+1}. {html.escape(str(r))}" for i, r in enumerate(reasons[:4]))
+        
+        # Format technical contributions
+        tech_lines = []
+        contribs = report.get("technical_contributions", {}) or {}
+        for k, v in contribs.items():
+            sign = "Bullish" if v > 0 else "Bearish" if v < 0 else "Neutral"
+            tech_lines.append(f"{html.escape(k)}: {sign} ({v:.3f})")
+        
+        tech_block = "\n".join(tech_lines[:6]) or "N/A"
+        
+        # Determine emoji based on bias
+        if "BULLISH" in label.upper():
+            bias_emoji = "🟢"
+        elif "BEARISH" in label.upper():
+            bias_emoji = "🔴"
+        else:
+            bias_emoji = "⚪"
+
+        # Create the message
+        text = f"""
+{bias_emoji} <b>🤖 AI MARKET REPORT</b>
+
+<b>Market:</b> {html.escape(str(report.get('market','')))}
+<b>Bias:</b> <b>{bias_emoji} {html.escape(label)}</b>
+<b>Recommendation:</b> <b>{html.escape(rec)}</b>
+
+📊 <b>SCORES</b>
+<b>Confidence:</b> {confidence:.2f}
+<b>AI Score:</b> {ai_score:.3f}
+<b>Technical Score:</b> {tech:.3f}
+<b>News Score:</b> {news:.3f}
+
+⚙️ <b>TECHNICAL SUMMARY</b>
+{tech_block}
+
+📰 <b>NEWS SUMMARY</b>
+{html.escape(str(report.get('news_summary',''))[:600])}
+
+🧠 <b>AI REASONING</b>
+{top_reasons}
+
+📋 <b>SUMMARY</b>
+{html.escape(ai_summary[:800])}
+
+⏰ <b>Time (IST):</b> {get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')}
+        """
+        
+        return await self.send_message_async(text.strip())
+
+
+def send_test_message():
+    """Send test message to verify Telegram setup"""
+    bot = TelegramBot()
+    if bot.enabled:
+        message = """
+✅ <b>Telegram Connected!</b>
+
+Your trading alerts are now active.
+
+<b>Test Time (IST):</b> """ + get_current_time_ist().strftime('%Y-%m-%d %H:%M:%S %Z')
+        return bot.send_message(message.strip())
+    return False
+
+
+# Async wrapper function for backward compatibility
+async def send_ai_market_alert_async(report: Dict[str, Any], confidence_thresh: float = 0.60) -> bool:
+    """
+    Async wrapper function for sending AI market alerts
+    """
+    bot = TelegramBot()
+    if not bot.enabled:
+        return False
+    return await bot.send_ai_market_alert(report, confidence_thresh)
