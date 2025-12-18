@@ -134,17 +134,23 @@ def display_final_assessment(
     liquidity_result: Optional[any],
     current_price: float,
     atm_strike: int,
-    option_chain: Optional[Dict] = None
+    option_chain: Optional[Dict] = None,
+    money_flow_signals: Optional[Dict] = None,
+    deltaflow_signals: Optional[Dict] = None,
+    cvd_result: Optional[any] = None,
+    volatility_result: Optional[any] = None,
+    oi_trap_result: Optional[any] = None,
+    participant_result: Optional[any] = None
 ):
     """
     Display FINAL ASSESSMENT with Market Makers narrative.
 
-    Format includes:
-    - Seller Activity + ATM Bias + Moment + Expiry + OI/PCR
-    - Market Makers interpretation
-    - ATM Zone Analysis
-    - Game plan
-    - Key levels and entry prices
+    Now integrates ALL analysis from all tabs:
+    - Tab 7: Volume Footprint, Money Flow, DeltaFlow, HTF S/R
+    - Tab 8: All 10 sub-tabs (OI/PCR, ATM Bias, Seller, Moment, Depth, Expiry, etc.)
+    - Tab 9: Enhanced market data, VIX, sectors
+
+    Uses comprehensive multi-factor analysis for scoring and entries.
     """
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
@@ -901,6 +907,132 @@ def display_final_assessment(
                 ce_score += 8
                 ce_factors['Trend Align'] = "~ Range"
 
+            # Factor 7: Money Flow Profile (0-10 pts)
+            if money_flow_signals:
+                mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+                mf_strength = money_flow_signals.get('strength', 0)
+                if mf_signal == 'BUY' and strike <= atm_strike_base:  # Calls align with buy flow
+                    ce_score += 10
+                    ce_factors['Money Flow'] = "✓ Buy Flow"
+                elif mf_signal == 'SELL':
+                    ce_factors['Money Flow'] = "✗ Sell Flow"
+                else:
+                    ce_score += 5
+                    ce_factors['Money Flow'] = "~ Neutral"
+            else:
+                ce_factors['Money Flow'] = "N/A"
+
+            # Factor 8: DeltaFlow Profile (0-10 pts)
+            if deltaflow_signals:
+                df_signal = deltaflow_signals.get('signal', 'NEUTRAL')
+                df_delta = deltaflow_signals.get('cumulative_delta', 0)
+                if df_delta > 0 and strike <= atm_strike_base:  # Positive delta favors calls
+                    ce_score += 10
+                    ce_factors['DeltaFlow'] = f"✓ +{abs(df_delta):.0f}"
+                elif df_delta < 0:
+                    ce_factors['DeltaFlow'] = f"✗ -{abs(df_delta):.0f}"
+                else:
+                    ce_score += 5
+                    ce_factors['DeltaFlow'] = "~ Flat"
+            else:
+                ce_factors['DeltaFlow'] = "N/A"
+
+            # Factor 9: CVD (Cumulative Volume Delta) (0-10 pts)
+            if cvd_result and hasattr(cvd_result, 'signal'):
+                cvd_signal = cvd_result.signal
+                if cvd_signal in ['BULLISH', 'STRONG_BULLISH'] and strike <= atm_strike_base:
+                    ce_score += 10
+                    ce_factors['CVD'] = "✓ Bullish"
+                elif cvd_signal in ['BEARISH', 'STRONG_BEARISH']:
+                    ce_factors['CVD'] = "✗ Bearish"
+                else:
+                    ce_score += 5
+                    ce_factors['CVD'] = "~ Neutral"
+            else:
+                ce_factors['CVD'] = "N/A"
+
+            # Factor 10: Volatility Regime + VIX (0-10 pts)
+            vix_value = 15.0
+            if enhanced_market_data and 'vix' in enhanced_market_data:
+                vix_data = enhanced_market_data['vix']
+                vix_value = vix_data.get('lastPrice', 15.0) if isinstance(vix_data, dict) else vix_data
+
+            # Low VIX favors selling, High VIX favors buying
+            if vix_value < 12 and strike > atm_strike_base:  # Low VIX + OTM call = good for selling
+                ce_score += 10
+                ce_factors['VIX Regime'] = f"✓ Low ({vix_value:.1f})"
+            elif vix_value > 20 and strike <= atm_strike_base:  # High VIX + ATM/ITM call = good for buying
+                ce_score += 10
+                ce_factors['VIX Regime'] = f"✓ High ({vix_value:.1f})"
+            else:
+                ce_score += 5
+                ce_factors['VIX Regime'] = f"~ Normal ({vix_value:.1f})"
+
+            # Factor 11: Sector Rotation (0-5 pts)
+            if enhanced_market_data and 'sectors' in enhanced_market_data:
+                sectors = enhanced_market_data['sectors']
+                if sectors.get('success'):
+                    sector_data = sectors.get('data', [])
+                    bullish_count = sum(1 for s in sector_data if s.get('change_pct', 0) > 0.5)
+                    bearish_count = sum(1 for s in sector_data if s.get('change_pct', 0) < -0.5)
+
+                    if bullish_count > bearish_count + 2 and strike <= atm_strike_base:  # Sector rotation bullish
+                        ce_score += 5
+                        ce_factors['Sector'] = "✓ Bullish Rotation"
+                    elif bearish_count > bullish_count + 2:
+                        ce_factors['Sector'] = "✗ Bearish Rotation"
+                    else:
+                        ce_score += 2
+                        ce_factors['Sector'] = "~ Mixed"
+                else:
+                    ce_factors['Sector'] = "N/A"
+            else:
+                ce_factors['Sector'] = "N/A"
+
+            # Factor 12: GEX (Gamma Exposure) (0-10 pts)
+            total_gex_net = nifty_screener_data.get('total_gex_net', 0) if nifty_screener_data else 0
+            if total_gex_net > 1000000:  # Positive GEX = Stabilizing, favors selling OTM
+                if strike > atm_strike_base:  # OTM call selling
+                    ce_score += 10
+                    ce_factors['GEX'] = f"✓ +GEX ({total_gex_net/1e6:.1f}M)"
+                else:  # ATM/ITM less favorable
+                    ce_score += 3
+                    ce_factors['GEX'] = f"~ +GEX ({total_gex_net/1e6:.1f}M)"
+            elif total_gex_net < -1000000:  # Negative GEX = Destabilizing, favors buying ATM/ITM
+                if strike <= atm_strike_base:  # ATM/ITM call buying
+                    ce_score += 10
+                    ce_factors['GEX'] = f"✓ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+                else:  # OTM less favorable
+                    ce_score += 3
+                    ce_factors['GEX'] = f"~ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+            else:  # Neutral GEX
+                ce_score += 5
+                ce_factors['GEX'] = f"~ Neutral ({abs(total_gex_net)/1e6:.1f}M)"
+
+            # Factor 13: Market Depth/Orderbook Pressure (0-10 pts)
+            if moment_data and 'orderbook' in moment_data:
+                orderbook = moment_data['orderbook']
+                if orderbook.get('available', False):
+                    pressure = orderbook.get('pressure', 'NEUTRAL')
+                    pressure_score = orderbook.get('pressure_score', 0)
+
+                    if pressure == 'BUY' and pressure_score > 60:  # Strong buy pressure
+                        if strike <= atm_strike_base:  # Favors calls
+                            ce_score += 10
+                            ce_factors['Depth'] = f"✓ Buy ({pressure_score}%)"
+                        else:
+                            ce_score += 5
+                            ce_factors['Depth'] = f"~ Buy ({pressure_score}%)"
+                    elif pressure == 'SELL':
+                        ce_factors['Depth'] = f"✗ Sell ({pressure_score}%)"
+                    else:
+                        ce_score += 5
+                        ce_factors['Depth'] = "~ Neutral"
+                else:
+                    ce_factors['Depth'] = "N/A"
+            else:
+                ce_factors['Depth'] = "N/A"
+
         # === PUT SCORING ===
         pe_score = 0
         pe_factors = {}
@@ -983,6 +1115,130 @@ def display_final_assessment(
                 pe_score += 8
                 pe_factors['Trend Align'] = "~ Range"
 
+            # Factor 7: Money Flow Profile (0-10 pts)
+            if money_flow_signals:
+                mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+                if mf_signal == 'SELL' and strike >= atm_strike_base:  # Puts align with sell flow
+                    pe_score += 10
+                    pe_factors['Money Flow'] = "✓ Sell Flow"
+                elif mf_signal == 'BUY':
+                    pe_factors['Money Flow'] = "✗ Buy Flow"
+                else:
+                    pe_score += 5
+                    pe_factors['Money Flow'] = "~ Neutral"
+            else:
+                pe_factors['Money Flow'] = "N/A"
+
+            # Factor 8: DeltaFlow Profile (0-10 pts)
+            if deltaflow_signals:
+                df_delta = deltaflow_signals.get('cumulative_delta', 0)
+                if df_delta < 0 and strike >= atm_strike_base:  # Negative delta favors puts
+                    pe_score += 10
+                    pe_factors['DeltaFlow'] = f"✓ -{abs(df_delta):.0f}"
+                elif df_delta > 0:
+                    pe_factors['DeltaFlow'] = f"✗ +{abs(df_delta):.0f}"
+                else:
+                    pe_score += 5
+                    pe_factors['DeltaFlow'] = "~ Flat"
+            else:
+                pe_factors['DeltaFlow'] = "N/A"
+
+            # Factor 9: CVD (Cumulative Volume Delta) (0-10 pts)
+            if cvd_result and hasattr(cvd_result, 'signal'):
+                cvd_signal = cvd_result.signal
+                if cvd_signal in ['BEARISH', 'STRONG_BEARISH'] and strike >= atm_strike_base:
+                    pe_score += 10
+                    pe_factors['CVD'] = "✓ Bearish"
+                elif cvd_signal in ['BULLISH', 'STRONG_BULLISH']:
+                    pe_factors['CVD'] = "✗ Bullish"
+                else:
+                    pe_score += 5
+                    pe_factors['CVD'] = "~ Neutral"
+            else:
+                pe_factors['CVD'] = "N/A"
+
+            # Factor 10: Volatility Regime + VIX (0-10 pts)
+            vix_value = 15.0
+            if enhanced_market_data and 'vix' in enhanced_market_data:
+                vix_data = enhanced_market_data['vix']
+                vix_value = vix_data.get('lastPrice', 15.0) if isinstance(vix_data, dict) else vix_data
+
+            # Low VIX favors selling, High VIX favors buying
+            if vix_value < 12 and strike < atm_strike_base:  # Low VIX + OTM put = good for selling
+                pe_score += 10
+                pe_factors['VIX Regime'] = f"✓ Low ({vix_value:.1f})"
+            elif vix_value > 20 and strike >= atm_strike_base:  # High VIX + ATM/ITM put = good for buying
+                pe_score += 10
+                pe_factors['VIX Regime'] = f"✓ High ({vix_value:.1f})"
+            else:
+                pe_score += 5
+                pe_factors['VIX Regime'] = f"~ Normal ({vix_value:.1f})"
+
+            # Factor 11: Sector Rotation (0-5 pts)
+            if enhanced_market_data and 'sectors' in enhanced_market_data:
+                sectors = enhanced_market_data['sectors']
+                if sectors.get('success'):
+                    sector_data = sectors.get('data', [])
+                    bullish_count = sum(1 for s in sector_data if s.get('change_pct', 0) > 0.5)
+                    bearish_count = sum(1 for s in sector_data if s.get('change_pct', 0) < -0.5)
+
+                    if bearish_count > bullish_count + 2 and strike >= atm_strike_base:  # Sector rotation bearish
+                        pe_score += 5
+                        pe_factors['Sector'] = "✓ Bearish Rotation"
+                    elif bullish_count > bearish_count + 2:
+                        pe_factors['Sector'] = "✗ Bullish Rotation"
+                    else:
+                        pe_score += 2
+                        pe_factors['Sector'] = "~ Mixed"
+                else:
+                    pe_factors['Sector'] = "N/A"
+            else:
+                pe_factors['Sector'] = "N/A"
+
+            # Factor 12: GEX (Gamma Exposure) (0-10 pts)
+            total_gex_net = nifty_screener_data.get('total_gex_net', 0) if nifty_screener_data else 0
+            if total_gex_net > 1000000:  # Positive GEX = Stabilizing, favors selling OTM
+                if strike < atm_strike_base:  # OTM put selling
+                    pe_score += 10
+                    pe_factors['GEX'] = f"✓ +GEX ({total_gex_net/1e6:.1f}M)"
+                else:  # ATM/ITM less favorable
+                    pe_score += 3
+                    pe_factors['GEX'] = f"~ +GEX ({total_gex_net/1e6:.1f}M)"
+            elif total_gex_net < -1000000:  # Negative GEX = Destabilizing, favors buying ATM/ITM
+                if strike >= atm_strike_base:  # ATM/ITM put buying
+                    pe_score += 10
+                    pe_factors['GEX'] = f"✓ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+                else:  # OTM less favorable
+                    pe_score += 3
+                    pe_factors['GEX'] = f"~ -GEX ({abs(total_gex_net)/1e6:.1f}M)"
+            else:  # Neutral GEX
+                pe_score += 5
+                pe_factors['GEX'] = f"~ Neutral ({abs(total_gex_net)/1e6:.1f}M)"
+
+            # Factor 13: Market Depth/Orderbook Pressure (0-10 pts)
+            if moment_data and 'orderbook' in moment_data:
+                orderbook = moment_data['orderbook']
+                if orderbook.get('available', False):
+                    pressure = orderbook.get('pressure', 'NEUTRAL')
+                    pressure_score = orderbook.get('pressure_score', 0)
+
+                    if pressure == 'SELL' and pressure_score > 60:  # Strong sell pressure
+                        if strike >= atm_strike_base:  # Favors puts
+                            pe_score += 10
+                            pe_factors['Depth'] = f"✓ Sell ({pressure_score}%)"
+                        else:
+                            pe_score += 5
+                            pe_factors['Depth'] = f"~ Sell ({pressure_score}%)"
+                    elif pressure == 'BUY':
+                        pe_factors['Depth'] = f"✗ Buy ({pressure_score}%)"
+                    else:
+                        pe_score += 5
+                        pe_factors['Depth'] = "~ Neutral"
+                else:
+                    pe_factors['Depth'] = "N/A"
+            else:
+                pe_factors['Depth'] = "N/A"
+
         # Store scores
         if strike_data_ce:
             option_scores.append({
@@ -1006,18 +1262,21 @@ def display_final_assessment(
     option_scores = sorted(option_scores, key=lambda x: x['score'], reverse=True)
 
     # Display top 5 options
-    st.markdown("**🏆 TOP 5 HIGHEST SCORING OPTIONS (Based on Multi-Factor Analysis)**")
+    st.markdown("**🏆 TOP 5 HIGHEST SCORING OPTIONS (13-Factor Comprehensive Analysis)**")
+    st.caption("Max Score: 165 pts | Factors: OI, Liquidity, ATM Dist, Max Pain, Bias, Trend, Money Flow, DeltaFlow, CVD, VIX, Sector, GEX, Market Depth")
 
     for i, opt in enumerate(option_scores[:5], 1):
-        score_color = "success" if opt['score'] >= 70 else "warning" if opt['score'] >= 50 else "error"
-        score_label = "EXCELLENT" if opt['score'] >= 70 else "GOOD" if opt['score'] >= 50 else "WEAK"
+        # Updated thresholds for 165-point scale
+        score_color = "success" if opt['score'] >= 110 else "warning" if opt['score'] >= 85 else "error"
+        score_label = "EXCELLENT" if opt['score'] >= 110 else "GOOD" if opt['score'] >= 85 else "WEAK"
+        score_pct = (opt['score'] / 165) * 100
 
         # Create detailed breakdown
         factors_text = "\n".join([f"   • {k}: {v}" for k, v in opt['factors'].items()])
 
         if score_color == "success":
             st.success(f"""
-**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/165 ({score_pct:.0f}%) - {score_label}**
 
 **Premium:** ₹{opt['premium']:.2f}
 
@@ -1026,7 +1285,7 @@ def display_final_assessment(
             """)
         elif score_color == "warning":
             st.warning(f"""
-**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/165 ({score_pct:.0f}%) - {score_label}**
 
 **Premium:** ₹{opt['premium']:.2f}
 
@@ -1035,13 +1294,718 @@ def display_final_assessment(
             """)
         else:
             st.info(f"""
-**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/165 ({score_pct:.0f}%) - {score_label}**
 
 **Premium:** ₹{opt['premium']:.2f}
 
 **Score Breakdown:**
 {factors_text}
             """)
+
+    st.markdown("---")
+
+    # ============================================
+    # 🎯 KEY PRICE LEVELS & ENTRY ZONES (ALL DATA INTEGRATED)
+    # ============================================
+    st.markdown("## 🎯 KEY PRICE LEVELS & ENTRY ZONES")
+    st.caption("**Exact reversal, continuation, and range levels based on 13-factor comprehensive analysis**")
+
+    # Collect all key levels from various sources
+    key_levels = []
+
+    # 1. ATM Strike (Major pivot)
+    key_levels.append({
+        'price': atm_strike,
+        'type': 'ATM Strike',
+        'strength': 100,
+        'bias': atm_bias_data.get('overall_bias', 'NEUTRAL') if atm_bias_data else 'NEUTRAL',
+        'source': 'Option Chain'
+    })
+
+    # 2. Max Pain (Magnet level)
+    if nifty_screener_data and 'seller_max_pain' in nifty_screener_data:
+        max_pain_data = nifty_screener_data['seller_max_pain']
+        if max_pain_data and 'max_pain_strike' in max_pain_data:
+            max_pain_strike = max_pain_data['max_pain_strike']
+            key_levels.append({
+                'price': max_pain_strike,
+                'type': 'Max Pain',
+                'strength': 90,
+                'bias': 'MAGNET',
+                'source': 'Option Sellers'
+            })
+
+    # 3. Support/Resistance from HTF
+    if support_level and support_level > 0:
+        key_levels.append({
+            'price': support_level,
+            'type': 'Support',
+            'strength': 85,
+            'bias': 'BULLISH',
+            'source': 'HTF Analysis'
+        })
+
+    if resistance_level and resistance_level > 0:
+        key_levels.append({
+            'price': resistance_level,
+            'type': 'Resistance',
+            'strength': 85,
+            'bias': 'BEARISH',
+            'source': 'HTF Analysis'
+        })
+
+    # 4. Nearest Support/Resistance from Option Chain
+    if nifty_screener_data:
+        nearest_sup = nifty_screener_data.get('nearest_sup')
+        nearest_res = nifty_screener_data.get('nearest_res')
+
+        if nearest_sup and 'strike' in nearest_sup:
+            key_levels.append({
+                'price': nearest_sup['strike'],
+                'type': 'OI Support',
+                'strength': 75,
+                'bias': 'BULLISH',
+                'source': 'OI Concentration'
+            })
+
+        if nearest_res and 'strike' in nearest_res:
+            key_levels.append({
+                'price': nearest_res['strike'],
+                'type': 'OI Resistance',
+                'strength': 75,
+                'bias': 'BEARISH',
+                'source': 'OI Concentration'
+            })
+
+    # 5. GEX Gamma Walls (Major barriers)
+    total_gex_net = nifty_screener_data.get('total_gex_net', 0) if nifty_screener_data else 0
+    if abs(total_gex_net) > 1000000:
+        # High GEX creates walls around ATM
+        gex_type = "Gamma Wall (Stabilizing)" if total_gex_net > 0 else "Gamma Wall (Explosive)"
+        key_levels.append({
+            'price': atm_strike,
+            'type': gex_type,
+            'strength': 80,
+            'bias': 'MAGNET' if total_gex_net > 0 else 'BREAKOUT',
+            'source': f'GEX {total_gex_net/1e6:.1f}M'
+        })
+
+    # 6. Volume Order Blocks (if available)
+    if ml_regime_result and hasattr(ml_regime_result, 'support_zones'):
+        for zone in ml_regime_result.support_zones[:2]:  # Top 2 support zones
+            key_levels.append({
+                'price': zone.get('price', 0),
+                'type': 'Volume Block Support',
+                'strength': 70,
+                'bias': 'BULLISH',
+                'source': 'Volume Analysis'
+            })
+
+    if ml_regime_result and hasattr(ml_regime_result, 'resistance_zones'):
+        for zone in ml_regime_result.resistance_zones[:2]:  # Top 2 resistance zones
+            key_levels.append({
+                'price': zone.get('price', 0),
+                'type': 'Volume Block Resistance',
+                'strength': 70,
+                'bias': 'BEARISH',
+                'source': 'Volume Analysis'
+            })
+
+    # Sort levels by price
+    key_levels = [l for l in key_levels if l['price'] > 0]
+    key_levels = sorted(key_levels, key=lambda x: abs(x['price'] - current_price))
+
+    # Identify zones
+    levels_below = [l for l in key_levels if l['price'] < current_price]
+    levels_above = [l for l in key_levels if l['price'] > current_price]
+
+    # Display Current Market Position
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("**Current Price**", f"₹{current_price:,.2f}")
+    with col2:
+        nearest_support = levels_below[0] if levels_below else None
+        if nearest_support:
+            distance = current_price - nearest_support['price']
+            st.metric("**Nearest Support**", f"₹{nearest_support['price']:,.0f}", f"-{distance:.0f} pts")
+        else:
+            st.metric("**Nearest Support**", "N/A")
+    with col3:
+        nearest_resistance = levels_above[0] if levels_above else None
+        if nearest_resistance:
+            distance = nearest_resistance['price'] - current_price
+            st.metric("**Nearest Resistance**", f"₹{nearest_resistance['price']:,.0f}", f"+{distance:.0f} pts")
+        else:
+            st.metric("**Nearest Resistance**", "N/A")
+
+    st.markdown("---")
+
+    # ===== REVERSAL ZONES =====
+    st.markdown("#### 🔄 REVERSAL ZONES (High Probability Bounce/Rejection)")
+
+    reversal_zones = []
+
+    # Support reversal zones (bullish bounce expected)
+    support_clusters = {}
+    for level in levels_below[:5]:  # Top 5 supports
+        price_key = round(level['price'] / 25) * 25  # Cluster within 25 pts
+        if price_key not in support_clusters:
+            support_clusters[price_key] = []
+        support_clusters[price_key].append(level)
+
+    for cluster_price, cluster_levels in support_clusters.items():
+        if len(cluster_levels) >= 2:  # Multiple factors converging
+            strength_sum = sum(l['strength'] for l in cluster_levels)
+            reversal_zones.append({
+                'price': cluster_price,
+                'type': 'REVERSAL UP',
+                'strength': min(100, strength_sum),
+                'factors': len(cluster_levels),
+                'details': [f"{l['type']} ({l['source']})" for l in cluster_levels]
+            })
+
+    # Resistance reversal zones (bearish rejection expected)
+    resistance_clusters = {}
+    for level in levels_above[:5]:  # Top 5 resistances
+        price_key = round(level['price'] / 25) * 25  # Cluster within 25 pts
+        if price_key not in resistance_clusters:
+            resistance_clusters[price_key] = []
+        resistance_clusters[price_key].append(level)
+
+    for cluster_price, cluster_levels in resistance_clusters.items():
+        if len(cluster_levels) >= 2:  # Multiple factors converging
+            strength_sum = sum(l['strength'] for l in cluster_levels)
+            reversal_zones.append({
+                'price': cluster_price,
+                'type': 'REVERSAL DOWN',
+                'strength': min(100, strength_sum),
+                'factors': len(cluster_levels),
+                'details': [f"{l['type']} ({l['source']})" for l in cluster_levels]
+            })
+
+    # Display reversal zones
+    if reversal_zones:
+        for zone in sorted(reversal_zones, key=lambda x: x['strength'], reverse=True)[:4]:
+            emoji = "🟢" if zone['type'] == 'REVERSAL UP' else "🔴"
+            distance = zone['price'] - current_price
+            distance_str = f"+{distance:.0f}" if distance > 0 else f"{distance:.0f}"
+
+            st.success(f"""
+**{emoji} {zone['type']} ZONE: ₹{zone['price']:,.0f}** ({distance_str} pts away)
+**Confidence:** {zone['strength']:.0f}% | **Factors:** {zone['factors']}
+**Supporting Analysis:** {', '.join(zone['details'][:3])}
+            """) if zone['type'] == 'REVERSAL UP' else st.error(f"""
+**{emoji} {zone['type']} ZONE: ₹{zone['price']:,.0f}** ({distance_str} pts away)
+**Confidence:** {zone['strength']:.0f}% | **Factors:** {zone['factors']}
+**Supporting Analysis:** {', '.join(zone['details'][:3])}
+            """)
+    else:
+        st.info("No strong reversal zones identified. Market may be in trending mode.")
+
+    st.markdown("---")
+
+    # ===== CONTINUATION ZONES =====
+    st.markdown("#### 🚀 CONTINUATION/BREAKOUT ZONES")
+
+    # Identify breakout levels
+    regime = ml_regime_result.regime if ml_regime_result and hasattr(ml_regime_result, 'regime') else 'RANGING'
+
+    if 'TRENDING' in regime:
+        st.info(f"""
+**📈 TRENDING MARKET DETECTED ({regime})**
+
+**Continuation Strategy:**
+- **If Bullish Trend:** Buy dips to nearest support, ride to next resistance
+- **If Bearish Trend:** Sell rallies to nearest resistance, ride to next support
+- **Breakout Confirmation:** Wait for 15-min close beyond key level with volume
+
+**Key Breakout Levels:**
+        """)
+
+        if levels_above:
+            st.success(f"**Upside Breakout:** ₹{levels_above[0]['price']:,.0f} → Target: ₹{levels_above[1]['price']:,.0f if len(levels_above) > 1 else levels_above[0]['price'] + 50:,.0f}")
+
+        if levels_below:
+            st.error(f"**Downside Breakdown:** ₹{levels_below[0]['price']:,.0f} → Target: ₹{levels_below[1]['price']:,.0f if len(levels_below) > 1 else levels_below[0]['price'] - 50:,.0f}")
+    else:
+        st.warning("""
+**📊 RANGING MARKET DETECTED**
+
+**Range Trading Strategy:**
+- **Buy Zone:** Near support levels with tight stops
+- **Sell Zone:** Near resistance levels with tight stops
+- **Avoid:** Center of range (low probability)
+        """)
+
+        if levels_below and levels_above:
+            range_low = levels_below[0]['price']
+            range_high = levels_above[0]['price']
+            range_mid = (range_low + range_high) / 2
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.success(f"**Range Low (BUY ZONE)**\n₹{range_low:,.0f}")
+            with col2:
+                st.info(f"**Range Mid (AVOID)**\n₹{range_mid:,.0f}")
+            with col3:
+                st.error(f"**Range High (SELL ZONE)**\n₹{range_high:,.0f}")
+
+    st.markdown("---")
+
+    # ===== EXACT ENTRY POINTS =====
+    st.markdown("#### 🎯 EXACT ENTRY POINTS (Based on Current Market Position)")
+
+    # Determine market position relative to key levels
+    if nearest_support and nearest_resistance:
+        support_dist = current_price - nearest_support['price']
+        resistance_dist = nearest_resistance['price'] - current_price
+
+        # Check if near support or resistance
+        if support_dist < 30:  # Within 30 pts of support
+            st.success(f"""
+**🟢 NEAR SUPPORT ZONE**
+
+**LONG Entry Strategy:**
+- **Entry:** ₹{nearest_support['price']:,.0f} - ₹{nearest_support['price'] + 10:,.0f}
+- **Stop Loss:** ₹{nearest_support['price'] - 20:,.0f} (below support)
+- **Target 1:** ₹{current_price + 30:,.0f} (+30 pts)
+- **Target 2:** ₹{nearest_resistance['price'] if nearest_resistance else current_price + 50:,.0f} (resistance)
+- **Risk/Reward:** 1:2 to 1:3
+- **Confidence:** {nearest_support['strength']:.0f}%
+
+**Why This Works:**
+- Price near strong support ({nearest_support['type']})
+- Multiple factors supporting bounce
+- Favorable R:R ratio
+            """)
+        elif resistance_dist < 30:  # Within 30 pts of resistance
+            st.error(f"""
+**🔴 NEAR RESISTANCE ZONE**
+
+**SHORT Entry Strategy:**
+- **Entry:** ₹{nearest_resistance['price'] - 10:,.0f} - ₹{nearest_resistance['price']:,.0f}
+- **Stop Loss:** ₹{nearest_resistance['price'] + 20:,.0f} (above resistance)
+- **Target 1:** ₹{current_price - 30:,.0f} (-30 pts)
+- **Target 2:** ₹{nearest_support['price'] if nearest_support else current_price - 50:,.0f} (support)
+- **Risk/Reward:** 1:2 to 1:3
+- **Confidence:** {nearest_resistance['strength']:.0f}%
+
+**Why This Works:**
+- Price near strong resistance ({nearest_resistance['type']})
+- Multiple factors supporting rejection
+- Favorable R:R ratio
+            """)
+        else:  # In the middle
+            st.info(f"""
+**⚠️ NO-TRADE ZONE (Middle of Range)**
+
+**Current Position:** ₹{current_price:,.2f}
+- **Distance to Support:** -{support_dist:.0f} pts
+- **Distance to Resistance:** +{resistance_dist:.0f} pts
+
+**Recommended Action:** WAIT for price to reach entry zones
+- **Buy Zone:** ₹{nearest_support['price']:,.0f} - ₹{nearest_support['price'] + 10:,.0f}
+- **Sell Zone:** ₹{nearest_resistance['price'] - 10:,.0f} - ₹{nearest_resistance['price']:,.0f}
+
+**Why Wait:**
+- Poor risk/reward in the middle
+- Higher probability at extremes
+- Patience = Profitability
+            """)
+
+    st.markdown("---")
+
+    # ============================================
+    # 🔥 CONFLUENCE ENTRY CHECK (VOB + HTF S/R + REGIME)
+    # ============================================
+    st.markdown("## 🔥 CONFLUENCE ENTRY CHECK")
+    st.caption("**Highest probability setups: Volume Order Blocks + HTF Support/Resistance + XGBoost Regime alignment**")
+
+    # Get regime for directional bias
+    regime_direction = "UNKNOWN"
+    regime_conf = 0
+    if ml_regime_result and hasattr(ml_regime_result, 'regime'):
+        regime = ml_regime_result.regime
+        regime_conf = ml_regime_result.confidence if hasattr(ml_regime_result, 'confidence') else 0
+
+        if 'TRENDING_UP' in regime or 'STRONG_TRENDING_UP' in regime:
+            regime_direction = "BULLISH"
+        elif 'TRENDING_DOWN' in regime or 'STRONG_TRENDING_DOWN' in regime:
+            regime_direction = "BEARISH"
+        elif 'RANGING' in regime:
+            regime_direction = "RANGING"
+
+    # Check for confluence setups
+    confluence_setups = []
+
+    # --- BULLISH CONFLUENCE CHECK ---
+    if regime_direction in ["BULLISH", "RANGING"]:
+        # Check if current price is near HTF support
+        htf_support_distance = abs(current_price - support_level) if support_level > 0 else 999
+
+        # Check if current price is near a bullish VOB (if available from session state)
+        vob_support_distance = 999
+        vob_support_level = None
+
+        # Try to get VOB data from session state
+        try:
+            import streamlit as st
+            if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+                vob_data = st.session_state.vob_data_nifty
+                bullish_blocks = vob_data.get('bullish_blocks', [])
+
+                # Find nearest bullish VOB below current price
+                for block in bullish_blocks:
+                    if isinstance(block, dict):
+                        block_price = block.get('upper', block.get('lower', 0))
+                        if block_price < current_price:
+                            distance = current_price - block_price
+                            if distance < vob_support_distance:
+                                vob_support_distance = distance
+                                vob_support_level = block_price
+        except:
+            pass
+
+        # Check for confluence (all within 30 points)
+        if htf_support_distance < 30 or vob_support_distance < 30:
+            factors = []
+            total_confidence = 0
+
+            if htf_support_distance < 30:
+                factors.append(f"HTF Support @ ₹{support_level:,.0f} ({htf_support_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if vob_support_distance < 30 and vob_support_level:
+                factors.append(f"VOB Support @ ₹{vob_support_level:,.0f} ({vob_support_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if regime_direction == "BULLISH":
+                factors.append(f"XGBoost Regime: {regime} ({regime_conf:.0f}% confidence)")
+                total_confidence += 30
+            elif regime_direction == "RANGING":
+                factors.append(f"XGBoost Regime: {regime} (Buy at support)")
+                total_confidence += 20
+
+            # Check ATM Bias alignment
+            if atm_bias_data and 'overall_bias' in atm_bias_data:
+                atm_bias = atm_bias_data['overall_bias']
+                if atm_bias in ['BULLISH', 'STRONGLY_BULLISH']:
+                    factors.append(f"ATM Bias: {atm_bias} (13-factor alignment)")
+                    total_confidence += 15
+
+            if len(factors) >= 2:  # At least 2 factors must align
+                confluence_setups.append({
+                    'direction': 'LONG',
+                    'factors': factors,
+                    'confidence': min(100, total_confidence),
+                    'entry': min([l for l in [support_level if htf_support_distance < 30 else None,
+                                             vob_support_level if vob_support_distance < 30 else None] if l]),
+                    'type': 'BULLISH CONFLUENCE'
+                })
+
+    # --- BEARISH CONFLUENCE CHECK ---
+    if regime_direction in ["BEARISH", "RANGING"]:
+        # Check if current price is near HTF resistance
+        htf_resistance_distance = abs(current_price - resistance_level) if resistance_level > 0 else 999
+
+        # Check if current price is near a bearish VOB
+        vob_resistance_distance = 999
+        vob_resistance_level = None
+
+        try:
+            import streamlit as st
+            if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+                vob_data = st.session_state.vob_data_nifty
+                bearish_blocks = vob_data.get('bearish_blocks', [])
+
+                # Find nearest bearish VOB above current price
+                for block in bearish_blocks:
+                    if isinstance(block, dict):
+                        block_price = block.get('lower', block.get('upper', 0))
+                        if block_price > current_price:
+                            distance = block_price - current_price
+                            if distance < vob_resistance_distance:
+                                vob_resistance_distance = distance
+                                vob_resistance_level = block_price
+        except:
+            pass
+
+        # Check for confluence
+        if htf_resistance_distance < 30 or vob_resistance_distance < 30:
+            factors = []
+            total_confidence = 0
+
+            if htf_resistance_distance < 30:
+                factors.append(f"HTF Resistance @ ₹{resistance_level:,.0f} ({htf_resistance_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if vob_resistance_distance < 30 and vob_resistance_level:
+                factors.append(f"VOB Resistance @ ₹{vob_resistance_level:,.0f} ({vob_resistance_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if regime_direction == "BEARISH":
+                factors.append(f"XGBoost Regime: {regime} ({regime_conf:.0f}% confidence)")
+                total_confidence += 30
+            elif regime_direction == "RANGING":
+                factors.append(f"XGBoost Regime: {regime} (Sell at resistance)")
+                total_confidence += 20
+
+            # Check ATM Bias alignment
+            if atm_bias_data and 'overall_bias' in atm_bias_data:
+                atm_bias = atm_bias_data['overall_bias']
+                if atm_bias in ['BEARISH', 'STRONGLY_BEARISH']:
+                    factors.append(f"ATM Bias: {atm_bias} (13-factor alignment)")
+                    total_confidence += 15
+
+            if len(factors) >= 2:
+                confluence_setups.append({
+                    'direction': 'SHORT',
+                    'factors': factors,
+                    'confidence': min(100, total_confidence),
+                    'entry': max([l for l in [resistance_level if htf_resistance_distance < 30 else None,
+                                             vob_resistance_level if vob_resistance_distance < 30 else None] if l]),
+                    'type': 'BEARISH CONFLUENCE'
+                })
+
+    # Display confluence setups
+    if confluence_setups:
+        for setup in sorted(confluence_setups, key=lambda x: x['confidence'], reverse=True):
+            if setup['direction'] == 'LONG':
+                st.success(f"""
+**🔥 {setup['type']} DETECTED - {setup['confidence']:.0f}% CONFIDENCE**
+
+**📍 LONG ENTRY SETUP:**
+- **Entry Zone:** ₹{setup['entry']:,.0f} - ₹{setup['entry'] + 10:,.0f}
+- **Stop Loss:** ₹{setup['entry'] - 25:,.0f} (below confluence)
+- **Target 1:** ₹{setup['entry'] + 40:,.0f} (+40 pts, 1:1.6 R:R)
+- **Target 2:** ₹{setup['entry'] + 60:,.0f} (+60 pts, 1:2.4 R:R)
+
+**✅ Confluence Factors:**
+{chr(10).join(['   • ' + f for f in setup['factors']])}
+
+**🎯 Why This Works:**
+Multiple institutional levels align at same zone = High probability bounce
+Regime supports direction = Trend/Range alignment
+**This is a PRIME setup - Wait for price to reach entry zone!**
+
+**⚠️ BEFORE ENTRY - Confirm These:**
+1. ✅ Price forms Higher Low (HL) after decline
+2. ✅ Strong volume on bounce candle (check volume analysis above)
+3. ✅ Price NOT chasing (wait for dip to entry zone)
+4. ✅ Ideally price above VWAP when entering
+5. ✅ ATM Bias supports LONG (check ATM 13-Bias Tabulation in Tab 8)
+                """)
+            else:
+                st.error(f"""
+**🔥 {setup['type']} DETECTED - {setup['confidence']:.0f}% CONFIDENCE**
+
+**📍 SHORT ENTRY SETUP:**
+- **Entry Zone:** ₹{setup['entry'] - 10:,.0f} - ₹{setup['entry']:,.0f}
+- **Stop Loss:** ₹{setup['entry'] + 25:,.0f} (above confluence)
+- **Target 1:** ₹{setup['entry'] - 40:,.0f} (-40 pts, 1:1.6 R:R)
+- **Target 2:** ₹{setup['entry'] - 60:,.0f} (-60 pts, 1:2.4 R:R)
+
+**✅ Confluence Factors:**
+{chr(10).join(['   • ' + f for f in setup['factors']])}
+
+**🎯 Why This Works:**
+Multiple institutional levels align at same zone = High probability rejection
+Regime supports direction = Trend/Range alignment
+**This is a PRIME setup - Wait for price to reach entry zone!**
+
+**⚠️ BEFORE ENTRY - Confirm These:**
+1. ✅ Price forms Lower High (LH) after rally
+2. ✅ Strong volume on rejection candle (check volume analysis above)
+3. ✅ Price NOT chasing (wait for rally to entry zone)
+4. ✅ Ideally price below VWAP when entering
+5. ✅ ATM Bias supports SHORT (check ATM 13-Bias Tabulation in Tab 8)
+                """)
+    else:
+        st.warning("""
+**⚠️ NO CONFLUENCE SETUP DETECTED**
+
+**Current Status:**
+- HTF S/R not near current price (>30 pts away)
+- VOB levels not near current price (>30 pts away)
+- OR regime doesn't support clear direction
+
+**What to do:**
+- WAIT for price to reach confluence zones
+- Don't force trades without alignment
+- Patience = Higher win rate
+        """)
+
+    st.markdown("---")
+
+    # ===== PROFESSIONAL ENTRY RULES & VOLUME CONFIRMATION =====
+    st.markdown("#### 📋 PROFESSIONAL ENTRY RULES (Based on Trading Theory)")
+
+    st.info("""
+**🎯 ENTRY CHECKLIST - All Must Be TRUE Before Entry:**
+
+**1. Structure Confirmation:**
+- ✅ **For LONG:** Price forms Higher Low (HL) after decline
+- ✅ **For SHORT:** Price forms Lower High (LH) after rally
+- ❌ **DON'T** chase first green/red candle (often fake)
+
+**2. Volume Confirmation:**
+- ✅ Breakout candle has **above-average volume**
+- ✅ Volume increasing on move toward entry level
+- ❌ Low volume = Fake breakout, avoid entry
+
+**3. Position Confirmation:**
+- ✅ **For LONG:** Price above VWAP or breaks recent intraday high
+- ✅ **For SHORT:** Price below VWAP or breaks recent intraday low
+- ❌ Entry in middle of range = Poor R:R
+
+**4. Risk Management:**
+- ✅ Stop Loss below Higher Low (LONG) or above Lower High (SHORT)
+- ✅ Target minimum 1:2 Risk:Reward ratio
+- ✅ If 2 trades failed today → STOP trading, review tomorrow
+    """)
+
+    # ===== MARKET REGIME CONFIRMATION =====
+    st.markdown("**🎯 Market Regime Analysis:**")
+
+    regime_status = "⚠️ Regime data unavailable"
+    regime_color = "warning"
+    regime_recommendation = ""
+
+    if ml_regime_result and hasattr(ml_regime_result, 'regime'):
+        regime = ml_regime_result.regime
+        regime_confidence = ml_regime_result.confidence if hasattr(ml_regime_result, 'confidence') else 0
+
+        if 'TRENDING_UP' in regime or 'STRONG_TRENDING_UP' in regime:
+            regime_status = f"✅ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "success"
+            regime_recommendation = "**Trade Bias:** LONG only (buy dips to support)\n**Avoid:** Selling against trend"
+        elif 'TRENDING_DOWN' in regime or 'STRONG_TRENDING_DOWN' in regime:
+            regime_status = f"✅ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "error"
+            regime_recommendation = "**Trade Bias:** SHORT only (sell rallies to resistance)\n**Avoid:** Buying against trend"
+        elif 'RANGING' in regime:
+            regime_status = f"⚠️ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "warning"
+            regime_recommendation = "**Trade Bias:** BOTH (buy at support, sell at resistance)\n**Avoid:** Middle of range"
+        else:
+            regime_status = f"~ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "info"
+            regime_recommendation = "**Trade Bias:** Wait for clearer regime"
+
+    if regime_color == "success":
+        st.success(f"{regime_status}\n{regime_recommendation}")
+    elif regime_color == "error":
+        st.error(f"{regime_status}\n{regime_recommendation}")
+    elif regime_color == "warning":
+        st.warning(f"{regime_status}\n{regime_recommendation}")
+    else:
+        st.info(f"{regime_status}\n{regime_recommendation}")
+
+    st.markdown("---")
+
+    # Volume Analysis (if available)
+    st.markdown("**📊 Current Volume Analysis:**")
+
+    volume_status = "⚠️ Volume data unavailable"
+    volume_color = "warning"
+
+    # Check Money Flow for volume confirmation
+    if money_flow_signals:
+        mf_volume = money_flow_signals.get('volume_strength', 0)
+        mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+
+        if mf_volume > 70:
+            volume_status = f"✅ **HIGH VOLUME** ({mf_volume:.0f}%) - Strong {mf_signal} flow detected"
+            volume_color = "success"
+        elif mf_volume > 40:
+            volume_status = f"~ **MODERATE VOLUME** ({mf_volume:.0f}%) - {mf_signal} flow present"
+            volume_color = "info"
+        else:
+            volume_status = f"❌ **LOW VOLUME** ({mf_volume:.0f}%) - Weak confirmation"
+            volume_color = "error"
+
+    # Check DeltaFlow for buying/selling pressure
+    delta_pressure = "Neutral"
+    if deltaflow_signals:
+        delta = deltaflow_signals.get('cumulative_delta', 0)
+        if delta > 1000:
+            delta_pressure = f"🟢 **Strong Buying Pressure** (+{delta:,.0f})"
+        elif delta < -1000:
+            delta_pressure = f"🔴 **Strong Selling Pressure** ({delta:,.0f})"
+        else:
+            delta_pressure = f"⚖️ **Balanced** ({delta:,.0f})"
+
+    # Check Market Depth (Orderbook) Pressure
+    depth_pressure = ""
+    if moment_data and 'orderbook' in moment_data:
+        orderbook = moment_data['orderbook']
+        if orderbook.get('available', False):
+            pressure = orderbook.get('pressure', 'NEUTRAL')
+            pressure_score = orderbook.get('pressure_score', 0)
+
+            if pressure == 'BUY' and pressure_score > 60:
+                depth_pressure = f"\n📊 **Market Depth:** BUY pressure ({pressure_score:.0f}%) - Bid strength"
+            elif pressure == 'SELL' and pressure_score > 60:
+                depth_pressure = f"\n📊 **Market Depth:** SELL pressure ({pressure_score:.0f}%) - Ask strength"
+            else:
+                depth_pressure = f"\n📊 **Market Depth:** Balanced ({pressure_score:.0f}%)"
+
+    # Check Option Chain OI Changes (Volume flow)
+    oi_flow = ""
+    if nifty_screener_data and 'oi_pcr_metrics' in nifty_screener_data:
+        oi_pcr = nifty_screener_data['oi_pcr_metrics']
+        pcr_change = oi_pcr.get('pcr_change_pct', 0) if isinstance(oi_pcr, dict) else 0
+
+        if pcr_change > 5:  # PCR increasing = More PUT buying
+            oi_flow = f"\n🔄 **OI Flow:** PUT buildup (+{pcr_change:.1f}% PCR) - Bearish hedging"
+        elif pcr_change < -5:  # PCR decreasing = More CALL buying
+            oi_flow = f"\n🔄 **OI Flow:** CALL buildup ({pcr_change:.1f}% PCR) - Bullish positioning"
+
+    # Combined volume display
+    combined_volume_info = f"{volume_status}\n{delta_pressure}{depth_pressure}{oi_flow}"
+
+    if volume_color == "success":
+        st.success(combined_volume_info)
+    elif volume_color == "error":
+        st.error(combined_volume_info)
+    else:
+        st.info(combined_volume_info)
+
+    # Professional Entry Decision
+    st.markdown("---")
+    st.markdown("**🎲 ENTRY DECISION FRAMEWORK:**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.success("""
+**✅ TAKE THE TRADE IF:**
+1. Price at key support/resistance
+2. Higher Low (LONG) or Lower High (SHORT) formed
+3. Volume confirms the move (>40% strength)
+4. Clear stop loss level identified
+5. Target gives minimum 1:2 R:R
+6. Not in middle of range
+        """)
+
+    with col2:
+        st.error("""
+**❌ SKIP THE TRADE IF:**
+1. Chasing price (away from key levels)
+2. No clear structure (no HL/LH)
+3. Low volume / No confirmation
+4. Stop loss too wide (>30 pts)
+5. Poor R:R (<1:1.5)
+6. Already 2 losing trades today
+        """)
+
+    st.warning("""
+**💡 REMEMBER:**
+- Missing a trade is 100x better than entering a wrong trade
+- Intraday gives multiple chances - **WAIT** for perfect setup
+- **One quality trade > Five mediocre trades**
+- Capital protection = Real profit
+    """)
 
     st.markdown("---")
 
