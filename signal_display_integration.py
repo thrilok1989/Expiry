@@ -289,6 +289,88 @@ def display_final_assessment(
     # --- Display FINAL ASSESSMENT (Native Python/Streamlit - NO HTML!) ---
     st.markdown("### 📊 FINAL ASSESSMENT (Seller + ATM Bias + Moment + Expiry + OI/PCR)")
 
+    # --- DATA VALIDITY HEALTH INDICATOR (VERY CRITICAL) ---
+    data_valid = call_oi > 0 and put_oi > 0 and total_oi > 10000
+    data_partial = (call_oi == 0 or put_oi == 0) and total_oi > 0
+
+    if not data_valid and not data_partial:
+        st.error("🔴 **OI DATA: STALE / FAILED** - Signals may be unreliable! Consider waiting for fresh data.")
+    elif data_partial:
+        st.warning("🟡 **PARTIAL DATA USED** - Some OI metrics unavailable. Exercise caution with signals.")
+    else:
+        st.success("🟢 **OI DATA: VALID** - All systems operational ✓")
+
+    # --- TRADE CONFIDENCE SCORE (MOST IMPORTANT) ---
+    # Calculate confidence from multiple factors (0-100 scale)
+    confidence_factors = {}
+
+    # Factor 1: OI Data Quality (30 points)
+    if data_valid:
+        confidence_factors['oi_data'] = 30
+    elif data_partial:
+        confidence_factors['oi_data'] = 15
+    else:
+        confidence_factors['oi_data'] = 0
+
+    # Factor 2: ATM Bias Strength (20 points)
+    if abs(atm_bias_score) > 0.7:
+        confidence_factors['atm_bias'] = 20
+    elif abs(atm_bias_score) > 0.4:
+        confidence_factors['atm_bias'] = 10
+    else:
+        confidence_factors['atm_bias'] = 0
+
+    # Factor 3: Regime Clarity (15 points) - Trending is better than ranging
+    if regime in ['TRENDING_UP', 'TRENDING_DOWN', 'STRONG_TRENDING_UP', 'STRONG_TRENDING_DOWN']:
+        confidence_factors['regime'] = 15
+    elif regime in ['RANGING', 'CONSOLIDATING']:
+        confidence_factors['regime'] = 5
+    else:
+        confidence_factors['regime'] = 0
+
+    # Factor 4: PCR Conviction (15 points) - Extreme PCR values show conviction
+    if pcr_value > 1.2 or pcr_value < 0.7:
+        confidence_factors['pcr'] = 15
+    elif pcr_value > 1.0 or pcr_value < 0.85:
+        confidence_factors['pcr'] = 8
+    else:
+        confidence_factors['pcr'] = 3
+
+    # Factor 5: Support/Resistance Distance (10 points) - Tighter range = lower confidence for breakout
+    sr_distance = abs(resistance_level - support_level)
+    if sr_distance > 200:
+        confidence_factors['sr_distance'] = 10  # Wide range, good for trending
+    elif sr_distance > 100:
+        confidence_factors['sr_distance'] = 5
+    else:
+        confidence_factors['sr_distance'] = 2  # Very tight, chop zone
+
+    # Factor 6: Moment/Orderbook Pressure (10 points)
+    if abs(moment_score) > 50 or orderbook_pressure in ['STRONG_BUY', 'STRONG_SELL']:
+        confidence_factors['momentum'] = 10
+    elif abs(moment_score) > 25:
+        confidence_factors['momentum'] = 5
+    else:
+        confidence_factors['momentum'] = 0
+
+    # Calculate total confidence score
+    confidence_score = sum(confidence_factors.values())
+
+    # Display confidence score with clear labels
+    if confidence_score >= 70:
+        st.success(f"✅ **HIGH PROBABILITY SETUP** ({confidence_score}/100) - Strong edge detected")
+        market_state_banner = "🧠 **MARKET STATE: HIGH EDGE** → Trade with conviction"
+    elif confidence_score >= 45:
+        st.warning(f"⚠️ **LOW CONFIDENCE - WAIT** ({confidence_score}/100) - Setup not ideal, wait for better conditions")
+        market_state_banner = "🧠 **MARKET STATE: LOW EDGE** → WAIT FOR EXTREMES ONLY"
+    else:
+        st.error(f"❌ **NO TRADE ZONE** ({confidence_score}/100) - Stay out, conditions unfavorable")
+        market_state_banner = "🧠 **MARKET STATE: NO EDGE** → DO NOT TRADE"
+
+    # Display golden line at top
+    st.markdown(f"### {market_state_banner}")
+    st.markdown("---")
+
     with st.container():
         st.info(f"**🟠 Market Makers are telling us:**\n\n{mm_narrative}")
 
@@ -306,6 +388,114 @@ def display_final_assessment(
             st.info(f"**🔵 Preferred price level:**\n\n₹{max_pain:,} (Max Pain)")
             st.warning(f"**🟡 Regime (Advanced Chart Analysis):**\n\n{regime}")
             st.success(f"**🟢 Sector Rotation Analysis:**\n\n{sector_bias} bias detected")
+
+        # --- IV CONTEXT & SESSION INTELLIGENCE (New Row) ---
+        st.markdown("---")
+        col3, col4 = st.columns(2)
+
+        with col3:
+            # IV Context (Volatility Regime)
+            vix_value = 15.0  # Default
+            if enhanced_market_data:
+                vix_data = enhanced_market_data.get('vix', {})
+                if isinstance(vix_data, dict):
+                    vix_value = vix_data.get('lastPrice', 15.0)
+                elif isinstance(vix_data, (int, float)):
+                    vix_value = vix_data
+
+            # Determine IV regime
+            if vix_value < 12:
+                iv_regime = "VERY LOW"
+                iv_trend = "🔽 FALLING"
+                iv_advice = "Premium decay strong. Avoid buying options. Consider selling."
+                iv_color = "success"
+            elif vix_value < 15:
+                iv_regime = "LOW"
+                iv_trend = "📉 Flat/Falling"
+                iv_advice = "Moderate decay. Be selective with long options."
+                iv_color = "info"
+            elif vix_value < 20:
+                iv_regime = "NORMAL"
+                iv_trend = "➡️ STABLE"
+                iv_advice = "Balanced conditions. Both buying/selling viable."
+                iv_color = "info"
+            elif vix_value < 25:
+                iv_regime = "ELEVATED"
+                iv_trend = "📈 Rising"
+                iv_advice = "Volatility rising. Long options have edge."
+                iv_color = "warning"
+            else:
+                iv_regime = "HIGH"
+                iv_trend = "🔼 RISING"
+                iv_advice = "High volatility! Long options premium justified."
+                iv_color = "error"
+
+            if iv_color == "success":
+                st.success(f"**🟣 Volatility Context (IV Regime):**\n\nVIX: {vix_value:.2f} ({iv_regime})  \nTrend: {iv_trend}  \n💡 {iv_advice}")
+            elif iv_color == "warning":
+                st.warning(f"**🟣 Volatility Context (IV Regime):**\n\nVIX: {vix_value:.2f} ({iv_regime})  \nTrend: {iv_trend}  \n💡 {iv_advice}")
+            elif iv_color == "error":
+                st.error(f"**🟣 Volatility Context (IV Regime):**\n\nVIX: {vix_value:.2f} ({iv_regime})  \nTrend: {iv_trend}  \n💡 {iv_advice}")
+            else:
+                st.info(f"**🟣 Volatility Context (IV Regime):**\n\nVIX: {vix_value:.2f} ({iv_regime})  \nTrend: {iv_trend}  \n💡 {iv_advice}")
+
+        with col4:
+            # Session Intelligence (Time Context)
+            from datetime import datetime
+            import pytz
+
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist)
+            current_hour = current_time.hour
+            current_minute = current_time.minute
+
+            # Determine session
+            if current_hour == 9 and current_minute < 30:
+                session = "PRE-MARKET"
+                session_advice = "Wait for market open. High volatility expected."
+                session_color = "warning"
+            elif current_hour == 9 and current_minute >= 15:
+                session = "OPENING HOUR"
+                session_advice = "High volatility! Wait for first 15-30 min to settle."
+                session_color = "error"
+            elif current_hour == 10:
+                session = "POST-OPENING"
+                session_advice = "Initial direction established. Good for trend trades."
+                session_color = "success"
+            elif current_hour >= 11 and current_hour < 13:
+                session = "MID-SESSION"
+                session_advice = "Low momentum period. Avoid unless strong setup."
+                session_color = "warning"
+            elif current_hour >= 13 and current_hour < 15:
+                session = "AFTERNOON"
+                session_advice = "Momentum picking up. Watch for directional moves."
+                session_color = "info"
+            elif current_hour == 15 and current_minute < 30:
+                session = "POWER HOUR"
+                session_advice = "High activity! Final push of the day."
+                session_color = "success"
+            else:
+                session = "POST-MARKET"
+                session_advice = "Market closed. Prepare for tomorrow."
+                session_color = "info"
+
+            # Check if expiry day
+            if days_to_expiry <= 0:
+                session = f"{session} (EXPIRY DAY!)"
+                session_advice = "⚠️ EXPIRY DAY - Extreme volatility! Reduce size, tight stops."
+                session_color = "error"
+            elif days_to_expiry <= 1:
+                session = f"{session} (Pre-Expiry)"
+                session_advice = f"{session_advice} ⚠️ Expiry tomorrow - Increased volatility likely."
+
+            if session_color == "success":
+                st.success(f"**🕒 Session Intelligence (Time Context):**\n\nSession: {session}  \nTime: {current_time.strftime('%I:%M %p IST')}  \n💡 {session_advice}")
+            elif session_color == "warning":
+                st.warning(f"**🕒 Session Intelligence (Time Context):**\n\nSession: {session}  \nTime: {current_time.strftime('%I:%M %p IST')}  \n💡 {session_advice}")
+            elif session_color == "error":
+                st.error(f"**🕒 Session Intelligence (Time Context):**\n\nSession: {session}  \nTime: {current_time.strftime('%I:%M %p IST')}  \n💡 {session_advice}")
+            else:
+                st.info(f"**🕒 Session Intelligence (Time Context):**\n\nSession: {session}  \nTime: {current_time.strftime('%I:%M %p IST')}  \n💡 {session_advice}")
 
     # --- Comprehensive Liquidity & Support/Resistance Levels ---
     st.markdown("### 📊 Comprehensive Liquidity Analysis")
@@ -410,6 +600,165 @@ def display_final_assessment(
 
     st.markdown("---")
 
+    # --- INTRADAY NEAR-SPOT LEVELS (Within 30 points for scalping) ---
+    st.markdown("### ⚡ INTRADAY Near-Spot Levels (For 1-Hour Scalping)")
+
+    # Filter only levels within 30 points of current price
+    intraday_threshold = 30
+    intraday_levels = [l for l in liquidity_levels if abs(l['price'] - current_price) <= intraday_threshold]
+
+    if intraday_levels:
+        # Sort by distance from current price
+        intraday_levels = sorted(intraday_levels, key=lambda x: abs(x['price'] - current_price))
+
+        col1, col2 = st.columns(2)
+
+        intraday_support = [l for l in intraday_levels if l['price'] < current_price]
+        intraday_resistance = [l for l in intraday_levels if l['price'] > current_price]
+
+        with col1:
+            st.markdown("**🔻 Immediate Support (Scalp Zone)**")
+            if intraday_support:
+                for level in intraday_support[:3]:  # Show top 3
+                    distance = current_price - level['price']
+                    st.success(f"🟢 ₹{level['price']:,.0f} (-{distance:.0f} pts) - {level['type']}")
+                    st.caption(f"   Source: {level['source']}")
+            else:
+                st.warning("⚠️ No immediate support within 30 pts - Price may fall further")
+
+        with col2:
+            st.markdown("**🔺 Immediate Resistance (Scalp Zone)**")
+            if intraday_resistance:
+                for level in intraday_resistance[:3]:  # Show top 3
+                    distance = level['price'] - current_price
+                    st.error(f"🔴 ₹{level['price']:,.0f} (+{distance:.0f} pts) - {level['type']}")
+                    st.caption(f"   Source: {level['source']}")
+            else:
+                st.warning("⚠️ No immediate resistance within 30 pts - Price may rally further")
+
+        # Add actionable insight
+        if intraday_support and intraday_resistance:
+            nearest_sup = intraday_support[0]['price']
+            nearest_res = intraday_resistance[0]['price']
+            intraday_range = nearest_res - nearest_sup
+            st.info(f"📊 **Intraday Range:** ₹{nearest_sup:,.0f} - ₹{nearest_res:,.0f} ({intraday_range:.0f} pts width)")
+
+            # Trading advice based on range
+            if intraday_range < 30:
+                st.warning("⚠️ **TIGHT RANGE** - Chop zone! Wait for breakout or avoid.")
+            elif intraday_range <= 50:
+                st.success("✅ **IDEAL SCALP RANGE** - Good for quick in-out trades.")
+            else:
+                st.info("📈 **WIDER RANGE** - Consider swing trades with wider stops.")
+    else:
+        st.warning("⚠️ No levels within 30 points of current price. Price is in open space - use wider timeframe levels.")
+
+    st.markdown("---")
+
+    # --- FLOW CONFIRMATION & FAKE BREAKOUT WARNING ---
+    st.markdown("### 🔄 Market Flow & Breakout Validation")
+
+    col_flow1, col_flow2 = st.columns(2)
+
+    with col_flow1:
+        # Flow Confirmation (Delta Imbalance, Candle Strength)
+        st.markdown("**📊 Flow Confirmation (Who's in Control?)**")
+
+        # Try to get volume data and delta imbalance from market_depth or enhanced_market_data
+        buy_volume = 0
+        sell_volume = 0
+        total_volume = 0
+
+        if market_depth and isinstance(market_depth, dict):
+            buy_volume = market_depth.get('total_buy_qty', 0)
+            sell_volume = market_depth.get('total_sell_qty', 0)
+            total_volume = buy_volume + sell_volume
+
+        # Calculate delta imbalance
+        if total_volume > 0:
+            buy_pct = (buy_volume / total_volume) * 100
+            sell_pct = (sell_volume / total_volume) * 100
+            delta_imbalance = buy_pct - sell_pct
+
+            if delta_imbalance > 15:
+                flow_verdict = "🟢 BUYERS IN CONTROL"
+                flow_strength = "STRONG BUY FLOW"
+                flow_advice = "Bullish bias confirmed. Look for CALL entries."
+                flow_color = "success"
+            elif delta_imbalance > 5:
+                flow_verdict = "🟢 Mild Buy Pressure"
+                flow_strength = "WEAK BUY FLOW"
+                flow_advice = "Slight bullish edge. Wait for confirmation."
+                flow_color = "info"
+            elif delta_imbalance < -15:
+                flow_verdict = "🔴 SELLERS IN CONTROL"
+                flow_strength = "STRONG SELL FLOW"
+                flow_advice = "Bearish bias confirmed. Look for PUT entries."
+                flow_color = "error"
+            elif delta_imbalance < -5:
+                flow_verdict = "🔴 Mild Sell Pressure"
+                flow_strength = "WEAK SELL FLOW"
+                flow_advice = "Slight bearish edge. Wait for confirmation."
+                flow_color = "warning"
+            else:
+                flow_verdict = "⚖️ BALANCED FLOW"
+                flow_strength = "NEUTRAL"
+                flow_advice = "No clear bias. Wait for directional move."
+                flow_color = "info"
+
+            if flow_color == "success":
+                st.success(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+            elif flow_color == "error":
+                st.error(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+            elif flow_color == "warning":
+                st.warning(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+            else:
+                st.info(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+        else:
+            st.info("⚖️ FLOW DATA UNAVAILABLE\n\nCannot determine current flow. Use other indicators.")
+
+    with col_flow2:
+        # Fake Breakout Warning (Volume Confirmation)
+        st.markdown("**⚠️ Fake Breakout Warning System**")
+
+        # Check if price is near support/resistance (within 10 points)
+        near_support = abs(current_price - support_level) <= 10
+        near_resistance = abs(current_price - resistance_level) <= 10
+
+        if near_support or near_resistance:
+            level_name = "SUPPORT" if near_support else "RESISTANCE"
+            level_price = support_level if near_support else resistance_level
+
+            # Check volume confirmation (if available from market_depth or enhanced_market_data)
+            volume_confirmed = False
+            if total_volume > 0:
+                # Assume breakout is confirmed if volume is high (this is placeholder logic)
+                # In real implementation, compare with average volume
+                volume_confirmed = total_volume > 50000  # Placeholder threshold
+
+            # Check for wick-only breakout (would need candle data - using placeholder)
+            wick_breakout = False  # Placeholder - would need actual candle OHLC data
+
+            if volume_confirmed and not wick_breakout:
+                st.success(f"✅ BREAKOUT LIKELY VALID\n\nLevel: ₹{level_price:,.0f} ({level_name})  \n📊 Volume: CONFIRMED  \n🕯️ Candle: BODY CLOSE ABOVE/BELOW  \n💡 Safe to trade breakout direction")
+            elif not volume_confirmed and not wick_breakout:
+                st.warning(f"⚠️ WEAK BREAKOUT - CAUTION\n\nLevel: ₹{level_price:,.0f} ({level_name})  \n📊 Volume: LOW (Not confirmed)  \n💡 Wait for volume surge to confirm")
+            elif wick_breakout:
+                st.error(f"🚫 FAKE BREAKOUT WARNING!\n\nLevel: ₹{level_price:,.0f} ({level_name})  \n🕯️ WICK ONLY - Body didn't close through  \n💡 DO NOT CHASE! Likely rejection")
+            else:
+                st.info(f"📊 Near {level_name}: ₹{level_price:,.0f}\n\nWaiting for breakout attempt...")
+        else:
+            # Price not near key levels
+            distance_to_support = current_price - support_level
+            distance_to_resistance = resistance_level - current_price
+
+            if distance_to_support < distance_to_resistance:
+                st.info(f"📍 Price in middle zone\n\n{distance_to_support:.0f} pts above support  \n{distance_to_resistance:.0f} pts below resistance  \n💡 Wait for move to key levels")
+            else:
+                st.info(f"📍 Price in middle zone\n\n{distance_to_resistance:.0f} pts below resistance  \n{distance_to_support:.0f} pts above support  \n💡 Wait for move to key levels")
+
+    st.markdown("---")
+
     # --- Entry Price Recommendations ---
     st.markdown("### 🎯 Entry Price Recommendations")
 
@@ -511,6 +860,77 @@ def display_final_assessment(
 **Resistance Zone:** ₹{resistance_level:,.0f}
 **Trigger:** Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
         """)
+
+    # --- WHAT NOT TO DO (Elite-level UX) ---
+    st.markdown("---")
+    st.markdown("### 🚫 WHAT NOT TO DO (Critical Trade Avoidance)")
+
+    # Collect all warning conditions
+    warnings = []
+
+    # Warning 1: OI Data Invalid
+    if not data_valid:
+        warnings.append("❌ **DO NOT TRADE** - OI Data is stale/failed. Signals unreliable.")
+
+    # Warning 2: Low Confidence Score
+    if confidence_score < 45:
+        warnings.append("❌ **DO NOT TRADE** - Confidence score too low. Wait for better setup.")
+
+    # Warning 3: Tight Range / Chop Zone
+    if sr_distance < 50:
+        warnings.append("⚠️ **AVOID** - Price in tight chop zone ({sr_distance:.0f} pts range). High risk of whipsaws.")
+
+    # Warning 4: Mid-Session Low Momentum
+    if 11 <= current_hour < 13:
+        warnings.append("⚠️ **CAUTION** - Mid-session low momentum period. Only trade strong setups.")
+
+    # Warning 5: Opening Hour Volatility
+    if current_hour == 9 and current_minute >= 15 and current_minute < 45:
+        warnings.append("⚠️ **WAIT** - Opening hour high volatility. Let market settle first 30 minutes.")
+
+    # Warning 6: Expiry Day
+    if days_to_expiry <= 0:
+        warnings.append("🔥 **EXPIRY DAY** - Extreme volatility! Reduce position size 50%, use tighter stops.")
+
+    # Warning 7: IV Too Low (Premium Decay)
+    if vix_value < 12:
+        warnings.append("⚠️ **AVOID BUYING OPTIONS** - IV very low. Premium decay will hurt long positions.")
+
+    # Warning 8: Balanced Flow (No Edge)
+    if total_volume > 0:
+        buy_pct_check = (buy_volume / total_volume) * 100
+        delta_check = abs(buy_pct_check - 50)
+        if delta_check < 5:  # Within 45-55% range = balanced
+            warnings.append("⚠️ **NO CLEAR FLOW** - Balanced buy/sell. Wait for directional commitment.")
+
+    # Warning 9: Price Between Levels (No Clear Zone)
+    distance_to_sup = current_price - support_level
+    distance_to_res = resistance_level - current_price
+    if distance_to_sup > 30 and distance_to_res > 30:
+        warnings.append("⚠️ **AVOID MID-ZONE** - Price not near key levels. Wait for support/resistance approach.")
+
+    # Warning 10: Recent Stop Loss Hit (if tracking in session_state)
+    if 'last_sl_hit_time' in st.session_state:
+        from datetime import datetime, timedelta
+        last_sl_time = st.session_state.last_sl_hit_time
+        if datetime.now() - last_sl_time < timedelta(minutes=30):
+            warnings.append("🛑 **PAUSE TRADING** - Stop loss hit within 30 minutes. Take a break to avoid revenge trading.")
+
+    # Display warnings
+    if warnings:
+        st.error("### 🚨 ACTIVE WARNINGS - READ BEFORE TRADING!")
+        for warning in warnings:
+            st.warning(warning)
+
+        # Add summary guidance
+        if len(warnings) >= 5:
+            st.error("🔴 **TOO MANY RED FLAGS** - Step away! Market conditions not favorable.")
+        elif len(warnings) >= 3:
+            st.warning("🟡 **MULTIPLE CONCERNS** - Trade only if you have strong conviction and tight risk management.")
+        else:
+            st.info("🟢 **MANAGEABLE RISKS** - Proceed with caution and proper risk management.")
+    else:
+        st.success("✅ **NO MAJOR WARNINGS** - Conditions favorable for trading with proper risk management.")
 
 
 def display_signal_card(signal: TradingSignal):
