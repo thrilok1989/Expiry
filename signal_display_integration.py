@@ -697,61 +697,138 @@ def display_final_assessment(
     col_flow1, col_flow2 = st.columns(2)
 
     with col_flow1:
-        # Flow Confirmation (Delta Imbalance, Candle Strength)
+        # Flow Confirmation (Multi-Source Analysis)
         st.markdown("**📊 Flow Confirmation (Who's in Control?)**")
 
-        # Try to get volume data and delta imbalance from market_depth or enhanced_market_data
-        buy_volume = 0
-        sell_volume = 0
-        total_volume = 0
+        # === COLLECT FLOW DATA FROM ALL SOURCES ===
+        flow_signals = []
+        total_flow_score = 0
+        max_flow_score = 0
 
-        if market_depth and isinstance(market_depth, dict):
-            buy_volume = market_depth.get('total_buy_qty', 0)
-            sell_volume = market_depth.get('total_sell_qty', 0)
-            total_volume = buy_volume + sell_volume
+        # 1. Money Flow Profile (Tab 7)
+        if money_flow_signals:
+            mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+            mf_strength = money_flow_signals.get('volume_strength', 0)
 
-        # Calculate delta imbalance
-        if total_volume > 0:
-            buy_pct = (buy_volume / total_volume) * 100
-            sell_pct = (sell_volume / total_volume) * 100
-            delta_imbalance = buy_pct - sell_pct
+            if mf_signal == 'BUY':
+                flow_signals.append(f"💰 Money Flow: BUY ({mf_strength:.0f}%)")
+                total_flow_score += mf_strength
+            elif mf_signal == 'SELL':
+                flow_signals.append(f"💰 Money Flow: SELL ({mf_strength:.0f}%)")
+                total_flow_score -= mf_strength
+            else:
+                flow_signals.append(f"💰 Money Flow: NEUTRAL")
 
-            if delta_imbalance > 15:
+            max_flow_score += 100
+
+        # 2. DeltaFlow Profile (Tab 7)
+        if deltaflow_signals:
+            delta = deltaflow_signals.get('cumulative_delta', 0)
+
+            if delta > 1000:
+                flow_signals.append(f"⚡ DeltaFlow: +{delta:,.0f} (BUY)")
+                total_flow_score += 80
+            elif delta < -1000:
+                flow_signals.append(f"⚡ DeltaFlow: {delta:,.0f} (SELL)")
+                total_flow_score -= 80
+            else:
+                flow_signals.append(f"⚡ DeltaFlow: Balanced ({delta:,.0f})")
+                total_flow_score += 0
+
+            max_flow_score += 80
+
+        # 3. CVD - Cumulative Volume Delta (Tab 4)
+        if cvd_result and hasattr(cvd_result, 'signal'):
+            cvd_signal = cvd_result.signal
+
+            if cvd_signal in ['BULLISH', 'STRONG_BULLISH']:
+                flow_signals.append(f"📈 CVD: {cvd_signal}")
+                total_flow_score += 70
+            elif cvd_signal in ['BEARISH', 'STRONG_BEARISH']:
+                flow_signals.append(f"📉 CVD: {cvd_signal}")
+                total_flow_score -= 70
+            else:
+                flow_signals.append(f"📊 CVD: NEUTRAL")
+
+            max_flow_score += 70
+
+        # 4. Market Depth Orderbook Pressure
+        if moment_data and 'orderbook' in moment_data:
+            orderbook = moment_data['orderbook']
+            if orderbook.get('available', False):
+                pressure = orderbook.get('pressure', 'NEUTRAL')
+                pressure_score = orderbook.get('pressure_score', 0)
+
+                if pressure == 'BUY' and pressure_score > 60:
+                    flow_signals.append(f"📊 Depth: BUY pressure ({pressure_score:.0f}%)")
+                    total_flow_score += 60
+                elif pressure == 'SELL' and pressure_score > 60:
+                    flow_signals.append(f"📊 Depth: SELL pressure ({pressure_score:.0f}%)")
+                    total_flow_score -= 60
+                else:
+                    flow_signals.append(f"📊 Depth: Balanced")
+
+                max_flow_score += 60
+
+        # 5. OI Flow (CALL/PUT buildup)
+        if nifty_screener_data and 'oi_pcr_metrics' in nifty_screener_data:
+            oi_pcr = nifty_screener_data['oi_pcr_metrics']
+            pcr_change = oi_pcr.get('pcr_change_pct', 0) if isinstance(oi_pcr, dict) else 0
+
+            if pcr_change > 5:  # PCR increasing = PUT buildup
+                flow_signals.append(f"🔄 OI Flow: PUT buildup (+{pcr_change:.1f}%)")
+                total_flow_score -= 50
+            elif pcr_change < -5:  # PCR decreasing = CALL buildup
+                flow_signals.append(f"🔄 OI Flow: CALL buildup ({pcr_change:.1f}%)")
+                total_flow_score += 50
+            else:
+                flow_signals.append(f"🔄 OI Flow: Balanced")
+
+            max_flow_score += 50
+
+        # === DETERMINE OVERALL FLOW ===
+        if max_flow_score > 0:
+            flow_pct = (total_flow_score / max_flow_score) * 100
+
+            if flow_pct > 40:
                 flow_verdict = "🟢 BUYERS IN CONTROL"
-                flow_strength = "STRONG BUY FLOW"
-                flow_advice = "Bullish bias confirmed. Look for CALL entries."
+                flow_strength = f"STRONG BUY FLOW ({flow_pct:.0f}%)"
+                flow_advice = "Bullish bias confirmed. Look for CALL entries at support."
                 flow_color = "success"
-            elif delta_imbalance > 5:
+            elif flow_pct > 15:
                 flow_verdict = "🟢 Mild Buy Pressure"
-                flow_strength = "WEAK BUY FLOW"
+                flow_strength = f"WEAK BUY FLOW ({flow_pct:.0f}%)"
                 flow_advice = "Slight bullish edge. Wait for confirmation."
                 flow_color = "info"
-            elif delta_imbalance < -15:
+            elif flow_pct < -40:
                 flow_verdict = "🔴 SELLERS IN CONTROL"
-                flow_strength = "STRONG SELL FLOW"
-                flow_advice = "Bearish bias confirmed. Look for PUT entries."
+                flow_strength = f"STRONG SELL FLOW ({flow_pct:.0f}%)"
+                flow_advice = "Bearish bias confirmed. Look for PUT entries at resistance."
                 flow_color = "error"
-            elif delta_imbalance < -5:
+            elif flow_pct < -15:
                 flow_verdict = "🔴 Mild Sell Pressure"
-                flow_strength = "WEAK SELL FLOW"
+                flow_strength = f"WEAK SELL FLOW ({flow_pct:.0f}%)"
                 flow_advice = "Slight bearish edge. Wait for confirmation."
                 flow_color = "warning"
             else:
                 flow_verdict = "⚖️ BALANCED FLOW"
-                flow_strength = "NEUTRAL"
+                flow_strength = f"NEUTRAL ({flow_pct:+.0f}%)"
                 flow_advice = "No clear bias. Wait for directional move."
                 flow_color = "info"
 
+            # Display with all sources
+            flow_details = "\n".join(flow_signals)
+
             if flow_color == "success":
-                st.success(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+                st.success(f"{flow_verdict}\n\n{flow_strength}\n\n**Flow Sources:**\n{flow_details}\n\n💡 {flow_advice}")
             elif flow_color == "error":
-                st.error(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+                st.error(f"{flow_verdict}\n\n{flow_strength}\n\n**Flow Sources:**\n{flow_details}\n\n💡 {flow_advice}")
             elif flow_color == "warning":
-                st.warning(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+                st.warning(f"{flow_verdict}\n\n{flow_strength}\n\n**Flow Sources:**\n{flow_details}\n\n💡 {flow_advice}")
             else:
-                st.info(f"{flow_verdict}\n\nDelta: {delta_imbalance:+.1f}%  \nBuy: {buy_pct:.1f}% | Sell: {sell_pct:.1f}%  \n💡 {flow_advice}")
+                st.info(f"{flow_verdict}\n\n{flow_strength}\n\n**Flow Sources:**\n{flow_details}\n\n💡 {flow_advice}")
         else:
-            st.info("⚖️ FLOW DATA UNAVAILABLE\n\nCannot determine current flow. Use other indicators.")
+            st.info("⚖️ FLOW DATA UNAVAILABLE\n\nNo flow sources available. Check Money Flow, DeltaFlow, CVD, Market Depth tabs.")
 
     with col_flow2:
         # Fake Breakout Warning (Volume Confirmation)
