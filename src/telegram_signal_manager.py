@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 import logging
 from collections import deque
 
-from telegram_alerts import TelegramBot
-from enhanced_signal_generator import TradingSignal, format_signal_for_telegram
+from src.telegram_alerts import TelegramBot
+from src.enhanced_signal_generator import TradingSignal, format_signal_for_telegram
 
 logger = logging.getLogger(__name__)
 
