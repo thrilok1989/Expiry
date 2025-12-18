@@ -2548,14 +2548,17 @@ Regime supports direction = Trend/Range alignment
     max_score = 100
 
     # 1. Confluence Check (40 points)
-    if 'confluence_setups' in locals() and confluence_setups:
-        best_setup = max(confluence_setups, key=lambda x: x['confidence'])
-        if best_setup['confidence'] >= 70:
-            enter_conditions.append(f"✅ High Confluence ({best_setup['confidence']:.0f}% confidence)")
-            enter_score += 40
-        elif best_setup['confidence'] >= 50:
-            enter_conditions.append(f"⚠️ Moderate Confluence ({best_setup['confidence']:.0f}% confidence)")
-            enter_score += 20
+    try:
+        if confluence_setups:
+            best_setup = max(confluence_setups, key=lambda x: x['confidence'])
+            if best_setup['confidence'] >= 70:
+                enter_conditions.append(f"✅ High Confluence ({best_setup['confidence']:.0f}% confidence)")
+                enter_score += 40
+            elif best_setup['confidence'] >= 50:
+                enter_conditions.append(f"⚠️ Moderate Confluence ({best_setup['confidence']:.0f}% confidence)")
+                enter_score += 20
+    except (NameError, ValueError):
+        pass
 
     # 2. Market Regime Alignment (25 points)
     if ml_regime_result and hasattr(ml_regime_result, 'regime'):
@@ -2575,12 +2578,15 @@ Regime supports direction = Trend/Range alignment
             enter_score += 15
 
     # 4. Flow Confirmation (20 points)
-    if 'flow_pct' in locals() and flow_pct >= 60:
-        enter_conditions.append(f"✅ Strong Flow ({flow_pct:.0f}%)")
-        enter_score += 20
-    elif 'flow_pct' in locals() and flow_pct >= 40:
-        enter_conditions.append(f"⚠️ Moderate Flow ({flow_pct:.0f}%)")
-        enter_score += 10
+    try:
+        if flow_pct >= 60:
+            enter_conditions.append(f"✅ Strong Flow ({flow_pct:.0f}%)")
+            enter_score += 20
+        elif flow_pct >= 40:
+            enter_conditions.append(f"⚠️ Moderate Flow ({flow_pct:.0f}%)")
+            enter_score += 10
+    except NameError:
+        pass
 
     # 5. No Major Warnings (deduct points if warnings present)
     warning_penalty = 0
