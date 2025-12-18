@@ -1615,6 +1615,110 @@ def display_final_assessment(
 
     st.markdown("---")
 
+    # ===== PROFESSIONAL ENTRY RULES & VOLUME CONFIRMATION =====
+    st.markdown("#### 📋 PROFESSIONAL ENTRY RULES (Based on Trading Theory)")
+
+    st.info("""
+**🎯 ENTRY CHECKLIST - All Must Be TRUE Before Entry:**
+
+**1. Structure Confirmation:**
+- ✅ **For LONG:** Price forms Higher Low (HL) after decline
+- ✅ **For SHORT:** Price forms Lower High (LH) after rally
+- ❌ **DON'T** chase first green/red candle (often fake)
+
+**2. Volume Confirmation:**
+- ✅ Breakout candle has **above-average volume**
+- ✅ Volume increasing on move toward entry level
+- ❌ Low volume = Fake breakout, avoid entry
+
+**3. Position Confirmation:**
+- ✅ **For LONG:** Price above VWAP or breaks recent intraday high
+- ✅ **For SHORT:** Price below VWAP or breaks recent intraday low
+- ❌ Entry in middle of range = Poor R:R
+
+**4. Risk Management:**
+- ✅ Stop Loss below Higher Low (LONG) or above Lower High (SHORT)
+- ✅ Target minimum 1:2 Risk:Reward ratio
+- ✅ If 2 trades failed today → STOP trading, review tomorrow
+    """)
+
+    # Volume Analysis (if available)
+    st.markdown("**📊 Current Volume Analysis:**")
+
+    volume_status = "⚠️ Volume data unavailable"
+    volume_color = "warning"
+
+    # Check Money Flow for volume confirmation
+    if money_flow_signals:
+        mf_volume = money_flow_signals.get('volume_strength', 0)
+        mf_signal = money_flow_signals.get('signal', 'NEUTRAL')
+
+        if mf_volume > 70:
+            volume_status = f"✅ **HIGH VOLUME** ({mf_volume:.0f}%) - Strong {mf_signal} flow detected"
+            volume_color = "success"
+        elif mf_volume > 40:
+            volume_status = f"~ **MODERATE VOLUME** ({mf_volume:.0f}%) - {mf_signal} flow present"
+            volume_color = "info"
+        else:
+            volume_status = f"❌ **LOW VOLUME** ({mf_volume:.0f}%) - Weak confirmation"
+            volume_color = "error"
+
+    # Check DeltaFlow for buying/selling pressure
+    delta_pressure = "Neutral"
+    if deltaflow_signals:
+        delta = deltaflow_signals.get('cumulative_delta', 0)
+        if delta > 1000:
+            delta_pressure = f"🟢 **Strong Buying Pressure** (+{delta:,.0f})"
+        elif delta < -1000:
+            delta_pressure = f"🔴 **Strong Selling Pressure** ({delta:,.0f})"
+        else:
+            delta_pressure = f"⚖️ **Balanced** ({delta:,.0f})"
+
+    if volume_color == "success":
+        st.success(f"{volume_status}\n{delta_pressure}")
+    elif volume_color == "error":
+        st.error(f"{volume_status}\n{delta_pressure}")
+    else:
+        st.info(f"{volume_status}\n{delta_pressure}")
+
+    # Professional Entry Decision
+    st.markdown("---")
+    st.markdown("**🎲 ENTRY DECISION FRAMEWORK:**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.success("""
+**✅ TAKE THE TRADE IF:**
+1. Price at key support/resistance
+2. Higher Low (LONG) or Lower High (SHORT) formed
+3. Volume confirms the move (>40% strength)
+4. Clear stop loss level identified
+5. Target gives minimum 1:2 R:R
+6. Not in middle of range
+        """)
+
+    with col2:
+        st.error("""
+**❌ SKIP THE TRADE IF:**
+1. Chasing price (away from key levels)
+2. No clear structure (no HL/LH)
+3. Low volume / No confirmation
+4. Stop loss too wide (>30 pts)
+5. Poor R:R (<1:1.5)
+6. Already 2 losing trades today
+        """)
+
+    st.warning("""
+**💡 REMEMBER:**
+- Missing a trade is 100x better than entering a wrong trade
+- Intraday gives multiple chances - **WAIT** for perfect setup
+- **One quality trade > Five mediocre trades**
+- Capital protection = Real profit
+    """)
+
+    st.markdown("---")
+
     # --- Entry Price Recommendations (INTRADAY/SCALPING) ---
     st.markdown("### ⚡ INTRADAY/SCALPING Entry Recommendations (1-Hour Trades)")
 
