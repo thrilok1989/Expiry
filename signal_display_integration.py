@@ -220,9 +220,11 @@ def display_final_assessment(
     if nifty_screener_data:
         nearest_sup = nifty_screener_data.get('nearest_sup')
         nearest_res = nifty_screener_data.get('nearest_res')
-        if nearest_sup and nearest_sup < current_price:
+
+        # Type checking: ensure they're numbers (int or float), not dicts or other types
+        if nearest_sup and isinstance(nearest_sup, (int, float)) and nearest_sup < current_price:
             support_level = nearest_sup
-        if nearest_res and nearest_res > current_price:
+        if nearest_res and isinstance(nearest_res, (int, float)) and nearest_res > current_price:
             resistance_level = nearest_res
 
     # Fallback to liquidity zones from Advanced Chart Analysis
@@ -230,11 +232,13 @@ def display_final_assessment(
         support_zones = liquidity_result.support_zones if hasattr(liquidity_result, 'support_zones') else []
         resistance_zones = liquidity_result.resistance_zones if hasattr(liquidity_result, 'resistance_zones') else []
         if support_zones:
-            valid_supports = [s for s in support_zones if s < current_price]
+            # Type checking: filter only numeric values
+            valid_supports = [s for s in support_zones if isinstance(s, (int, float)) and s < current_price]
             if valid_supports:
                 support_level = max(valid_supports)
         if resistance_zones:
-            valid_resistances = [r for r in resistance_zones if r > current_price]
+            # Type checking: filter only numeric values
+            valid_resistances = [r for r in resistance_zones if isinstance(r, (int, float)) and r > current_price]
             if valid_resistances:
                 resistance_level = min(valid_resistances)
 
