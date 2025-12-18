@@ -1621,6 +1621,85 @@ def display_final_assessment(
     st.markdown("## 🔥 CONFLUENCE ENTRY CHECK")
     st.caption("**Highest probability setups: Volume Order Blocks + HTF Support/Resistance + XGBoost Regime alignment**")
 
+    # Display ATM ±2 Strike Bias Tabulation FIRST (Critical Decision Data)
+    st.markdown("### 📊 ATM ±2 Strikes - 14 Bias Metrics Tabulation")
+
+    if atm_bias_data:
+        atm_verdict = atm_bias_data.get('overall_bias', 'NEUTRAL')
+        atm_score = atm_bias_data.get('total_score', 0)
+        atm_strike_val = atm_bias_data.get('atm_strike', atm_strike)
+
+        # Count bullish and bearish metrics
+        bias_scores = atm_bias_data.get('bias_scores', {})
+        bullish_count = sum(1 for score in bias_scores.values() if score > 0.3)
+        bearish_count = sum(1 for score in bias_scores.values() if score < -0.3)
+        total_metrics = len(bias_scores) if bias_scores else 14
+
+        bullish_pct = (bullish_count / total_metrics * 100) if total_metrics > 0 else 0
+        bearish_pct = (bearish_count / total_metrics * 100) if total_metrics > 0 else 0
+
+        # Determine verdict color and emoji
+        if 'BULLISH' in atm_verdict:
+            verdict_color = "#00ff88"
+            verdict_emoji = "🐂"
+            verdict_bg = "#1a2e1a"
+        elif 'BEARISH' in atm_verdict:
+            verdict_color = "#ff6666"
+            verdict_emoji = "🐻"
+            verdict_bg = "#2e1a1a"
+        else:
+            verdict_color = "#ffa500"
+            verdict_emoji = "⚖️"
+            verdict_bg = "#2e2e1a"
+
+        # Display ATM Bias Card
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.markdown(f"""
+            <div style='padding: 15px; background: {verdict_bg}; border-radius: 10px; border-left: 4px solid {verdict_color};'>
+                <h4 style='margin: 0; color: {verdict_color};'>{verdict_emoji} {atm_verdict}</h4>
+                <p style='margin: 5px 0 0 0; color: #888; font-size: 12px;'>ATM STRIKE VERDICT</p>
+                <p style='margin: 5px 0 0 0; color: #ccc; font-size: 11px;'>Strike: {atm_strike_val} | Score: {atm_score:+.2f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            st.markdown(f"""
+            <div style='padding: 15px; background: #1a2e1a; border-radius: 10px; border-left: 4px solid #00ff88;'>
+                <h4 style='margin: 0; color: #00ff88;'>{bullish_count} / {total_metrics}</h4>
+                <p style='margin: 5px 0 0 0; color: #888; font-size: 12px;'>🐂 BULLISH METRICS</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            st.markdown(f"""
+            <div style='padding: 15px; background: #2e1a1a; border-radius: 10px; border-left: 4px solid #ff6666;'>
+                <h4 style='margin: 0; color: #ff6666;'>{bearish_count} / {total_metrics}</h4>
+                <p style='margin: 5px 0 0 0; color: #888; font-size: 12px;'>🐻 BEARISH METRICS</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col4:
+            st.markdown(f"""
+            <div style='padding: 15px; background: #1e1e1e; border-radius: 10px;'>
+                <p style='margin: 0; color: #00ff88; font-size: 14px;'><strong>BULLISH:</strong> {bullish_pct:.1f}%</p>
+                <p style='margin: 5px 0 0 0; color: #ff6666; font-size: 14px;'><strong>BEARISH:</strong> {bearish_pct:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Show interpretation
+        if bullish_pct > 40:
+            st.success(f"✅ **Strong Bullish Bias** - {bullish_count}/{total_metrics} metrics support LONG positions")
+        elif bearish_pct > 40:
+            st.error(f"✅ **Strong Bearish Bias** - {bearish_count}/{total_metrics} metrics support SHORT positions")
+        else:
+            st.info(f"⚠️ **Neutral/Mixed Bias** - No clear directional edge from ATM strikes")
+    else:
+        st.warning("⚠️ ATM Bias data unavailable - Check NIFTY Option Screener tab")
+
+    st.markdown("---")
+
     # Get regime for directional bias
     regime_direction = "UNKNOWN"
     regime_conf = 0
@@ -2012,21 +2091,89 @@ Regime supports direction = Trend/Range alignment
     # --- Entry Price Recommendations (INTRADAY/SCALPING) ---
     st.markdown("### ⚡ INTRADAY/SCALPING Entry Recommendations (1-Hour Trades)")
 
-    # ===== USE INTRADAY NEAR-SPOT LEVELS (NOT POSITION LEVELS) =====
-    # Get nearest intraday support and resistance (within 30 pts)
-    intraday_support_levels = [l for l in intraday_levels if l['price'] < current_price] if intraday_levels else []
-    intraday_resistance_levels = [l for l in intraday_levels if l['price'] > current_price] if intraday_levels else []
+    # ===== GET VOB AND HTF S/R LEVELS FOR PRECISE ENTRY ZONES =====
+    # Try to get VOB levels from session state
+    vob_support_level = None
+    vob_support_source = None
+    vob_resistance_level = None
+    vob_resistance_source = None
 
-    # Use nearest intraday levels for scalping entries
-    if intraday_support_levels:
-        scalp_support = intraday_support_levels[0]['price']  # Nearest support
-    else:
-        scalp_support = support_level  # Fallback to structural support
+    try:
+        import streamlit as st
+        if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+            vob_data = st.session_state.vob_data_nifty
 
-    if intraday_resistance_levels:
-        scalp_resistance = intraday_resistance_levels[0]['price']  # Nearest resistance
+            # Find nearest bullish VOB below current price (support)
+            bullish_blocks = vob_data.get('bullish_blocks', [])
+            min_distance_support = 999
+            for block in bullish_blocks:
+                if isinstance(block, dict):
+                    block_price = block.get('upper', block.get('lower', 0))
+                    if block_price < current_price:
+                        distance = current_price - block_price
+                        if distance < min_distance_support and distance < 50:  # Within 50 pts
+                            min_distance_support = distance
+                            vob_support_level = block_price
+                            vob_support_source = "VOB"
+
+            # Find nearest bearish VOB above current price (resistance)
+            bearish_blocks = vob_data.get('bearish_blocks', [])
+            min_distance_resistance = 999
+            for block in bearish_blocks:
+                if isinstance(block, dict):
+                    block_price = block.get('lower', block.get('upper', 0))
+                    if block_price > current_price:
+                        distance = block_price - current_price
+                        if distance < min_distance_resistance and distance < 50:  # Within 50 pts
+                            min_distance_resistance = distance
+                            vob_resistance_level = block_price
+                            vob_resistance_source = "VOB"
+    except:
+        pass
+
+    # Get HTF S/R levels from intraday_levels (3min, 5min, 15min, 30min)
+    htf_support_level = None
+    htf_support_timeframe = None
+    htf_resistance_level = None
+    htf_resistance_timeframe = None
+
+    if intraday_levels:
+        # Find nearest HTF support
+        supports_below = [l for l in intraday_levels if l['price'] < current_price]
+        if supports_below:
+            nearest_htf_support = supports_below[0]
+            htf_support_level = nearest_htf_support['price']
+            htf_support_timeframe = nearest_htf_support.get('source', 'HTF')
+
+        # Find nearest HTF resistance
+        resistances_above = [l for l in intraday_levels if l['price'] > current_price]
+        if resistances_above:
+            nearest_htf_resistance = resistances_above[0]
+            htf_resistance_level = nearest_htf_resistance['price']
+            htf_resistance_timeframe = nearest_htf_resistance.get('source', 'HTF')
+
+    # ===== CHOOSE BEST LEVEL (VOB PRIORITY, THEN HTF) =====
+    # For scalping support
+    if vob_support_level and (not htf_support_level or abs(current_price - vob_support_level) < abs(current_price - htf_support_level)):
+        scalp_support = vob_support_level
+        scalp_support_source = f"VOB Support"
+    elif htf_support_level:
+        scalp_support = htf_support_level
+        scalp_support_source = f"HTF {htf_support_timeframe} Support"
     else:
-        scalp_resistance = resistance_level  # Fallback to structural resistance
+        scalp_support = support_level
+        scalp_support_source = "Structural Support"
+
+    # For scalping resistance
+    if vob_resistance_level and (not htf_resistance_level or abs(vob_resistance_level - current_price) < abs(htf_resistance_level - current_price)):
+        scalp_resistance = vob_resistance_level
+        scalp_resistance_source = f"VOB Resistance"
+    elif htf_resistance_level:
+        scalp_resistance = htf_resistance_level
+        scalp_resistance_source = f"HTF {htf_resistance_timeframe} Resistance"
+    else:
+        scalp_resistance = resistance_level
+        scalp_resistance_source = "Structural Resistance"
 
     # ===== SCALPING RR (TIGHTER THAN POSITION TRADES) =====
     # Scalping uses tighter stops and targets
@@ -2083,17 +2230,18 @@ Regime supports direction = Trend/Range alignment
 
         # ===== ALWAYS SHOW CALL SCALP ENTRY =====
         st.success(f"""
-**🟢 CALL Scalp Entry (Intraday Support)**
+**🟢 CALL Scalp Entry ({scalp_support_source})**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {call_strike} CE (ATM)
 **Entry Price:** ₹{call_entry_estimate:.2f}
 **Stop Loss:** ₹{call_sl:.2f} (-{scalp_sl_pct*100:.0f}%) **[TIGHT]**
 **Target:** ₹{call_target:.2f} (+{scalp_target_pct*100:.0f}%) **[QUICK]**
-**Intraday Support:** ₹{scalp_support:,.0f}
+**{scalp_support_source}:** ₹{scalp_support:,.0f}
 **Distance:** {distance_to_scalp_support:.0f} pts away
 **Entry Zone:** ₹{scalp_support_trigger_low:,.0f}-{scalp_support_trigger_high:,.0f}
 **Timeframe:** 1-Hour Scalp
+**Level Type:** {scalp_support_source}
         """)
 
     with col2:
@@ -2122,17 +2270,18 @@ Regime supports direction = Trend/Range alignment
 
         # ===== ALWAYS SHOW PUT SCALP ENTRY =====
         st.error(f"""
-**🔴 PUT Scalp Entry (Intraday Resistance)**
+**🔴 PUT Scalp Entry ({scalp_resistance_source})**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {put_strike} PE (ATM)
 **Entry Price:** ₹{put_entry_estimate:.2f}
 **Stop Loss:** ₹{put_sl:.2f} (-{scalp_sl_pct*100:.0f}%) **[TIGHT]**
 **Target:** ₹{put_target:.2f} (+{scalp_target_pct*100:.0f}%) **[QUICK]**
-**Intraday Resistance:** ₹{scalp_resistance:,.0f}
+**{scalp_resistance_source}:** ₹{scalp_resistance:,.0f}
 **Distance:** {distance_to_scalp_resistance:.0f} pts away
 **Entry Zone:** ₹{scalp_resistance_trigger_low:,.0f}-{scalp_resistance_trigger_high:,.0f}
 **Timeframe:** 1-Hour Scalp
+**Level Type:** {scalp_resistance_source}
         """)
 
     st.markdown("---")
