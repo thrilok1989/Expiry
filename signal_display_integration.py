@@ -145,8 +145,6 @@ def display_final_assessment(
     - Game plan
     - Key levels and entry prices
     """
-    st.markdown("### 📊 FINAL ASSESSMENT")
-
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
     moment_data = nifty_screener_data.get('moment_detector', {}) if nifty_screener_data else {}
