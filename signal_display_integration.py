@@ -1615,6 +1615,228 @@ def display_final_assessment(
 
     st.markdown("---")
 
+    # ============================================
+    # 🔥 CONFLUENCE ENTRY CHECK (VOB + HTF S/R + REGIME)
+    # ============================================
+    st.markdown("## 🔥 CONFLUENCE ENTRY CHECK")
+    st.caption("**Highest probability setups: Volume Order Blocks + HTF Support/Resistance + XGBoost Regime alignment**")
+
+    # Get regime for directional bias
+    regime_direction = "UNKNOWN"
+    regime_conf = 0
+    if ml_regime_result and hasattr(ml_regime_result, 'regime'):
+        regime = ml_regime_result.regime
+        regime_conf = ml_regime_result.confidence if hasattr(ml_regime_result, 'confidence') else 0
+
+        if 'TRENDING_UP' in regime or 'STRONG_TRENDING_UP' in regime:
+            regime_direction = "BULLISH"
+        elif 'TRENDING_DOWN' in regime or 'STRONG_TRENDING_DOWN' in regime:
+            regime_direction = "BEARISH"
+        elif 'RANGING' in regime:
+            regime_direction = "RANGING"
+
+    # Check for confluence setups
+    confluence_setups = []
+
+    # --- BULLISH CONFLUENCE CHECK ---
+    if regime_direction in ["BULLISH", "RANGING"]:
+        # Check if current price is near HTF support
+        htf_support_distance = abs(current_price - support_level) if support_level > 0 else 999
+
+        # Check if current price is near a bullish VOB (if available from session state)
+        vob_support_distance = 999
+        vob_support_level = None
+
+        # Try to get VOB data from session state
+        try:
+            import streamlit as st
+            if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+                vob_data = st.session_state.vob_data_nifty
+                bullish_blocks = vob_data.get('bullish_blocks', [])
+
+                # Find nearest bullish VOB below current price
+                for block in bullish_blocks:
+                    if isinstance(block, dict):
+                        block_price = block.get('upper', block.get('lower', 0))
+                        if block_price < current_price:
+                            distance = current_price - block_price
+                            if distance < vob_support_distance:
+                                vob_support_distance = distance
+                                vob_support_level = block_price
+        except:
+            pass
+
+        # Check for confluence (all within 30 points)
+        if htf_support_distance < 30 or vob_support_distance < 30:
+            factors = []
+            total_confidence = 0
+
+            if htf_support_distance < 30:
+                factors.append(f"HTF Support @ ₹{support_level:,.0f} ({htf_support_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if vob_support_distance < 30 and vob_support_level:
+                factors.append(f"VOB Support @ ₹{vob_support_level:,.0f} ({vob_support_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if regime_direction == "BULLISH":
+                factors.append(f"XGBoost Regime: {regime} ({regime_conf:.0f}% confidence)")
+                total_confidence += 30
+            elif regime_direction == "RANGING":
+                factors.append(f"XGBoost Regime: {regime} (Buy at support)")
+                total_confidence += 20
+
+            # Check ATM Bias alignment
+            if atm_bias_data and 'overall_bias' in atm_bias_data:
+                atm_bias = atm_bias_data['overall_bias']
+                if atm_bias in ['BULLISH', 'STRONGLY_BULLISH']:
+                    factors.append(f"ATM Bias: {atm_bias} (13-factor alignment)")
+                    total_confidence += 15
+
+            if len(factors) >= 2:  # At least 2 factors must align
+                confluence_setups.append({
+                    'direction': 'LONG',
+                    'factors': factors,
+                    'confidence': min(100, total_confidence),
+                    'entry': min([l for l in [support_level if htf_support_distance < 30 else None,
+                                             vob_support_level if vob_support_distance < 30 else None] if l]),
+                    'type': 'BULLISH CONFLUENCE'
+                })
+
+    # --- BEARISH CONFLUENCE CHECK ---
+    if regime_direction in ["BEARISH", "RANGING"]:
+        # Check if current price is near HTF resistance
+        htf_resistance_distance = abs(current_price - resistance_level) if resistance_level > 0 else 999
+
+        # Check if current price is near a bearish VOB
+        vob_resistance_distance = 999
+        vob_resistance_level = None
+
+        try:
+            import streamlit as st
+            if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+                vob_data = st.session_state.vob_data_nifty
+                bearish_blocks = vob_data.get('bearish_blocks', [])
+
+                # Find nearest bearish VOB above current price
+                for block in bearish_blocks:
+                    if isinstance(block, dict):
+                        block_price = block.get('lower', block.get('upper', 0))
+                        if block_price > current_price:
+                            distance = block_price - current_price
+                            if distance < vob_resistance_distance:
+                                vob_resistance_distance = distance
+                                vob_resistance_level = block_price
+        except:
+            pass
+
+        # Check for confluence
+        if htf_resistance_distance < 30 or vob_resistance_distance < 30:
+            factors = []
+            total_confidence = 0
+
+            if htf_resistance_distance < 30:
+                factors.append(f"HTF Resistance @ ₹{resistance_level:,.0f} ({htf_resistance_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if vob_resistance_distance < 30 and vob_resistance_level:
+                factors.append(f"VOB Resistance @ ₹{vob_resistance_level:,.0f} ({vob_resistance_distance:.0f} pts away)")
+                total_confidence += 35
+
+            if regime_direction == "BEARISH":
+                factors.append(f"XGBoost Regime: {regime} ({regime_conf:.0f}% confidence)")
+                total_confidence += 30
+            elif regime_direction == "RANGING":
+                factors.append(f"XGBoost Regime: {regime} (Sell at resistance)")
+                total_confidence += 20
+
+            # Check ATM Bias alignment
+            if atm_bias_data and 'overall_bias' in atm_bias_data:
+                atm_bias = atm_bias_data['overall_bias']
+                if atm_bias in ['BEARISH', 'STRONGLY_BEARISH']:
+                    factors.append(f"ATM Bias: {atm_bias} (13-factor alignment)")
+                    total_confidence += 15
+
+            if len(factors) >= 2:
+                confluence_setups.append({
+                    'direction': 'SHORT',
+                    'factors': factors,
+                    'confidence': min(100, total_confidence),
+                    'entry': max([l for l in [resistance_level if htf_resistance_distance < 30 else None,
+                                             vob_resistance_level if vob_resistance_distance < 30 else None] if l]),
+                    'type': 'BEARISH CONFLUENCE'
+                })
+
+    # Display confluence setups
+    if confluence_setups:
+        for setup in sorted(confluence_setups, key=lambda x: x['confidence'], reverse=True):
+            if setup['direction'] == 'LONG':
+                st.success(f"""
+**🔥 {setup['type']} DETECTED - {setup['confidence']:.0f}% CONFIDENCE**
+
+**📍 LONG ENTRY SETUP:**
+- **Entry Zone:** ₹{setup['entry']:,.0f} - ₹{setup['entry'] + 10:,.0f}
+- **Stop Loss:** ₹{setup['entry'] - 25:,.0f} (below confluence)
+- **Target 1:** ₹{setup['entry'] + 40:,.0f} (+40 pts, 1:1.6 R:R)
+- **Target 2:** ₹{setup['entry'] + 60:,.0f} (+60 pts, 1:2.4 R:R)
+
+**✅ Confluence Factors:**
+{chr(10).join(['   • ' + f for f in setup['factors']])}
+
+**🎯 Why This Works:**
+Multiple institutional levels align at same zone = High probability bounce
+Regime supports direction = Trend/Range alignment
+**This is a PRIME setup - Wait for price to reach entry zone!**
+
+**⚠️ BEFORE ENTRY - Confirm These:**
+1. ✅ Price forms Higher Low (HL) after decline
+2. ✅ Strong volume on bounce candle (check volume analysis above)
+3. ✅ Price NOT chasing (wait for dip to entry zone)
+4. ✅ Ideally price above VWAP when entering
+5. ✅ ATM Bias supports LONG (check ATM 13-Bias Tabulation in Tab 8)
+                """)
+            else:
+                st.error(f"""
+**🔥 {setup['type']} DETECTED - {setup['confidence']:.0f}% CONFIDENCE**
+
+**📍 SHORT ENTRY SETUP:**
+- **Entry Zone:** ₹{setup['entry'] - 10:,.0f} - ₹{setup['entry']:,.0f}
+- **Stop Loss:** ₹{setup['entry'] + 25:,.0f} (above confluence)
+- **Target 1:** ₹{setup['entry'] - 40:,.0f} (-40 pts, 1:1.6 R:R)
+- **Target 2:** ₹{setup['entry'] - 60:,.0f} (-60 pts, 1:2.4 R:R)
+
+**✅ Confluence Factors:**
+{chr(10).join(['   • ' + f for f in setup['factors']])}
+
+**🎯 Why This Works:**
+Multiple institutional levels align at same zone = High probability rejection
+Regime supports direction = Trend/Range alignment
+**This is a PRIME setup - Wait for price to reach entry zone!**
+
+**⚠️ BEFORE ENTRY - Confirm These:**
+1. ✅ Price forms Lower High (LH) after rally
+2. ✅ Strong volume on rejection candle (check volume analysis above)
+3. ✅ Price NOT chasing (wait for rally to entry zone)
+4. ✅ Ideally price below VWAP when entering
+5. ✅ ATM Bias supports SHORT (check ATM 13-Bias Tabulation in Tab 8)
+                """)
+    else:
+        st.warning("""
+**⚠️ NO CONFLUENCE SETUP DETECTED**
+
+**Current Status:**
+- HTF S/R not near current price (>30 pts away)
+- VOB levels not near current price (>30 pts away)
+- OR regime doesn't support clear direction
+
+**What to do:**
+- WAIT for price to reach confluence zones
+- Don't force trades without alignment
+- Patience = Higher win rate
+        """)
+
+    st.markdown("---")
+
     # ===== PROFESSIONAL ENTRY RULES & VOLUME CONFIRMATION =====
     st.markdown("#### 📋 PROFESSIONAL ENTRY RULES (Based on Trading Theory)")
 
