@@ -133,7 +133,8 @@ def display_final_assessment(
     ml_regime_result: Optional[any],
     liquidity_result: Optional[any],
     current_price: float,
-    atm_strike: int
+    atm_strike: int,
+    option_chain: Optional[Dict] = None
 ):
     """
     Display FINAL ASSESSMENT with Market Makers narrative.
@@ -349,46 +350,82 @@ def display_final_assessment(
     # --- Entry Price Recommendations ---
     st.markdown("### 🎯 Entry Price Recommendations")
 
+    # Helper function to get option premium from chain
+    def get_option_premium(chain: Dict, strike: int, option_type: str) -> float:
+        """Extract LTP from option chain for given strike"""
+        if not chain or 'data' not in chain:
+            return 0.0
+
+        for option in chain.get('data', []):
+            if option.get('strikePrice') == strike:
+                if option_type == 'CE':
+                    return option.get('CE', {}).get('lastPrice', 0.0)
+                elif option_type == 'PE':
+                    return option.get('PE', {}).get('lastPrice', 0.0)
+        return 0.0
+
     col1, col2 = st.columns(2)
 
     with col1:
-        # CALL Entry (at support)
-        call_strike = round(support_level / 50) * 50
-        call_entry_estimate = 150  # Placeholder - should be from option chain
-        call_sl = call_entry_estimate * 0.75
-        call_target = call_entry_estimate * 1.5
+        # CALL Entry (at support) - using current_price not support for strike
+        call_strike = round(current_price / 50) * 50  # ATM strike based on spot
+        call_premium = get_option_premium(option_chain, call_strike, 'CE') if option_chain else 0.0
+
+        # Use real premium if available, otherwise estimate
+        if call_premium > 0:
+            call_entry_estimate = call_premium
+            call_sl = call_premium * 0.70  # 30% stop loss
+            call_target = call_premium * 1.60  # 60% target
+        else:
+            # Estimate based on distance from spot
+            distance = abs(call_strike - current_price)
+            call_entry_estimate = max(50, 300 - (distance / 10))
+            call_sl = call_entry_estimate * 0.70
+            call_target = call_entry_estimate * 1.60
 
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, #1a5f1a 0%, #0d3d0d 100%);
                     border-radius: 12px; padding: 20px; border-left: 4px solid #00ff88;'>
             <h4 style='margin: 0 0 10px 0; color: #00ff88;'>🟢 CALL Entry (Support)</h4>
             <p style='margin: 5px 0; font-size: 14px;'>
-                <strong>Strike:</strong> {call_strike} CE<br>
-                <strong>Entry Zone:</strong> ₹{call_entry_estimate - 5} - {call_entry_estimate + 5}<br>
-                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{call_sl:.0f}</span><br>
-                <strong>Target:</strong> <span style='color: #00ff88;'>₹{call_target:.0f}</span><br>
-                <strong>Trigger:</strong> Price holds above ₹{support_level:,.0f}
+                <strong>Spot Price:</strong> ₹{current_price:,.2f}<br>
+                <strong>Strike:</strong> {call_strike} CE (ATM)<br>
+                <strong>Entry Price:</strong> ₹{call_entry_estimate:.2f}<br>
+                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{call_sl:.2f}</span> (-30%)<br>
+                <strong>Target:</strong> <span style='color: #00ff88;'>₹{call_target:.2f}</span> (+60%)<br>
+                <strong>Trigger:</strong> Price holds above Support ₹{support_level:,.0f}
             </p>
         </div>
         """, unsafe_allow_html=True)
 
     with col2:
-        # PUT Entry (at resistance)
-        put_strike = round(resistance_level / 50) * 50
-        put_entry_estimate = 150  # Placeholder - should be from option chain
-        put_sl = put_entry_estimate * 0.75
-        put_target = put_entry_estimate * 1.5
+        # PUT Entry (at resistance) - using current_price not resistance for strike
+        put_strike = round(current_price / 50) * 50  # ATM strike based on spot
+        put_premium = get_option_premium(option_chain, put_strike, 'PE') if option_chain else 0.0
+
+        # Use real premium if available, otherwise estimate
+        if put_premium > 0:
+            put_entry_estimate = put_premium
+            put_sl = put_premium * 0.70  # 30% stop loss
+            put_target = put_premium * 1.60  # 60% target
+        else:
+            # Estimate based on distance from spot
+            distance = abs(put_strike - current_price)
+            put_entry_estimate = max(50, 300 - (distance / 10))
+            put_sl = put_entry_estimate * 0.70
+            put_target = put_entry_estimate * 1.60
 
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, #5f1a1a 0%, #3d0d0d 100%);
                     border-radius: 12px; padding: 20px; border-left: 4px solid #ff4444;'>
             <h4 style='margin: 0 0 10px 0; color: #ff4444;'>🔴 PUT Entry (Resistance)</h4>
             <p style='margin: 5px 0; font-size: 14px;'>
-                <strong>Strike:</strong> {put_strike} PE<br>
-                <strong>Entry Zone:</strong> ₹{put_entry_estimate - 5} - {put_entry_estimate + 5}<br>
-                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{put_sl:.0f}</span><br>
-                <strong>Target:</strong> <span style='color: #00ff88;'>₹{put_target:.0f}</span><br>
-                <strong>Trigger:</strong> Price rejects at ₹{resistance_level:,.0f}
+                <strong>Spot Price:</strong> ₹{current_price:,.2f}<br>
+                <strong>Strike:</strong> {put_strike} PE (ATM)<br>
+                <strong>Entry Price:</strong> ₹{put_entry_estimate:.2f}<br>
+                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{put_sl:.2f}</span> (-30%)<br>
+                <strong>Target:</strong> <span style='color: #00ff88;'>₹{put_target:.2f}</span> (+60%)<br>
+                <strong>Trigger:</strong> Price rejects at Resistance ₹{resistance_level:,.0f}
             </p>
         </div>
         """, unsafe_allow_html=True)
