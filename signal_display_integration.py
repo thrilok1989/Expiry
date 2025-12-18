@@ -127,6 +127,267 @@ def generate_trading_signal(
         return None
 
 
+def display_final_assessment(
+    nifty_screener_data: Optional[Dict],
+    enhanced_market_data: Optional[Dict],
+    ml_regime_result: Optional[any],
+    liquidity_result: Optional[any],
+    current_price: float,
+    atm_strike: int
+):
+    """
+    Display FINAL ASSESSMENT with Market Makers narrative.
+
+    Format includes:
+    - Seller Activity + ATM Bias + Moment + Expiry + OI/PCR
+    - Market Makers interpretation
+    - ATM Zone Analysis
+    - Game plan
+    - Key levels and entry prices
+    """
+    st.markdown("### 📊 FINAL ASSESSMENT")
+
+    # Extract data
+    atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
+    moment_data = nifty_screener_data.get('moment_detector', {}) if nifty_screener_data else {}
+    expiry_data = nifty_screener_data.get('expiry_context', {}) if nifty_screener_data else {}
+    oi_pcr_data = nifty_screener_data.get('oi_pcr', {}) if nifty_screener_data else {}
+    market_depth = nifty_screener_data.get('market_depth', {}) if nifty_screener_data else {}
+
+    # Get regime from ML result
+    regime = "RANGING"
+    if ml_regime_result and hasattr(ml_regime_result, 'regime'):
+        regime = ml_regime_result.regime
+    elif ml_regime_result and isinstance(ml_regime_result, dict):
+        regime = ml_regime_result.get('regime', 'RANGING')
+
+    # Get sector rotation from enhanced market data
+    sector_bias = "NEUTRAL"
+    if enhanced_market_data:
+        sectors = enhanced_market_data.get('sectors', {})
+        if sectors.get('success'):
+            sector_data = sectors.get('data', [])
+            bullish_sectors = sum(1 for s in sector_data if s.get('change_pct', 0) > 0.5)
+            bearish_sectors = sum(1 for s in sector_data if s.get('change_pct', 0) < -0.5)
+            if bullish_sectors > bearish_sectors + 2:
+                sector_bias = "BULLISH"
+            elif bearish_sectors > bullish_sectors + 2:
+                sector_bias = "BEARISH"
+
+    # Get ATM Bias
+    atm_bias_score = atm_bias_data.get('total_score', 0)
+    atm_bias_verdict = atm_bias_data.get('verdict', 'NEUTRAL')
+
+    # Determine ATM bias emoji
+    if atm_bias_verdict == "CALL SELLERS":
+        atm_emoji = "🔴"
+    elif atm_bias_verdict == "PUT SELLERS":
+        atm_emoji = "🟢"
+    else:
+        atm_emoji = "⚖️"
+
+    # Get Moment Detector
+    moment_verdict = moment_data.get('verdict', 'NEUTRAL')
+    moment_score = moment_data.get('total_score', 0)
+    orderbook_pressure = market_depth.get('pressure', 'NEUTRAL')
+
+    # Get OI/PCR metrics
+    pcr_value = oi_pcr_data.get('pcr', 0.9)
+    call_oi = oi_pcr_data.get('total_call_oi', 0)
+    put_oi = oi_pcr_data.get('total_put_oi', 0)
+    atm_concentration = oi_pcr_data.get('atm_concentration_pct', 0)
+
+    # Determine PCR interpretation
+    if pcr_value > 1.2:
+        pcr_sentiment = "STRONG BULLISH"
+    elif pcr_value > 1.0:
+        pcr_sentiment = "MILD BULLISH"
+    elif pcr_value > 0.8:
+        pcr_sentiment = "NEUTRAL"
+    elif pcr_value > 0.6:
+        pcr_sentiment = "MILD BEARISH"
+    else:
+        pcr_sentiment = "STRONG BEARISH"
+
+    # Get Expiry Context
+    days_to_expiry = expiry_data.get('days_to_expiry', 7)
+
+    # Get Support/Resistance from liquidity
+    support_level = current_price - 50
+    resistance_level = current_price + 50
+    if liquidity_result:
+        support_zones = liquidity_result.support_zones if hasattr(liquidity_result, 'support_zones') else []
+        resistance_zones = liquidity_result.resistance_zones if hasattr(liquidity_result, 'resistance_zones') else []
+        if support_zones:
+            support_level = max([s for s in support_zones if s < current_price], default=support_level)
+        if resistance_zones:
+            resistance_level = min([r for r in resistance_zones if r > current_price], default=resistance_level)
+
+    # Get Max OI Walls
+    max_call_strike = atm_strike + 500
+    max_put_strike = atm_strike - 500
+    if oi_pcr_data.get('max_call_oi_strike'):
+        max_call_strike = oi_pcr_data['max_call_oi_strike']
+    if oi_pcr_data.get('max_put_oi_strike'):
+        max_put_strike = oi_pcr_data['max_put_oi_strike']
+
+    # Get Max Pain
+    max_pain = oi_pcr_data.get('max_pain', atm_strike)
+
+    # --- Market Makers Narrative ---
+    if atm_bias_verdict == "CALL SELLERS":
+        mm_narrative = "Sellers aggressively WRITING CALLS (bearish conviction). Expecting price to STAY BELOW strikes."
+        game_plan = "Bearish breakdown likely. Sellers confident in downside."
+    elif atm_bias_verdict == "PUT SELLERS":
+        mm_narrative = "Sellers aggressively WRITING PUTS (bullish conviction). Expecting price to STAY ABOVE strikes."
+        game_plan = "Bullish breakout likely. Sellers confident in upside."
+    else:
+        mm_narrative = "Balanced selling in both CALLS and PUTS. No clear directional bias."
+        game_plan = "Range-bound consolidation expected. Wait for breakout."
+
+    # --- Display FINAL ASSESSMENT ---
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                border-radius: 15px; padding: 25px; margin: 15px 0;
+                border-left: 5px solid #6495ED; box-shadow: 0 6px 20px rgba(0,0,0,0.4);'>
+        <h3 style='margin: 0 0 15px 0; color: #6495ED;'>
+            📊 FINAL ASSESSMENT (Seller + ATM Bias + Moment + Expiry + OI/PCR)
+        </h3>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0; font-size: 15px;'>
+                <strong style='color: #ffa500;'>Market Makers are telling us:</strong><br>
+                <span style='color: #fff; font-size: 14px;'>{mm_narrative}</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #6495ED;'>ATM Zone Analysis:</strong><br>
+                <span style='font-size: 14px;'>ATM Bias: {atm_emoji} {atm_bias_verdict} ({atm_bias_score:.2f} score)</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #00ff88;'>Their game plan:</strong><br>
+                <span style='color: #fff; font-size: 14px;'>{game_plan}</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #ffa500;'>Moment Detector:</strong>
+                <span style='font-size: 14px;'>{moment_verdict} | Orderbook: {orderbook_pressure}</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #ff6b6b;'>OI/PCR Analysis:</strong><br>
+                <span style='font-size: 14px;'>
+                    PCR: {pcr_value:.2f} ({pcr_sentiment}) |
+                    CALL OI: {call_oi:,} |
+                    PUT OI: {put_oi:,} |
+                    ATM Conc: {atm_concentration:.1f}%
+                </span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #9d4edd;'>Expiry Context:</strong>
+                <span style='font-size: 14px;'>Expiry in {days_to_expiry:.1f} days</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #06ffa5;'>Key defense levels:</strong><br>
+                <span style='font-size: 14px;'>
+                    ₹{support_level:,.0f} (Support) | ₹{resistance_level:,.0f} (Resistance)
+                </span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #f72585;'>Max OI Walls:</strong>
+                <span style='font-size: 14px;'>CALL: ₹{max_call_strike:,} | PUT: ₹{max_put_strike:,}</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #4cc9f0;'>Preferred price level:</strong>
+                <span style='font-size: 14px;'>₹{max_pain:,} (Max Pain)</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #ffba08;'>Regime (Advanced Chart Analysis):</strong>
+                <span style='font-size: 14px;'>{regime}</span>
+            </p>
+        </div>
+
+        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
+            <p style='margin: 5px 0;'>
+                <strong style='color: #06ffa5;'>Sector Rotation Analysis:</strong>
+                <span style='font-size: 14px;'>{sector_bias} bias detected</span>
+            </p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- Entry Price Recommendations ---
+    st.markdown("### 🎯 Entry Price Recommendations")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # CALL Entry (at support)
+        call_strike = round(support_level / 50) * 50
+        call_entry_estimate = 150  # Placeholder - should be from option chain
+        call_sl = call_entry_estimate * 0.75
+        call_target = call_entry_estimate * 1.5
+
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, #1a5f1a 0%, #0d3d0d 100%);
+                    border-radius: 12px; padding: 20px; border-left: 4px solid #00ff88;'>
+            <h4 style='margin: 0 0 10px 0; color: #00ff88;'>🟢 CALL Entry (Support)</h4>
+            <p style='margin: 5px 0; font-size: 14px;'>
+                <strong>Strike:</strong> {call_strike} CE<br>
+                <strong>Entry Zone:</strong> ₹{call_entry_estimate - 5} - {call_entry_estimate + 5}<br>
+                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{call_sl:.0f}</span><br>
+                <strong>Target:</strong> <span style='color: #00ff88;'>₹{call_target:.0f}</span><br>
+                <strong>Trigger:</strong> Price holds above ₹{support_level:,.0f}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        # PUT Entry (at resistance)
+        put_strike = round(resistance_level / 50) * 50
+        put_entry_estimate = 150  # Placeholder - should be from option chain
+        put_sl = put_entry_estimate * 0.75
+        put_target = put_entry_estimate * 1.5
+
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, #5f1a1a 0%, #3d0d0d 100%);
+                    border-radius: 12px; padding: 20px; border-left: 4px solid #ff4444;'>
+            <h4 style='margin: 0 0 10px 0; color: #ff4444;'>🔴 PUT Entry (Resistance)</h4>
+            <p style='margin: 5px 0; font-size: 14px;'>
+                <strong>Strike:</strong> {put_strike} PE<br>
+                <strong>Entry Zone:</strong> ₹{put_entry_estimate - 5} - {put_entry_estimate + 5}<br>
+                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{put_sl:.0f}</span><br>
+                <strong>Target:</strong> <span style='color: #00ff88;'>₹{put_target:.0f}</span><br>
+                <strong>Trigger:</strong> Price rejects at ₹{resistance_level:,.0f}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+
 def display_signal_card(signal: TradingSignal):
     """Display trading signal as a formatted card."""
 

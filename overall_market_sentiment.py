@@ -1086,7 +1086,8 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
             generate_trading_signal,
             display_signal_card,
             display_signal_history,
-            display_telegram_stats
+            display_telegram_stats,
+            display_final_assessment
         )
 
         # Get all required data for signal generation
@@ -1120,6 +1121,17 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
 
         # Calculate sentiment score
         sentiment_score = result.get('overall_score', 0.0)
+
+        # Display FINAL ASSESSMENT first
+        if nifty_screener_data or enhanced_market_data:
+            display_final_assessment(
+                nifty_screener_data=nifty_screener_data,
+                enhanced_market_data=enhanced_market_data,
+                ml_regime_result=ml_regime_result,
+                liquidity_result=liquidity_result,
+                current_price=current_price if current_price > 0 else 24500,
+                atm_strike=atm_strike if atm_strike else 24500
+            )
 
         # Generate signal if we have data
         if df is not None and len(df) > 10:
