@@ -4983,6 +4983,7 @@ def load_option_screener_data_silently():
 
         # Store all data in session state
         st.session_state.nifty_option_screener_data = {
+            'spot_price': spot,  # Current NIFTY spot price
             'overall_bias': overall_bias,
             'atm_bias': atm_bias,
             'seller_max_pain': seller_max_pain,
@@ -5643,6 +5644,7 @@ def render_nifty_option_screener():
 
     # Store all market sentiment data in session state for access from Overall Market Sentiment tab
     st.session_state.nifty_option_screener_data = {
+        'spot_price': spot,  # Current NIFTY spot price
         'overall_bias': overall_bias,
         'atm_bias': atm_bias,
         'seller_max_pain': seller_max_pain,
