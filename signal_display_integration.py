@@ -189,11 +189,29 @@ def display_final_assessment(
     moment_verdict = 'NEUTRAL'
     moment_score = 0
     orderbook_pressure = 'NEUTRAL'
+    orderbook_pressure_raw = 0
 
     if moment_data:
         # moment_metrics has structure: {momentum_burst: {}, orderbook: {}, gamma_cluster: {}, oi_accel: {}}
         if 'orderbook' in moment_data and moment_data['orderbook'].get('available'):
-            orderbook_pressure = moment_data['orderbook'].get('pressure', 0)
+            orderbook_pressure_raw = moment_data['orderbook'].get('pressure', 0)
+
+            # Convert raw number to label
+            if orderbook_pressure_raw > 0.5:
+                orderbook_pressure = "STRONG BUY PRESSURE ↑"
+            elif orderbook_pressure_raw > 0.15:
+                orderbook_pressure = "BUY PRESSURE ↑"
+            elif orderbook_pressure_raw > 0.05:
+                orderbook_pressure = "MILD BUY"
+            elif orderbook_pressure_raw < -0.5:
+                orderbook_pressure = "STRONG SELL PRESSURE ↓"
+            elif orderbook_pressure_raw < -0.15:
+                orderbook_pressure = "SELL PRESSURE ↓"
+            elif orderbook_pressure_raw < -0.05:
+                orderbook_pressure = "MILD SELL"
+            else:
+                orderbook_pressure = "NEUTRAL (Low participation)"
+
         if 'momentum_burst' in moment_data:
             moment_score = moment_data['momentum_burst'].get('score', 0)
             # Determine verdict from score
@@ -211,6 +229,18 @@ def display_final_assessment(
     atm_total_oi = oi_pcr_data.get('atm_total_oi', 0)
     total_oi = call_oi + put_oi
     atm_concentration = (atm_total_oi / total_oi * 100) if total_oi > 0 else 0
+
+    # Create label for ATM concentration
+    if atm_concentration == 0:
+        atm_conc_display = "LOW (<5%)"
+    elif atm_concentration < 5:
+        atm_conc_display = f"LOW ({atm_concentration:.1f}%)"
+    elif atm_concentration < 15:
+        atm_conc_display = f"MODERATE ({atm_concentration:.1f}%)"
+    elif atm_concentration < 30:
+        atm_conc_display = f"HIGH ({atm_concentration:.1f}%)"
+    else:
+        atm_conc_display = f"VERY HIGH ({atm_concentration:.1f}%)"
 
     # Determine PCR interpretation
     if pcr_value > 1.2:
@@ -379,7 +409,7 @@ def display_final_assessment(
             st.info(f"**🔵 ATM Zone Analysis:**\n\nATM Bias: {atm_emoji} {atm_bias_verdict} ({atm_bias_score:.2f} score)")
             st.info(f"**🟢 Their game plan:**\n\n{game_plan}")
             st.info(f"**🟡 Moment Detector:**\n\n{moment_verdict} | Orderbook: {orderbook_pressure}")
-            st.info(f"**🔴 OI/PCR Analysis:**\n\nPCR: {pcr_value:.2f} ({pcr_sentiment})  \nCALL OI: {call_oi:,}  \nPUT OI: {put_oi:,}  \nATM Conc: {atm_concentration:.1f}%")
+            st.info(f"**🔴 OI/PCR Analysis:**\n\nPCR: {pcr_value:.2f} ({pcr_sentiment})  \nCALL OI: {call_oi:,}  \nPUT OI: {put_oi:,}  \nATM Conc: {atm_conc_display}")
             st.info(f"**🟣 Expiry Context:**\n\nExpiry in {days_to_expiry:.1f} days")
 
         with col2:
@@ -762,6 +792,53 @@ def display_final_assessment(
     # --- Entry Price Recommendations ---
     st.markdown("### 🎯 Entry Price Recommendations")
 
+    # ===== ENTRY PERMISSION LOGIC (CRITICAL) =====
+    # Check multiple conditions before allowing entries
+
+    # Condition 1: Confidence threshold
+    confidence_ok = confidence_score >= 60
+
+    # Condition 2: Distance to levels (not in mid-zone)
+    distance_to_sup = current_price - support_level
+    distance_to_res = resistance_level - current_price
+    in_mid_zone = distance_to_sup > 50 and distance_to_res > 50
+
+    # Condition 3: Flow data available
+    flow_available = total_volume > 0
+
+    # Condition 4: Market session (not post-market)
+    from datetime import datetime
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time_check = datetime.now(ist)
+    is_market_hours = 9 <= current_time_check.hour < 16
+
+    # Condition 5: Check if near-spot levels exist (within 50 pts)
+    has_nearby_support = distance_to_sup <= 50
+    has_nearby_resistance = distance_to_res <= 50
+
+    # Master permission flags
+    allow_call_entry = confidence_ok and has_nearby_support and (flow_available or confidence_score >= 70) and is_market_hours
+    allow_put_entry = confidence_ok and has_nearby_resistance and (flow_available or confidence_score >= 70) and is_market_hours
+
+    # ===== REGIME-BASED RR (DYNAMIC) =====
+    # Adjust SL/Target based on market regime
+    if regime in ['TRENDING_UP', 'TRENDING_DOWN', 'STRONG_TRENDING_UP', 'STRONG_TRENDING_DOWN']:
+        sl_pct = 0.30  # 30% for trending
+        target_pct = 0.60  # 60% for trending
+        rr_mode = "BREAKOUT MODE"
+    elif regime in ['RANGING', 'CONSOLIDATING']:
+        sl_pct = 0.18  # 18% for ranging
+        target_pct = 0.30  # 30% for ranging
+        rr_mode = "RANGE SCALP MODE"
+    else:
+        sl_pct = 0.25  # 25% default
+        target_pct = 0.45  # 45% default
+        rr_mode = "BALANCED MODE"
+
+    # Display RR mode
+    st.info(f"🎯 **Risk/Reward Mode:** {rr_mode} (SL: {sl_pct*100:.0f}% | Target: {target_pct*100:.0f}%)")
+
     # Helper function to get option premium from chain
     def get_option_premium(chain: Dict, strike: int, option_type: str) -> float:
         """Extract LTP from option chain for given strike"""
@@ -786,39 +863,75 @@ def display_final_assessment(
         # Use real premium if available, otherwise estimate
         if call_premium > 0:
             call_entry_estimate = call_premium
-            call_sl = call_premium * 0.70  # 30% stop loss
-            call_target = call_premium * 1.60  # 60% target
+            call_sl = call_premium * (1 - sl_pct)  # Dynamic SL
+            call_target = call_premium * (1 + target_pct)  # Dynamic Target
         else:
             # Estimate based on distance from spot
             distance = abs(call_strike - current_price)
             call_entry_estimate = max(50, 300 - (distance / 10))
-            call_sl = call_entry_estimate * 0.70
-            call_target = call_entry_estimate * 1.60
+            call_sl = call_entry_estimate * (1 - sl_pct)
+            call_target = call_entry_estimate * (1 + target_pct)
 
         # Calculate INTELLIGENT trigger zones using market data
         # Use orderbook pressure and distance to support for dynamic buffer
-        orderbook_pressure = market_depth.get('pressure', 0) if market_depth else 0
+        orderbook_pressure_val = market_depth.get('pressure', 0) if market_depth else 0
         distance_to_support = current_price - support_level
 
         # Dynamic buffer: closer support = tighter buffer, strong selling pressure = wider buffer
         base_buffer = min(50, distance_to_support * 0.15)  # 15% of distance, max 50 points
-        pressure_adjustment = abs(orderbook_pressure) * 10 if orderbook_pressure < 0 else 0  # Add buffer if selling pressure
+        pressure_adjustment = abs(orderbook_pressure_val) * 10 if orderbook_pressure_val < 0 else 0  # Add buffer if selling pressure
 
         support_trigger_low = int(support_level - (base_buffer + pressure_adjustment))
         support_trigger_high = int(support_level - (base_buffer * 0.5))
 
-        # Use native Streamlit components (NO HTML!)
-        st.success(f"""
-**🟢 CALL Entry (Support)**
+        # Calculate distance to entry
+        call_entry_distance = distance_to_support
+
+        # ===== CONDITIONAL DISPLAY: CALL ENTRY =====
+        if not allow_call_entry:
+            # Show why entry is disabled
+            st.error("🔒 **CALL ENTRY DISABLED**")
+
+            reasons = []
+            if confidence_score < 60:
+                reasons.append(f"❌ Low confidence ({confidence_score:.0f}/100 < 60)")
+            if not has_nearby_support:
+                reasons.append(f"❌ No nearby support (Support {distance_to_sup:.0f} pts away > 50)")
+            if not flow_available:
+                reasons.append("❌ Flow data unavailable")
+            if not is_market_hours:
+                reasons.append("❌ Market closed")
+
+            for reason in reasons:
+                st.caption(reason)
+
+            st.caption("💡 Entries will activate when conditions improve")
+        else:
+            # Check distance to entry
+            if call_entry_distance > 50:
+                st.warning(f"""
+🟡 **CALL Entry (PENDING)**
+
+**Support:** ₹{support_level:,.0f}
+**Distance:** {call_entry_distance:.0f} pts away ⚠️
+**Status:** NOT ACTIONABLE (too far)
+
+💡 Wait for price to approach support (<50 pts)
+                """)
+            else:
+                # Entry is ACTIVE and NEAR
+                st.success(f"""
+**🟢 CALL Entry (ACTIVE)**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {call_strike} CE (ATM)
 **Entry Price:** ₹{call_entry_estimate:.2f}
-**Stop Loss:** ₹{call_sl:.2f} (-30%)
-**Target:** ₹{call_target:.2f} (+60%)
+**Stop Loss:** ₹{call_sl:.2f} (-{sl_pct*100:.0f}%)
+**Target:** ₹{call_target:.2f} (+{target_pct*100:.0f}%)
 **Support Zone:** ₹{support_level:,.0f}
+**Distance to Entry:** {call_entry_distance:.0f} pts ✅
 **Trigger:** Price dips to ₹{support_trigger_low:,.0f}-{support_trigger_high:,.0f} and bounces back
-        """)
+                """)
 
     with col2:
         # PUT Entry (at resistance) - using current_price not resistance for strike
@@ -828,38 +941,74 @@ def display_final_assessment(
         # Use real premium if available, otherwise estimate
         if put_premium > 0:
             put_entry_estimate = put_premium
-            put_sl = put_premium * 0.70  # 30% stop loss
-            put_target = put_premium * 1.60  # 60% target
+            put_sl = put_premium * (1 - sl_pct)  # Dynamic SL
+            put_target = put_premium * (1 + target_pct)  # Dynamic Target
         else:
             # Estimate based on distance from spot
             distance = abs(put_strike - current_price)
             put_entry_estimate = max(50, 300 - (distance / 10))
-            put_sl = put_entry_estimate * 0.70
-            put_target = put_entry_estimate * 1.60
+            put_sl = put_entry_estimate * (1 - sl_pct)
+            put_target = put_entry_estimate * (1 + target_pct)
 
         # Calculate INTELLIGENT trigger zones using market data
         # Use orderbook pressure and distance to resistance for dynamic buffer
-        distance_to_resistance = resistance_level - current_price
+        distance_to_resistance_calc = resistance_level - current_price
 
         # Dynamic buffer: closer resistance = tighter buffer, strong buying pressure = wider buffer
-        base_buffer = min(50, distance_to_resistance * 0.15)  # 15% of distance, max 50 points
-        pressure_adjustment = abs(orderbook_pressure) * 10 if orderbook_pressure > 0 else 0  # Add buffer if buying pressure
+        base_buffer_res = min(50, distance_to_resistance_calc * 0.15)  # 15% of distance, max 50 points
+        pressure_adjustment_res = abs(orderbook_pressure_val) * 10 if orderbook_pressure_val > 0 else 0  # Add buffer if buying pressure
 
-        resistance_trigger_low = int(resistance_level + (base_buffer * 0.5))
-        resistance_trigger_high = int(resistance_level + (base_buffer + pressure_adjustment))
+        resistance_trigger_low = int(resistance_level + (base_buffer_res * 0.5))
+        resistance_trigger_high = int(resistance_level + (base_buffer_res + pressure_adjustment_res))
 
-        # Use native Streamlit components (NO HTML!)
-        st.error(f"""
-**🔴 PUT Entry (Resistance)**
+        # Calculate distance to entry
+        put_entry_distance = distance_to_res
+
+        # ===== CONDITIONAL DISPLAY: PUT ENTRY =====
+        if not allow_put_entry:
+            # Show why entry is disabled
+            st.error("🔒 **PUT ENTRY DISABLED**")
+
+            reasons = []
+            if confidence_score < 60:
+                reasons.append(f"❌ Low confidence ({confidence_score:.0f}/100 < 60)")
+            if not has_nearby_resistance:
+                reasons.append(f"❌ No nearby resistance (Resistance {distance_to_res:.0f} pts away > 50)")
+            if not flow_available:
+                reasons.append("❌ Flow data unavailable")
+            if not is_market_hours:
+                reasons.append("❌ Market closed")
+
+            for reason in reasons:
+                st.caption(reason)
+
+            st.caption("💡 Entries will activate when conditions improve")
+        else:
+            # Check distance to entry
+            if put_entry_distance > 50:
+                st.warning(f"""
+🟡 **PUT Entry (PENDING)**
+
+**Resistance:** ₹{resistance_level:,.0f}
+**Distance:** {put_entry_distance:.0f} pts away ⚠️
+**Status:** NOT ACTIONABLE (too far)
+
+💡 Wait for price to approach resistance (<50 pts)
+                """)
+            else:
+                # Entry is ACTIVE and NEAR
+                st.error(f"""
+**🔴 PUT Entry (ACTIVE)**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {put_strike} PE (ATM)
 **Entry Price:** ₹{put_entry_estimate:.2f}
-**Stop Loss:** ₹{put_sl:.2f} (-30%)
-**Target:** ₹{put_target:.2f} (+60%)
+**Stop Loss:** ₹{put_sl:.2f} (-{sl_pct*100:.0f}%)
+**Target:** ₹{put_target:.2f} (+{target_pct*100:.0f}%)
 **Resistance Zone:** ₹{resistance_level:,.0f}
+**Distance to Entry:** {put_entry_distance:.0f} pts ✅
 **Trigger:** Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
-        """)
+                """)
 
     # --- WHAT NOT TO DO (Elite-level UX) ---
     st.markdown("---")
