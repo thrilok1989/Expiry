@@ -293,6 +293,109 @@ def display_final_assessment(
             st.warning(f"**🟡 Regime (Advanced Chart Analysis):**\n\n{regime}")
             st.success(f"**🟢 Sector Rotation Analysis:**\n\n{sector_bias} bias detected")
 
+    # --- Comprehensive Liquidity & Support/Resistance Levels ---
+    st.markdown("### 📊 Comprehensive Liquidity Analysis")
+
+    # Extract all available S/R levels from different sources
+    liquidity_levels = []
+
+    # From liquidity zones (Advanced Chart Analysis)
+    if liquidity_result:
+        if hasattr(liquidity_result, 'support_zones'):
+            for level in liquidity_result.support_zones:
+                if isinstance(level, (int, float)):
+                    liquidity_levels.append({
+                        'price': level,
+                        'type': 'Support',
+                        'strength': 'Major' if abs(level - current_price) > 100 else 'Minor',
+                        'source': 'Liquidity Zone'
+                    })
+        if hasattr(liquidity_result, 'resistance_zones'):
+            for level in liquidity_result.resistance_zones:
+                if isinstance(level, (int, float)):
+                    liquidity_levels.append({
+                        'price': level,
+                        'type': 'Resistance',
+                        'strength': 'Major' if abs(level - current_price) > 100 else 'Minor',
+                        'source': 'Liquidity Zone'
+                    })
+
+    # From OI data (Max OI walls)
+    if max_call_strike != atm_strike + 500:  # Not default value
+        liquidity_levels.append({
+            'price': max_call_strike,
+            'type': 'Resistance',
+            'strength': 'Major',
+            'source': 'Max CALL OI Wall'
+        })
+    if max_put_strike != atm_strike - 500:  # Not default value
+        liquidity_levels.append({
+            'price': max_put_strike,
+            'type': 'Support',
+            'strength': 'Major',
+            'source': 'Max PUT OI Wall'
+        })
+
+    # Add current support/resistance
+    liquidity_levels.append({
+        'price': support_level,
+        'type': 'Support',
+        'strength': 'Key',
+        'source': 'Nearest Support'
+    })
+    liquidity_levels.append({
+        'price': resistance_level,
+        'type': 'Resistance',
+        'strength': 'Key',
+        'source': 'Nearest Resistance'
+    })
+
+    # Add Max Pain
+    liquidity_levels.append({
+        'price': max_pain,
+        'type': 'Magnet',
+        'strength': 'Critical',
+        'source': 'Max Pain'
+    })
+
+    # Sort by price
+    liquidity_levels = sorted(liquidity_levels, key=lambda x: x['price'])
+
+    # Separate into above and below current price
+    levels_below = [l for l in liquidity_levels if l['price'] < current_price]
+    levels_above = [l for l in liquidity_levels if l['price'] > current_price]
+
+    # Display in two columns
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**🔽 Levels BELOW Current Price**")
+        if levels_below:
+            # Show closest 5 levels
+            closest_below = sorted(levels_below, key=lambda x: x['price'], reverse=True)[:5]
+            for level in closest_below:
+                distance = current_price - level['price']
+                color = "🔴" if level['type'] == 'Support' else "🔵" if level['type'] == 'Magnet' else "⚪"
+                st.text(f"{color} ₹{level['price']:,.0f} ({level['strength']} {level['type']})")
+                st.caption(f"   -{distance:.0f} pts | {level['source']}")
+        else:
+            st.caption("No significant levels below")
+
+    with col2:
+        st.markdown("**🔼 Levels ABOVE Current Price**")
+        if levels_above:
+            # Show closest 5 levels
+            closest_above = sorted(levels_above, key=lambda x: x['price'])[:5]
+            for level in closest_above:
+                distance = level['price'] - current_price
+                color = "🟢" if level['type'] == 'Resistance' else "🔵" if level['type'] == 'Magnet' else "⚪"
+                st.text(f"{color} ₹{level['price']:,.0f} ({level['strength']} {level['type']})")
+                st.caption(f"   +{distance:.0f} pts | {level['source']}")
+        else:
+            st.caption("No significant levels above")
+
+    st.markdown("---")
+
     # --- Entry Price Recommendations ---
     st.markdown("### 🎯 Entry Price Recommendations")
 
