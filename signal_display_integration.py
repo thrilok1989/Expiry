@@ -211,21 +211,29 @@ def display_final_assessment(
     # Get Expiry Context
     days_to_expiry = expiry_data.get('days_to_expiry', 7)
 
-    # Get Support/Resistance from liquidity (use reasonable defaults based on current price)
-    # Default: Support ~100-150 points below, Resistance ~100-150 points above
-    support_level = round((current_price - 100) / 50) * 50  # Round to nearest 50
-    resistance_level = round((current_price + 100) / 50) * 50  # Round to nearest 50
+    # Get Support/Resistance using multiple data sources for accuracy
+    # Priority: 1) nearest_sup/nearest_res from Tab 8, 2) liquidity zones, 3) calculated default
+    support_level = round((current_price - 100) / 50) * 50  # Default fallback
+    resistance_level = round((current_price + 100) / 50) * 50  # Default fallback
 
-    if liquidity_result:
+    # Try to get from NIFTY Option Screener (most accurate - from option chain OI)
+    if nifty_screener_data:
+        nearest_sup = nifty_screener_data.get('nearest_sup')
+        nearest_res = nifty_screener_data.get('nearest_res')
+        if nearest_sup and nearest_sup < current_price:
+            support_level = nearest_sup
+        if nearest_res and nearest_res > current_price:
+            resistance_level = nearest_res
+
+    # Fallback to liquidity zones from Advanced Chart Analysis
+    if liquidity_result and (support_level == round((current_price - 100) / 50) * 50):
         support_zones = liquidity_result.support_zones if hasattr(liquidity_result, 'support_zones') else []
         resistance_zones = liquidity_result.resistance_zones if hasattr(liquidity_result, 'resistance_zones') else []
         if support_zones:
-            # Find the strongest support below current price
             valid_supports = [s for s in support_zones if s < current_price]
             if valid_supports:
                 support_level = max(valid_supports)
         if resistance_zones:
-            # Find the strongest resistance above current price
             valid_resistances = [r for r in resistance_zones if r > current_price]
             if valid_resistances:
                 resistance_level = min(valid_resistances)
@@ -252,100 +260,26 @@ def display_final_assessment(
         mm_narrative = "Balanced selling in both CALLS and PUTS. No clear directional bias."
         game_plan = "Range-bound consolidation expected. Wait for breakout."
 
-    # --- Display FINAL ASSESSMENT ---
-    st.markdown(f"""
-    <div style='background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-                border-radius: 15px; padding: 25px; margin: 15px 0;
-                border-left: 5px solid #6495ED; box-shadow: 0 6px 20px rgba(0,0,0,0.4);'>
-        <h3 style='margin: 0 0 15px 0; color: #6495ED;'>
-            📊 FINAL ASSESSMENT (Seller + ATM Bias + Moment + Expiry + OI/PCR)
-        </h3>
+    # --- Display FINAL ASSESSMENT (Native Python/Streamlit - NO HTML!) ---
+    st.markdown("### 📊 FINAL ASSESSMENT (Seller + ATM Bias + Moment + Expiry + OI/PCR)")
 
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0; font-size: 15px;'>
-                <strong style='color: #ffa500;'>Market Makers are telling us:</strong><br>
-                <span style='color: #fff; font-size: 14px;'>{mm_narrative}</span>
-            </p>
-        </div>
+    with st.container():
+        st.info(f"**🟠 Market Makers are telling us:**\n\n{mm_narrative}")
 
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #6495ED;'>ATM Zone Analysis:</strong><br>
-                <span style='font-size: 14px;'>ATM Bias: {atm_emoji} {atm_bias_verdict} ({atm_bias_score:.2f} score)</span>
-            </p>
-        </div>
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"**🔵 ATM Zone Analysis:**\n\nATM Bias: {atm_emoji} {atm_bias_verdict} ({atm_bias_score:.2f} score)")
+            st.info(f"**🟢 Their game plan:**\n\n{game_plan}")
+            st.info(f"**🟡 Moment Detector:**\n\n{moment_verdict} | Orderbook: {orderbook_pressure}")
+            st.info(f"**🔴 OI/PCR Analysis:**\n\nPCR: {pcr_value:.2f} ({pcr_sentiment})  \nCALL OI: {call_oi:,}  \nPUT OI: {put_oi:,}  \nATM Conc: {atm_concentration:.1f}%")
+            st.info(f"**🟣 Expiry Context:**\n\nExpiry in {days_to_expiry:.1f} days")
 
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #00ff88;'>Their game plan:</strong><br>
-                <span style='color: #fff; font-size: 14px;'>{game_plan}</span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #ffa500;'>Moment Detector:</strong>
-                <span style='font-size: 14px;'>{moment_verdict} | Orderbook: {orderbook_pressure}</span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #ff6b6b;'>OI/PCR Analysis:</strong><br>
-                <span style='font-size: 14px;'>
-                    PCR: {pcr_value:.2f} ({pcr_sentiment}) |
-                    CALL OI: {call_oi:,} |
-                    PUT OI: {put_oi:,} |
-                    ATM Conc: {atm_concentration:.1f}%
-                </span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #9d4edd;'>Expiry Context:</strong>
-                <span style='font-size: 14px;'>Expiry in {days_to_expiry:.1f} days</span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #06ffa5;'>Key defense levels:</strong><br>
-                <span style='font-size: 14px;'>
-                    ₹{support_level:,.0f} (Support) | ₹{resistance_level:,.0f} (Resistance)
-                </span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #f72585;'>Max OI Walls:</strong>
-                <span style='font-size: 14px;'>CALL: ₹{max_call_strike:,} | PUT: ₹{max_put_strike:,}</span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #4cc9f0;'>Preferred price level:</strong>
-                <span style='font-size: 14px;'>₹{max_pain:,} (Max Pain)</span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #ffba08;'>Regime (Advanced Chart Analysis):</strong>
-                <span style='font-size: 14px;'>{regime}</span>
-            </p>
-        </div>
-
-        <div style='margin: 15px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px;'>
-            <p style='margin: 5px 0;'>
-                <strong style='color: #06ffa5;'>Sector Rotation Analysis:</strong>
-                <span style='font-size: 14px;'>{sector_bias} bias detected</span>
-            </p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        with col2:
+            st.success(f"**🟢 Key defense levels:**\n\n₹{support_level:,.0f} (Support) | ₹{resistance_level:,.0f} (Resistance)")
+            st.error(f"**🔴 Max OI Walls:**\n\nCALL: ₹{max_call_strike:,} | PUT: ₹{max_put_strike:,}")
+            st.info(f"**🔵 Preferred price level:**\n\n₹{max_pain:,} (Max Pain)")
+            st.warning(f"**🟡 Regime (Advanced Chart Analysis):**\n\n{regime}")
+            st.success(f"**🟢 Sector Rotation Analysis:**\n\n{sector_bias} bias detected")
 
     # --- Entry Price Recommendations ---
     st.markdown("### 🎯 Entry Price Recommendations")
@@ -383,25 +317,30 @@ def display_final_assessment(
             call_sl = call_entry_estimate * 0.70
             call_target = call_entry_estimate * 1.60
 
-        # Calculate realistic trigger zones (price overshoots support/resistance by 20-30 points)
-        support_trigger_low = support_level - 30  # Dips 30 points below support
-        support_trigger_high = support_level - 10  # But stays above this
+        # Calculate INTELLIGENT trigger zones using market data
+        # Use orderbook pressure and distance to support for dynamic buffer
+        orderbook_pressure = market_depth.get('pressure', 0) if market_depth else 0
+        distance_to_support = current_price - support_level
 
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, #1a5f1a 0%, #0d3d0d 100%);
-                    border-radius: 12px; padding: 20px; border-left: 4px solid #00ff88;'>
-            <h4 style='margin: 0 0 10px 0; color: #00ff88;'>🟢 CALL Entry (Support)</h4>
-            <p style='margin: 5px 0; font-size: 14px;'>
-                <strong>Spot Price:</strong> ₹{current_price:,.2f}<br>
-                <strong>Strike:</strong> {call_strike} CE (ATM)<br>
-                <strong>Entry Price:</strong> ₹{call_entry_estimate:.2f}<br>
-                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{call_sl:.2f}</span> (-30%)<br>
-                <strong>Target:</strong> <span style='color: #00ff88;'>₹{call_target:.2f}</span> (+60%)<br>
-                <strong>Support Zone:</strong> ₹{support_level:,.0f}<br>
-                <strong>Trigger:</strong> Price dips to ₹{support_trigger_low:,.0f}-{support_trigger_high:,.0f} and bounces back
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        # Dynamic buffer: closer support = tighter buffer, strong selling pressure = wider buffer
+        base_buffer = min(50, distance_to_support * 0.15)  # 15% of distance, max 50 points
+        pressure_adjustment = abs(orderbook_pressure) * 10 if orderbook_pressure < 0 else 0  # Add buffer if selling pressure
+
+        support_trigger_low = int(support_level - (base_buffer + pressure_adjustment))
+        support_trigger_high = int(support_level - (base_buffer * 0.5))
+
+        # Use native Streamlit components (NO HTML!)
+        st.success(f"""
+**🟢 CALL Entry (Support)**
+
+**Spot Price:** ₹{current_price:,.2f}
+**Strike:** {call_strike} CE (ATM)
+**Entry Price:** ₹{call_entry_estimate:.2f}
+**Stop Loss:** ₹{call_sl:.2f} (-30%)
+**Target:** ₹{call_target:.2f} (+60%)
+**Support Zone:** ₹{support_level:,.0f}
+**Trigger:** Price dips to ₹{support_trigger_low:,.0f}-{support_trigger_high:,.0f} and bounces back
+        """)
 
     with col2:
         # PUT Entry (at resistance) - using current_price not resistance for strike
@@ -420,25 +359,29 @@ def display_final_assessment(
             put_sl = put_entry_estimate * 0.70
             put_target = put_entry_estimate * 1.60
 
-        # Calculate realistic trigger zones (price overshoots resistance by 20-30 points)
-        resistance_trigger_low = resistance_level + 10  # Rises 10 points above resistance
-        resistance_trigger_high = resistance_level + 30  # Up to 30 points above
+        # Calculate INTELLIGENT trigger zones using market data
+        # Use orderbook pressure and distance to resistance for dynamic buffer
+        distance_to_resistance = resistance_level - current_price
 
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, #5f1a1a 0%, #3d0d0d 100%);
-                    border-radius: 12px; padding: 20px; border-left: 4px solid #ff4444;'>
-            <h4 style='margin: 0 0 10px 0; color: #ff4444;'>🔴 PUT Entry (Resistance)</h4>
-            <p style='margin: 5px 0; font-size: 14px;'>
-                <strong>Spot Price:</strong> ₹{current_price:,.2f}<br>
-                <strong>Strike:</strong> {put_strike} PE (ATM)<br>
-                <strong>Entry Price:</strong> ₹{put_entry_estimate:.2f}<br>
-                <strong>Stop Loss:</strong> <span style='color: #ff4444;'>₹{put_sl:.2f}</span> (-30%)<br>
-                <strong>Target:</strong> <span style='color: #00ff88;'>₹{put_target:.2f}</span> (+60%)<br>
-                <strong>Resistance Zone:</strong> ₹{resistance_level:,.0f}<br>
-                <strong>Trigger:</strong> Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        # Dynamic buffer: closer resistance = tighter buffer, strong buying pressure = wider buffer
+        base_buffer = min(50, distance_to_resistance * 0.15)  # 15% of distance, max 50 points
+        pressure_adjustment = abs(orderbook_pressure) * 10 if orderbook_pressure > 0 else 0  # Add buffer if buying pressure
+
+        resistance_trigger_low = int(resistance_level + (base_buffer * 0.5))
+        resistance_trigger_high = int(resistance_level + (base_buffer + pressure_adjustment))
+
+        # Use native Streamlit components (NO HTML!)
+        st.error(f"""
+**🔴 PUT Entry (Resistance)**
+
+**Spot Price:** ₹{current_price:,.2f}
+**Strike:** {put_strike} PE (ATM)
+**Entry Price:** ₹{put_entry_estimate:.2f}
+**Stop Loss:** ₹{put_sl:.2f} (-30%)
+**Target:** ₹{put_target:.2f} (+60%)
+**Resistance Zone:** ₹{resistance_level:,.0f}
+**Trigger:** Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
+        """)
 
 
 def display_signal_card(signal: TradingSignal):
