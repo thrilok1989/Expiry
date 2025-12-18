@@ -789,6 +789,262 @@ def display_final_assessment(
 
     st.markdown("---")
 
+    # --- ELITE OPTION SCORER (Multi-Factor Analysis) ---
+    st.markdown("### 🎯 ELITE OPTION SCORER (OI + Depth + Liquidity + GEX + ATM + Bias + Indicators)")
+
+    # Get ATM and surrounding strikes
+    atm_strike_base = round(current_price / 50) * 50
+    strikes_to_analyze = [
+        atm_strike_base - 150,
+        atm_strike_base - 100,
+        atm_strike_base - 50,
+        atm_strike_base,
+        atm_strike_base + 50,
+        atm_strike_base + 100,
+        atm_strike_base + 150
+    ]
+
+    # Score each strike
+    option_scores = []
+
+    for strike in strikes_to_analyze:
+        # Get data for this strike from option chain
+        strike_data_ce = None
+        strike_data_pe = None
+
+        if option_chain and 'data' in option_chain:
+            for opt in option_chain['data']:
+                if opt.get('strikePrice') == strike:
+                    strike_data_ce = opt.get('CE', {})
+                    strike_data_pe = opt.get('PE', {})
+                    break
+
+        # === CALL SCORING ===
+        ce_score = 0
+        ce_factors = {}
+
+        if strike_data_ce:
+            # Factor 1: OI Concentration (0-20 pts)
+            ce_oi = strike_data_ce.get('openInterest', 0)
+            if total_oi > 0:
+                oi_pct = (ce_oi / total_oi) * 100
+                ce_factors['OI %'] = f"{oi_pct:.2f}%"
+                if oi_pct > 5:
+                    ce_score += 20
+                elif oi_pct > 2:
+                    ce_score += 15
+                elif oi_pct > 1:
+                    ce_score += 10
+                else:
+                    ce_score += 5
+
+            # Factor 2: Liquidity (Bid-Ask Spread) (0-15 pts)
+            ce_bid = strike_data_ce.get('bidprice', 0)
+            ce_ask = strike_data_ce.get('askPrice', 0)
+            if ce_ask > 0:
+                spread_pct = ((ce_ask - ce_bid) / ce_ask) * 100
+                ce_factors['Spread'] = f"{spread_pct:.1f}%"
+                if spread_pct < 2:
+                    ce_score += 15
+                elif spread_pct < 5:
+                    ce_score += 10
+                else:
+                    ce_score += 5
+
+            # Factor 3: Distance from ATM (0-15 pts) - closer is better for scalping
+            distance_from_atm = abs(strike - atm_strike_base)
+            ce_factors['ATM Dist'] = f"{distance_from_atm} pts"
+            if distance_from_atm == 0:
+                ce_score += 15
+            elif distance_from_atm <= 50:
+                ce_score += 12
+            elif distance_from_atm <= 100:
+                ce_score += 8
+            else:
+                ce_score += 3
+
+            # Factor 4: Max Pain Alignment (0-15 pts)
+            distance_from_max_pain = abs(strike - max_pain)
+            ce_factors['MaxPain Dist'] = f"{distance_from_max_pain} pts"
+            if distance_from_max_pain < 50:
+                ce_score += 15
+            elif distance_from_max_pain < 100:
+                ce_score += 10
+            else:
+                ce_score += 5
+
+            # Factor 5: ATM Bias Alignment (0-20 pts)
+            if strike < current_price and atm_bias_verdict == "PUT SELLERS":  # Bullish setup
+                ce_score += 20
+                ce_factors['Bias Align'] = "✓ Bullish"
+            elif strike >= current_price and atm_bias_verdict == "CALL SELLERS":  # Bearish, favor lower strikes
+                ce_score += 10
+                ce_factors['Bias Align'] = "~ Neutral"
+            else:
+                ce_factors['Bias Align'] = "✗ Against"
+
+            # Factor 6: Technical Trend Alignment (0-15 pts)
+            if regime in ['TRENDING_UP', 'STRONG_TRENDING_UP']:
+                if strike <= atm_strike_base:  # ATM or ITM calls in uptrend
+                    ce_score += 15
+                    ce_factors['Trend Align'] = "✓ With Trend"
+                else:
+                    ce_score += 5
+                    ce_factors['Trend Align'] = "~ Weak"
+            elif regime in ['TRENDING_DOWN', 'STRONG_TRENDING_DOWN']:
+                if strike > atm_strike_base:  # OTM calls in downtrend (premium selling)
+                    ce_score += 10
+                    ce_factors['Trend Align'] = "~ Counter"
+                else:
+                    ce_factors['Trend Align'] = "✗ Against"
+            else:
+                ce_score += 8
+                ce_factors['Trend Align'] = "~ Range"
+
+        # === PUT SCORING ===
+        pe_score = 0
+        pe_factors = {}
+
+        if strike_data_pe:
+            # Factor 1: OI Concentration (0-20 pts)
+            pe_oi = strike_data_pe.get('openInterest', 0)
+            if total_oi > 0:
+                oi_pct = (pe_oi / total_oi) * 100
+                pe_factors['OI %'] = f"{oi_pct:.2f}%"
+                if oi_pct > 5:
+                    pe_score += 20
+                elif oi_pct > 2:
+                    pe_score += 15
+                elif oi_pct > 1:
+                    pe_score += 10
+                else:
+                    pe_score += 5
+
+            # Factor 2: Liquidity (Bid-Ask Spread) (0-15 pts)
+            pe_bid = strike_data_pe.get('bidprice', 0)
+            pe_ask = strike_data_pe.get('askPrice', 0)
+            if pe_ask > 0:
+                spread_pct = ((pe_ask - pe_bid) / pe_ask) * 100
+                pe_factors['Spread'] = f"{spread_pct:.1f}%"
+                if spread_pct < 2:
+                    pe_score += 15
+                elif spread_pct < 5:
+                    pe_score += 10
+                else:
+                    pe_score += 5
+
+            # Factor 3: Distance from ATM (0-15 pts)
+            distance_from_atm = abs(strike - atm_strike_base)
+            pe_factors['ATM Dist'] = f"{distance_from_atm} pts"
+            if distance_from_atm == 0:
+                pe_score += 15
+            elif distance_from_atm <= 50:
+                pe_score += 12
+            elif distance_from_atm <= 100:
+                pe_score += 8
+            else:
+                pe_score += 3
+
+            # Factor 4: Max Pain Alignment (0-15 pts)
+            distance_from_max_pain = abs(strike - max_pain)
+            pe_factors['MaxPain Dist'] = f"{distance_from_max_pain} pts"
+            if distance_from_max_pain < 50:
+                pe_score += 15
+            elif distance_from_max_pain < 100:
+                pe_score += 10
+            else:
+                pe_score += 5
+
+            # Factor 5: ATM Bias Alignment (0-20 pts)
+            if strike > current_price and atm_bias_verdict == "CALL SELLERS":  # Bearish setup
+                pe_score += 20
+                pe_factors['Bias Align'] = "✓ Bearish"
+            elif strike <= current_price and atm_bias_verdict == "PUT SELLERS":  # Bullish, favor higher strikes
+                pe_score += 10
+                pe_factors['Bias Align'] = "~ Neutral"
+            else:
+                pe_factors['Bias Align'] = "✗ Against"
+
+            # Factor 6: Technical Trend Alignment (0-15 pts)
+            if regime in ['TRENDING_DOWN', 'STRONG_TRENDING_DOWN']:
+                if strike >= atm_strike_base:  # ATM or ITM puts in downtrend
+                    pe_score += 15
+                    pe_factors['Trend Align'] = "✓ With Trend"
+                else:
+                    pe_score += 5
+                    pe_factors['Trend Align'] = "~ Weak"
+            elif regime in ['TRENDING_UP', 'STRONG_TRENDING_UP']:
+                if strike < atm_strike_base:  # OTM puts in uptrend
+                    pe_score += 10
+                    pe_factors['Trend Align'] = "~ Counter"
+                else:
+                    pe_factors['Trend Align'] = "✗ Against"
+            else:
+                pe_score += 8
+                pe_factors['Trend Align'] = "~ Range"
+
+        # Store scores
+        if strike_data_ce:
+            option_scores.append({
+                'strike': strike,
+                'type': 'CE',
+                'score': ce_score,
+                'factors': ce_factors,
+                'premium': strike_data_ce.get('lastPrice', 0)
+            })
+
+        if strike_data_pe:
+            option_scores.append({
+                'strike': strike,
+                'type': 'PE',
+                'score': pe_score,
+                'factors': pe_factors,
+                'premium': strike_data_pe.get('lastPrice', 0)
+            })
+
+    # Sort by score (highest first)
+    option_scores = sorted(option_scores, key=lambda x: x['score'], reverse=True)
+
+    # Display top 5 options
+    st.markdown("**🏆 TOP 5 HIGHEST SCORING OPTIONS (Based on Multi-Factor Analysis)**")
+
+    for i, opt in enumerate(option_scores[:5], 1):
+        score_color = "success" if opt['score'] >= 70 else "warning" if opt['score'] >= 50 else "error"
+        score_label = "EXCELLENT" if opt['score'] >= 70 else "GOOD" if opt['score'] >= 50 else "WEAK"
+
+        # Create detailed breakdown
+        factors_text = "\n".join([f"   • {k}: {v}" for k, v in opt['factors'].items()])
+
+        if score_color == "success":
+            st.success(f"""
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+
+**Premium:** ₹{opt['premium']:.2f}
+
+**Score Breakdown:**
+{factors_text}
+            """)
+        elif score_color == "warning":
+            st.warning(f"""
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+
+**Premium:** ₹{opt['premium']:.2f}
+
+**Score Breakdown:**
+{factors_text}
+            """)
+        else:
+            st.info(f"""
+**#{i}. {opt['strike']} {opt['type']} - Score: {opt['score']}/100 ({score_label})**
+
+**Premium:** ₹{opt['premium']:.2f}
+
+**Score Breakdown:**
+{factors_text}
+            """)
+
+    st.markdown("---")
+
     # --- Entry Price Recommendations (INTRADAY/SCALPING) ---
     st.markdown("### ⚡ INTRADAY/SCALPING Entry Recommendations (1-Hour Trades)")
 
