@@ -887,41 +887,9 @@ def display_final_assessment(
         # Calculate distance to entry
         call_entry_distance = distance_to_support
 
-        # ===== CONDITIONAL DISPLAY: CALL ENTRY =====
-        if not allow_call_entry:
-            # Show why entry is disabled
-            st.error("🔒 **CALL ENTRY DISABLED**")
-
-            reasons = []
-            if confidence_score < 60:
-                reasons.append(f"❌ Low confidence ({confidence_score:.0f}/100 < 60)")
-            if not has_nearby_support:
-                reasons.append(f"❌ No nearby support (Support {distance_to_sup:.0f} pts away > 50)")
-            if not flow_available:
-                reasons.append("❌ Flow data unavailable")
-            if not is_market_hours:
-                reasons.append("❌ Market closed")
-
-            for reason in reasons:
-                st.caption(reason)
-
-            st.caption("💡 Entries will activate when conditions improve")
-        else:
-            # Check distance to entry
-            if call_entry_distance > 50:
-                st.warning(f"""
-🟡 **CALL Entry (PENDING)**
-
-**Support:** ₹{support_level:,.0f}
-**Distance:** {call_entry_distance:.0f} pts away ⚠️
-**Status:** NOT ACTIONABLE (too far)
-
-💡 Wait for price to approach support (<50 pts)
-                """)
-            else:
-                # Entry is ACTIVE and NEAR
-                st.success(f"""
-**🟢 CALL Entry (ACTIVE)**
+        # ===== ALWAYS SHOW CALL ENTRY =====
+        st.success(f"""
+**🟢 CALL Entry (Support)**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {call_strike} CE (ATM)
@@ -929,9 +897,9 @@ def display_final_assessment(
 **Stop Loss:** ₹{call_sl:.2f} (-{sl_pct*100:.0f}%)
 **Target:** ₹{call_target:.2f} (+{target_pct*100:.0f}%)
 **Support Zone:** ₹{support_level:,.0f}
-**Distance to Entry:** {call_entry_distance:.0f} pts ✅
+**Distance to Support:** {call_entry_distance:.0f} pts
 **Trigger:** Price dips to ₹{support_trigger_low:,.0f}-{support_trigger_high:,.0f} and bounces back
-                """)
+        """)
 
     with col2:
         # PUT Entry (at resistance) - using current_price not resistance for strike
@@ -964,41 +932,9 @@ def display_final_assessment(
         # Calculate distance to entry
         put_entry_distance = distance_to_res
 
-        # ===== CONDITIONAL DISPLAY: PUT ENTRY =====
-        if not allow_put_entry:
-            # Show why entry is disabled
-            st.error("🔒 **PUT ENTRY DISABLED**")
-
-            reasons = []
-            if confidence_score < 60:
-                reasons.append(f"❌ Low confidence ({confidence_score:.0f}/100 < 60)")
-            if not has_nearby_resistance:
-                reasons.append(f"❌ No nearby resistance (Resistance {distance_to_res:.0f} pts away > 50)")
-            if not flow_available:
-                reasons.append("❌ Flow data unavailable")
-            if not is_market_hours:
-                reasons.append("❌ Market closed")
-
-            for reason in reasons:
-                st.caption(reason)
-
-            st.caption("💡 Entries will activate when conditions improve")
-        else:
-            # Check distance to entry
-            if put_entry_distance > 50:
-                st.warning(f"""
-🟡 **PUT Entry (PENDING)**
-
-**Resistance:** ₹{resistance_level:,.0f}
-**Distance:** {put_entry_distance:.0f} pts away ⚠️
-**Status:** NOT ACTIONABLE (too far)
-
-💡 Wait for price to approach resistance (<50 pts)
-                """)
-            else:
-                # Entry is ACTIVE and NEAR
-                st.error(f"""
-**🔴 PUT Entry (ACTIVE)**
+        # ===== ALWAYS SHOW PUT ENTRY =====
+        st.error(f"""
+**🔴 PUT Entry (Resistance)**
 
 **Spot Price:** ₹{current_price:,.2f}
 **Strike:** {put_strike} PE (ATM)
@@ -1006,9 +942,9 @@ def display_final_assessment(
 **Stop Loss:** ₹{put_sl:.2f} (-{sl_pct*100:.0f}%)
 **Target:** ₹{put_target:.2f} (+{target_pct*100:.0f}%)
 **Resistance Zone:** ₹{resistance_level:,.0f}
-**Distance to Entry:** {put_entry_distance:.0f} pts ✅
+**Distance to Resistance:** {put_entry_distance:.0f} pts
 **Trigger:** Price spikes to ₹{resistance_trigger_low:,.0f}-{resistance_trigger_high:,.0f} and rejects
-                """)
+        """)
 
     # --- WHAT NOT TO DO (Elite-level UX) ---
     st.markdown("---")
