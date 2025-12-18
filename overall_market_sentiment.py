@@ -1119,6 +1119,18 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
             current_price = df['close'].iloc[-1]
             atm_strike = round(current_price / 50) * 50  # Round to nearest 50
 
+        # Fallback: Try to get current price from nifty_screener_data or enhanced_market_data
+        if current_price == 0.0:
+            if nifty_screener_data and 'current_price' in nifty_screener_data:
+                current_price = nifty_screener_data['current_price']
+            elif nifty_screener_data and 'spot_price' in nifty_screener_data:
+                current_price = nifty_screener_data['spot_price']
+            elif enhanced_market_data and 'nifty_spot' in enhanced_market_data:
+                current_price = enhanced_market_data['nifty_spot']
+
+        if current_price > 0 and atm_strike is None:
+            atm_strike = round(current_price / 50) * 50
+
         # Calculate sentiment score
         sentiment_score = result.get('overall_score', 0.0)
 
