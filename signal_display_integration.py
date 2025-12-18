@@ -2057,6 +2057,33 @@ Regime supports direction = Trend/Range alignment
     else:
         st.info(f"{regime_status}\n{regime_recommendation}")
 
+    # === ATM ±2 STRIKE 14-BIAS VERDICT ===
+    st.markdown("**📊 ATM ±2 Strike 14-Bias Verdict:**")
+
+    if atm_bias_data:
+        atm_verdict = atm_bias_data.get('overall_bias', 'NEUTRAL')
+        atm_score = atm_bias_data.get('total_score', 0)
+        atm_strike_val = atm_bias_data.get('atm_strike', atm_strike)
+
+        # Count bullish and bearish metrics
+        bias_scores = atm_bias_data.get('bias_scores', {})
+        bullish_count = sum(1 for score in bias_scores.values() if score > 0.3)
+        bearish_count = sum(1 for score in bias_scores.values() if score < -0.3)
+        total_metrics = len(bias_scores) if bias_scores else 14
+
+        bullish_pct = (bullish_count / total_metrics * 100) if total_metrics > 0 else 0
+        bearish_pct = (bearish_count / total_metrics * 100) if total_metrics > 0 else 0
+
+        # Display verdict with color coding
+        if 'BULLISH' in atm_verdict:
+            st.success(f"**🐂 {atm_verdict}** (Score: {atm_score:+.2f}) | Strike: {atm_strike_val}\n**Metrics:** {bullish_count}/{total_metrics} Bullish ({bullish_pct:.0f}%) | {bearish_count}/{total_metrics} Bearish ({bearish_pct:.0f}%)\n💡 Option chain shows bullish institutional positioning")
+        elif 'BEARISH' in atm_verdict:
+            st.error(f"**🐻 {atm_verdict}** (Score: {atm_score:+.2f}) | Strike: {atm_strike_val}\n**Metrics:** {bullish_count}/{total_metrics} Bullish ({bullish_pct:.0f}%) | {bearish_count}/{total_metrics} Bearish ({bearish_pct:.0f}%)\n💡 Option chain shows bearish institutional positioning")
+        else:
+            st.info(f"**⚖️ {atm_verdict}** (Score: {atm_score:+.2f}) | Strike: {atm_strike_val}\n**Metrics:** {bullish_count}/{total_metrics} Bullish ({bullish_pct:.0f}%) | {bearish_count}/{total_metrics} Bearish ({bearish_pct:.0f}%)\n💡 Option chain shows neutral/mixed positioning")
+    else:
+        st.warning("⚠️ ATM Bias data unavailable - Check NIFTY Option Screener tab")
+
     st.markdown("---")
 
     # Volume Analysis (if available)
