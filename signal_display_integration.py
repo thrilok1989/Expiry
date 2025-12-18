@@ -1304,6 +1304,317 @@ def display_final_assessment(
 
     st.markdown("---")
 
+    # ============================================
+    # 🎯 KEY PRICE LEVELS & ENTRY ZONES (ALL DATA INTEGRATED)
+    # ============================================
+    st.markdown("## 🎯 KEY PRICE LEVELS & ENTRY ZONES")
+    st.caption("**Exact reversal, continuation, and range levels based on 13-factor comprehensive analysis**")
+
+    # Collect all key levels from various sources
+    key_levels = []
+
+    # 1. ATM Strike (Major pivot)
+    key_levels.append({
+        'price': atm_strike,
+        'type': 'ATM Strike',
+        'strength': 100,
+        'bias': atm_bias_data.get('overall_bias', 'NEUTRAL') if atm_bias_data else 'NEUTRAL',
+        'source': 'Option Chain'
+    })
+
+    # 2. Max Pain (Magnet level)
+    if nifty_screener_data and 'seller_max_pain' in nifty_screener_data:
+        max_pain_data = nifty_screener_data['seller_max_pain']
+        if max_pain_data and 'max_pain_strike' in max_pain_data:
+            max_pain_strike = max_pain_data['max_pain_strike']
+            key_levels.append({
+                'price': max_pain_strike,
+                'type': 'Max Pain',
+                'strength': 90,
+                'bias': 'MAGNET',
+                'source': 'Option Sellers'
+            })
+
+    # 3. Support/Resistance from HTF
+    if support_level and support_level > 0:
+        key_levels.append({
+            'price': support_level,
+            'type': 'Support',
+            'strength': 85,
+            'bias': 'BULLISH',
+            'source': 'HTF Analysis'
+        })
+
+    if resistance_level and resistance_level > 0:
+        key_levels.append({
+            'price': resistance_level,
+            'type': 'Resistance',
+            'strength': 85,
+            'bias': 'BEARISH',
+            'source': 'HTF Analysis'
+        })
+
+    # 4. Nearest Support/Resistance from Option Chain
+    if nifty_screener_data:
+        nearest_sup = nifty_screener_data.get('nearest_sup')
+        nearest_res = nifty_screener_data.get('nearest_res')
+
+        if nearest_sup and 'strike' in nearest_sup:
+            key_levels.append({
+                'price': nearest_sup['strike'],
+                'type': 'OI Support',
+                'strength': 75,
+                'bias': 'BULLISH',
+                'source': 'OI Concentration'
+            })
+
+        if nearest_res and 'strike' in nearest_res:
+            key_levels.append({
+                'price': nearest_res['strike'],
+                'type': 'OI Resistance',
+                'strength': 75,
+                'bias': 'BEARISH',
+                'source': 'OI Concentration'
+            })
+
+    # 5. GEX Gamma Walls (Major barriers)
+    total_gex_net = nifty_screener_data.get('total_gex_net', 0) if nifty_screener_data else 0
+    if abs(total_gex_net) > 1000000:
+        # High GEX creates walls around ATM
+        gex_type = "Gamma Wall (Stabilizing)" if total_gex_net > 0 else "Gamma Wall (Explosive)"
+        key_levels.append({
+            'price': atm_strike,
+            'type': gex_type,
+            'strength': 80,
+            'bias': 'MAGNET' if total_gex_net > 0 else 'BREAKOUT',
+            'source': f'GEX {total_gex_net/1e6:.1f}M'
+        })
+
+    # 6. Volume Order Blocks (if available)
+    if ml_regime_result and hasattr(ml_regime_result, 'support_zones'):
+        for zone in ml_regime_result.support_zones[:2]:  # Top 2 support zones
+            key_levels.append({
+                'price': zone.get('price', 0),
+                'type': 'Volume Block Support',
+                'strength': 70,
+                'bias': 'BULLISH',
+                'source': 'Volume Analysis'
+            })
+
+    if ml_regime_result and hasattr(ml_regime_result, 'resistance_zones'):
+        for zone in ml_regime_result.resistance_zones[:2]:  # Top 2 resistance zones
+            key_levels.append({
+                'price': zone.get('price', 0),
+                'type': 'Volume Block Resistance',
+                'strength': 70,
+                'bias': 'BEARISH',
+                'source': 'Volume Analysis'
+            })
+
+    # Sort levels by price
+    key_levels = [l for l in key_levels if l['price'] > 0]
+    key_levels = sorted(key_levels, key=lambda x: abs(x['price'] - current_price))
+
+    # Identify zones
+    levels_below = [l for l in key_levels if l['price'] < current_price]
+    levels_above = [l for l in key_levels if l['price'] > current_price]
+
+    # Display Current Market Position
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("**Current Price**", f"₹{current_price:,.2f}")
+    with col2:
+        nearest_support = levels_below[0] if levels_below else None
+        if nearest_support:
+            distance = current_price - nearest_support['price']
+            st.metric("**Nearest Support**", f"₹{nearest_support['price']:,.0f}", f"-{distance:.0f} pts")
+        else:
+            st.metric("**Nearest Support**", "N/A")
+    with col3:
+        nearest_resistance = levels_above[0] if levels_above else None
+        if nearest_resistance:
+            distance = nearest_resistance['price'] - current_price
+            st.metric("**Nearest Resistance**", f"₹{nearest_resistance['price']:,.0f}", f"+{distance:.0f} pts")
+        else:
+            st.metric("**Nearest Resistance**", "N/A")
+
+    st.markdown("---")
+
+    # ===== REVERSAL ZONES =====
+    st.markdown("#### 🔄 REVERSAL ZONES (High Probability Bounce/Rejection)")
+
+    reversal_zones = []
+
+    # Support reversal zones (bullish bounce expected)
+    support_clusters = {}
+    for level in levels_below[:5]:  # Top 5 supports
+        price_key = round(level['price'] / 25) * 25  # Cluster within 25 pts
+        if price_key not in support_clusters:
+            support_clusters[price_key] = []
+        support_clusters[price_key].append(level)
+
+    for cluster_price, cluster_levels in support_clusters.items():
+        if len(cluster_levels) >= 2:  # Multiple factors converging
+            strength_sum = sum(l['strength'] for l in cluster_levels)
+            reversal_zones.append({
+                'price': cluster_price,
+                'type': 'REVERSAL UP',
+                'strength': min(100, strength_sum),
+                'factors': len(cluster_levels),
+                'details': [f"{l['type']} ({l['source']})" for l in cluster_levels]
+            })
+
+    # Resistance reversal zones (bearish rejection expected)
+    resistance_clusters = {}
+    for level in levels_above[:5]:  # Top 5 resistances
+        price_key = round(level['price'] / 25) * 25  # Cluster within 25 pts
+        if price_key not in resistance_clusters:
+            resistance_clusters[price_key] = []
+        resistance_clusters[price_key].append(level)
+
+    for cluster_price, cluster_levels in resistance_clusters.items():
+        if len(cluster_levels) >= 2:  # Multiple factors converging
+            strength_sum = sum(l['strength'] for l in cluster_levels)
+            reversal_zones.append({
+                'price': cluster_price,
+                'type': 'REVERSAL DOWN',
+                'strength': min(100, strength_sum),
+                'factors': len(cluster_levels),
+                'details': [f"{l['type']} ({l['source']})" for l in cluster_levels]
+            })
+
+    # Display reversal zones
+    if reversal_zones:
+        for zone in sorted(reversal_zones, key=lambda x: x['strength'], reverse=True)[:4]:
+            emoji = "🟢" if zone['type'] == 'REVERSAL UP' else "🔴"
+            distance = zone['price'] - current_price
+            distance_str = f"+{distance:.0f}" if distance > 0 else f"{distance:.0f}"
+
+            st.success(f"""
+**{emoji} {zone['type']} ZONE: ₹{zone['price']:,.0f}** ({distance_str} pts away)
+**Confidence:** {zone['strength']:.0f}% | **Factors:** {zone['factors']}
+**Supporting Analysis:** {', '.join(zone['details'][:3])}
+            """) if zone['type'] == 'REVERSAL UP' else st.error(f"""
+**{emoji} {zone['type']} ZONE: ₹{zone['price']:,.0f}** ({distance_str} pts away)
+**Confidence:** {zone['strength']:.0f}% | **Factors:** {zone['factors']}
+**Supporting Analysis:** {', '.join(zone['details'][:3])}
+            """)
+    else:
+        st.info("No strong reversal zones identified. Market may be in trending mode.")
+
+    st.markdown("---")
+
+    # ===== CONTINUATION ZONES =====
+    st.markdown("#### 🚀 CONTINUATION/BREAKOUT ZONES")
+
+    # Identify breakout levels
+    regime = ml_regime_result.regime if ml_regime_result and hasattr(ml_regime_result, 'regime') else 'RANGING'
+
+    if 'TRENDING' in regime:
+        st.info(f"""
+**📈 TRENDING MARKET DETECTED ({regime})**
+
+**Continuation Strategy:**
+- **If Bullish Trend:** Buy dips to nearest support, ride to next resistance
+- **If Bearish Trend:** Sell rallies to nearest resistance, ride to next support
+- **Breakout Confirmation:** Wait for 15-min close beyond key level with volume
+
+**Key Breakout Levels:**
+        """)
+
+        if levels_above:
+            st.success(f"**Upside Breakout:** ₹{levels_above[0]['price']:,.0f} → Target: ₹{levels_above[1]['price']:,.0f if len(levels_above) > 1 else levels_above[0]['price'] + 50:,.0f}")
+
+        if levels_below:
+            st.error(f"**Downside Breakdown:** ₹{levels_below[0]['price']:,.0f} → Target: ₹{levels_below[1]['price']:,.0f if len(levels_below) > 1 else levels_below[0]['price'] - 50:,.0f}")
+    else:
+        st.warning("""
+**📊 RANGING MARKET DETECTED**
+
+**Range Trading Strategy:**
+- **Buy Zone:** Near support levels with tight stops
+- **Sell Zone:** Near resistance levels with tight stops
+- **Avoid:** Center of range (low probability)
+        """)
+
+        if levels_below and levels_above:
+            range_low = levels_below[0]['price']
+            range_high = levels_above[0]['price']
+            range_mid = (range_low + range_high) / 2
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.success(f"**Range Low (BUY ZONE)**\n₹{range_low:,.0f}")
+            with col2:
+                st.info(f"**Range Mid (AVOID)**\n₹{range_mid:,.0f}")
+            with col3:
+                st.error(f"**Range High (SELL ZONE)**\n₹{range_high:,.0f}")
+
+    st.markdown("---")
+
+    # ===== EXACT ENTRY POINTS =====
+    st.markdown("#### 🎯 EXACT ENTRY POINTS (Based on Current Market Position)")
+
+    # Determine market position relative to key levels
+    if nearest_support and nearest_resistance:
+        support_dist = current_price - nearest_support['price']
+        resistance_dist = nearest_resistance['price'] - current_price
+
+        # Check if near support or resistance
+        if support_dist < 30:  # Within 30 pts of support
+            st.success(f"""
+**🟢 NEAR SUPPORT ZONE**
+
+**LONG Entry Strategy:**
+- **Entry:** ₹{nearest_support['price']:,.0f} - ₹{nearest_support['price'] + 10:,.0f}
+- **Stop Loss:** ₹{nearest_support['price'] - 20:,.0f} (below support)
+- **Target 1:** ₹{current_price + 30:,.0f} (+30 pts)
+- **Target 2:** ₹{nearest_resistance['price'] if nearest_resistance else current_price + 50:,.0f} (resistance)
+- **Risk/Reward:** 1:2 to 1:3
+- **Confidence:** {nearest_support['strength']:.0f}%
+
+**Why This Works:**
+- Price near strong support ({nearest_support['type']})
+- Multiple factors supporting bounce
+- Favorable R:R ratio
+            """)
+        elif resistance_dist < 30:  # Within 30 pts of resistance
+            st.error(f"""
+**🔴 NEAR RESISTANCE ZONE**
+
+**SHORT Entry Strategy:**
+- **Entry:** ₹{nearest_resistance['price'] - 10:,.0f} - ₹{nearest_resistance['price']:,.0f}
+- **Stop Loss:** ₹{nearest_resistance['price'] + 20:,.0f} (above resistance)
+- **Target 1:** ₹{current_price - 30:,.0f} (-30 pts)
+- **Target 2:** ₹{nearest_support['price'] if nearest_support else current_price - 50:,.0f} (support)
+- **Risk/Reward:** 1:2 to 1:3
+- **Confidence:** {nearest_resistance['strength']:.0f}%
+
+**Why This Works:**
+- Price near strong resistance ({nearest_resistance['type']})
+- Multiple factors supporting rejection
+- Favorable R:R ratio
+            """)
+        else:  # In the middle
+            st.info(f"""
+**⚠️ NO-TRADE ZONE (Middle of Range)**
+
+**Current Position:** ₹{current_price:,.2f}
+- **Distance to Support:** -{support_dist:.0f} pts
+- **Distance to Resistance:** +{resistance_dist:.0f} pts
+
+**Recommended Action:** WAIT for price to reach entry zones
+- **Buy Zone:** ₹{nearest_support['price']:,.0f} - ₹{nearest_support['price'] + 10:,.0f}
+- **Sell Zone:** ₹{nearest_resistance['price'] - 10:,.0f} - ₹{nearest_resistance['price']:,.0f}
+
+**Why Wait:**
+- Poor risk/reward in the middle
+- Higher probability at extremes
+- Patience = Profitability
+            """)
+
+    st.markdown("---")
+
     # --- Entry Price Recommendations (INTRADAY/SCALPING) ---
     st.markdown("### ⚡ INTRADAY/SCALPING Entry Recommendations (1-Hour Trades)")
 
