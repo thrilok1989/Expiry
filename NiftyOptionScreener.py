@@ -4981,34 +4981,17 @@ def load_option_screener_data_silently():
         # Calculate overall bias
         overall_bias = calculate_overall_bias(atm_bias, support_bias, resistance_bias, seller_bias_result)
 
-        # Calculate nearest support/resistance from strike analyses
-        nearest_sup = support_bias.get('nearest_strike', spot - 100) if support_bias else spot - 100
-        nearest_res = resistance_bias.get('nearest_strike', spot + 100) if resistance_bias else spot + 100
-
-        # Get moment metrics (basic structure if not available from advanced analysis)
-        moment_metrics = {
-            'momentum_burst': {'score': 0},
-            'orderbook': {'pressure': 0, 'available': False},
-            'gamma_cluster': {'intensity': 0},
-            'oi_accel': {'score': 0}
-        }
-
-        # Store all data in session state (matching main render function structure)
+        # Store all data in session state
         st.session_state.nifty_option_screener_data = {
             'spot_price': spot,  # Current NIFTY spot price
             'overall_bias': overall_bias,
             'atm_bias': atm_bias,
             'seller_max_pain': seller_max_pain,
-            'seller_bias_result': seller_bias_result,  # Added: Seller Activity data
             'total_gex_net': total_gex_net,
             'expiry_spike_data': expiry_spike_data,
             'oi_pcr_metrics': oi_pcr_metrics,
             'strike_analyses': strike_analyses,
             'sector_rotation_data': sector_rotation_data,
-            'nearest_sup': nearest_sup,  # Added: Nearest support
-            'nearest_res': nearest_res,  # Added: Nearest resistance
-            'moment_metrics': moment_metrics,  # Added: Moment analysis
-            'days_to_expiry': days_to_expiry,  # Added: Days to expiry
             'last_updated': get_ist_now()
         }
 
