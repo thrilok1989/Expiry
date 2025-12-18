@@ -2058,31 +2058,23 @@ Regime supports direction = Trend/Range alignment
         st.info(f"{regime_status}\n{regime_recommendation}")
 
     # === ATM ±2 STRIKE 14-BIAS VERDICT ===
-    st.markdown("**📊 ATM ±2 Strike 14-Bias Verdict:**")
+    st.markdown("**📊 ATM Verdict:**")
 
     if atm_bias_data:
         atm_verdict = atm_bias_data.get('overall_bias', 'NEUTRAL')
-        atm_score = atm_bias_data.get('total_score', 0)
-        atm_strike_val = atm_bias_data.get('atm_strike', atm_strike)
 
-        # Count bullish and bearish metrics
-        bias_scores = atm_bias_data.get('bias_scores', {})
-        bullish_count = sum(1 for score in bias_scores.values() if score > 0.3)
-        bearish_count = sum(1 for score in bias_scores.values() if score < -0.3)
-        total_metrics = len(bias_scores) if bias_scores else 14
+        # Normalize verdict text
+        verdict_text = atm_verdict.replace('STRONGLY_', 'STRONG ').replace('_', ' ')
 
-        bullish_pct = (bullish_count / total_metrics * 100) if total_metrics > 0 else 0
-        bearish_pct = (bearish_count / total_metrics * 100) if total_metrics > 0 else 0
-
-        # Display simplified verdict
+        # Display verdict only
         if 'BULLISH' in atm_verdict:
-            st.success(f"**🐂 {atm_verdict}**")
+            st.success(f"**{verdict_text}**")
         elif 'BEARISH' in atm_verdict:
-            st.error(f"**🐻 {atm_verdict}**")
+            st.error(f"**{verdict_text}**")
         else:
-            st.info(f"**⚖️ {atm_verdict}**")
+            st.info(f"**{verdict_text}**")
     else:
-        st.warning("⚠️ ATM Bias data unavailable - Check NIFTY Option Screener tab")
+        st.warning("⚠️ ATM Bias unavailable")
 
     st.markdown("---")
 
