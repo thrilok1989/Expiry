@@ -1,0 +1,62 @@
+# .streamlit/secrets.toml
+
+# ============================================
+# 🔐 MANDATORY SECRETS (Required for app to run)
+# ============================================
+
+# Supabase Database Configuration
+SUPABASE_URL = "https://your-project.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.your_anon_key_here"
+SUPABASE_TABLE = "option_snapshots"
+SUPABASE_TABLE_PCR = "strike_pcr_snapshots"
+
+# Dhan API Configuration (NIFTY Trading)
+DHAN_CLIENT_ID = "DHAN_CLIENT_ID_FROM_DHAN"
+DHAN_ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.your_dhan_token_here"
+
+# ============================================
+# 🤖 OPTIONAL SECRETS (AI Features - Perplexity AI)
+# ============================================
+
+# Perplexity AI Configuration (for AI analysis)
+[PERPLEXITY]
+API_KEY = "pplx-your_perplexity_api_key_here"
+MODEL = "sonar"  # Options: sonar, sonar-pro
+SEARCH_DEPTH = "medium"  # Options: low, medium, high
+
+# NewsData API for market news
+[NEWSDATA]
+API_KEY = "pub_your_newsdata_api_key_here"
+
+ENABLE_AI_ANALYSIS = "true"
+
+# ============================================
+# 📱 OPTIONAL SECRETS (Telegram Alerts)
+# ============================================
+
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN = "1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+TELEGRAM_CHAT_ID = "-1001234567890"
+
+# ============================================
+# ⚙️ APP CONFIGURATION (Optional Settings)
+# ============================================
+
+# Auto-refresh interval in seconds
+AUTO_REFRESH_SECONDS = "60"
+
+# Risk Management Settings
+DEFAULT_RISK_PERCENTAGE = "1.5"
+DEFAULT_RISK_CAPITAL = "100000"
+
+# Display Settings
+SHOW_AI_ANALYSIS = "true"
+SHOW_TELEGRAM_SIGNALS = "true"
+ENABLE_SOUND_ALERTS = "false"
+
+# ============================================
+# 📝 MIGRATION NOTES
+# ============================================
+# The app now uses Perplexity AI instead of GROQ
+# Configure PERPLEXITY section above with your API key
+# Get your Perplexity API key from: https://www.perplexity.ai/settings/api
