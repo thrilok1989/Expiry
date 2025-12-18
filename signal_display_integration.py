@@ -1642,6 +1642,45 @@ def display_final_assessment(
 - ✅ If 2 trades failed today → STOP trading, review tomorrow
     """)
 
+    # ===== MARKET REGIME CONFIRMATION =====
+    st.markdown("**🎯 Market Regime Analysis:**")
+
+    regime_status = "⚠️ Regime data unavailable"
+    regime_color = "warning"
+    regime_recommendation = ""
+
+    if ml_regime_result and hasattr(ml_regime_result, 'regime'):
+        regime = ml_regime_result.regime
+        regime_confidence = ml_regime_result.confidence if hasattr(ml_regime_result, 'confidence') else 0
+
+        if 'TRENDING_UP' in regime or 'STRONG_TRENDING_UP' in regime:
+            regime_status = f"✅ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "success"
+            regime_recommendation = "**Trade Bias:** LONG only (buy dips to support)\n**Avoid:** Selling against trend"
+        elif 'TRENDING_DOWN' in regime or 'STRONG_TRENDING_DOWN' in regime:
+            regime_status = f"✅ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "error"
+            regime_recommendation = "**Trade Bias:** SHORT only (sell rallies to resistance)\n**Avoid:** Buying against trend"
+        elif 'RANGING' in regime:
+            regime_status = f"⚠️ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "warning"
+            regime_recommendation = "**Trade Bias:** BOTH (buy at support, sell at resistance)\n**Avoid:** Middle of range"
+        else:
+            regime_status = f"~ **{regime}** (Confidence: {regime_confidence:.0f}%)"
+            regime_color = "info"
+            regime_recommendation = "**Trade Bias:** Wait for clearer regime"
+
+    if regime_color == "success":
+        st.success(f"{regime_status}\n{regime_recommendation}")
+    elif regime_color == "error":
+        st.error(f"{regime_status}\n{regime_recommendation}")
+    elif regime_color == "warning":
+        st.warning(f"{regime_status}\n{regime_recommendation}")
+    else:
+        st.info(f"{regime_status}\n{regime_recommendation}")
+
+    st.markdown("---")
+
     # Volume Analysis (if available)
     st.markdown("**📊 Current Volume Analysis:**")
 
@@ -1674,12 +1713,41 @@ def display_final_assessment(
         else:
             delta_pressure = f"⚖️ **Balanced** ({delta:,.0f})"
 
+    # Check Market Depth (Orderbook) Pressure
+    depth_pressure = ""
+    if moment_data and 'orderbook' in moment_data:
+        orderbook = moment_data['orderbook']
+        if orderbook.get('available', False):
+            pressure = orderbook.get('pressure', 'NEUTRAL')
+            pressure_score = orderbook.get('pressure_score', 0)
+
+            if pressure == 'BUY' and pressure_score > 60:
+                depth_pressure = f"\n📊 **Market Depth:** BUY pressure ({pressure_score:.0f}%) - Bid strength"
+            elif pressure == 'SELL' and pressure_score > 60:
+                depth_pressure = f"\n📊 **Market Depth:** SELL pressure ({pressure_score:.0f}%) - Ask strength"
+            else:
+                depth_pressure = f"\n📊 **Market Depth:** Balanced ({pressure_score:.0f}%)"
+
+    # Check Option Chain OI Changes (Volume flow)
+    oi_flow = ""
+    if nifty_screener_data and 'oi_pcr_metrics' in nifty_screener_data:
+        oi_pcr = nifty_screener_data['oi_pcr_metrics']
+        pcr_change = oi_pcr.get('pcr_change_pct', 0) if isinstance(oi_pcr, dict) else 0
+
+        if pcr_change > 5:  # PCR increasing = More PUT buying
+            oi_flow = f"\n🔄 **OI Flow:** PUT buildup (+{pcr_change:.1f}% PCR) - Bearish hedging"
+        elif pcr_change < -5:  # PCR decreasing = More CALL buying
+            oi_flow = f"\n🔄 **OI Flow:** CALL buildup ({pcr_change:.1f}% PCR) - Bullish positioning"
+
+    # Combined volume display
+    combined_volume_info = f"{volume_status}\n{delta_pressure}{depth_pressure}{oi_flow}"
+
     if volume_color == "success":
-        st.success(f"{volume_status}\n{delta_pressure}")
+        st.success(combined_volume_info)
     elif volume_color == "error":
-        st.error(f"{volume_status}\n{delta_pressure}")
+        st.error(combined_volume_info)
     else:
-        st.info(f"{volume_status}\n{delta_pressure}")
+        st.info(combined_volume_info)
 
     # Professional Entry Decision
     st.markdown("---")
