@@ -1134,7 +1134,7 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
         # Calculate sentiment score
         sentiment_score = result.get('overall_score', 0.0)
 
-        # Display FINAL ASSESSMENT first
+        # Display FINAL ASSESSMENT first - Pass ALL analysis data
         if nifty_screener_data or enhanced_market_data:
             display_final_assessment(
                 nifty_screener_data=nifty_screener_data,
@@ -1143,7 +1143,13 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
                 liquidity_result=liquidity_result,
                 current_price=current_price if current_price > 0 else 24500,
                 atm_strike=atm_strike if atm_strike else 24500,
-                option_chain=option_chain  # Pass option chain for real premiums
+                option_chain=option_chain,  # Pass option chain for real premiums
+                money_flow_signals=money_flow_signals,  # Money Flow Profile (Tab 7)
+                deltaflow_signals=deltaflow_signals,  # DeltaFlow Profile (Tab 7)
+                cvd_result=cvd_result,  # CVD Analysis (Tab 4)
+                volatility_result=volatility_result,  # Volatility Regime (Tab 2)
+                oi_trap_result=oi_trap_result,  # OI Trap (Tab 3)
+                participant_result=participant_result  # Participant Analysis (Tab 5)
             )
 
         # Generate signal if we have data
