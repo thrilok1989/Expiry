@@ -1650,65 +1650,305 @@ def display_final_assessment(
 
     st.markdown("---")
 
-    # ===== EXACT ENTRY POINTS =====
-    st.markdown("#### 🎯 EXACT ENTRY POINTS (Based on Current Market Position)")
+    # ===== PRECISE ENTRY POINTS FROM INSTITUTIONAL DATA =====
+    st.markdown("#### 🎯 PRECISE ENTRY POINTS (Multi-Source Institutional Levels)")
+    st.caption("**Exact price levels where reversals/continuations happen - Not just strikes!**")
 
-    # Determine market position relative to key levels
-    if nearest_support and nearest_resistance:
-        support_dist = current_price - nearest_support['price']
-        resistance_dist = nearest_resistance['price'] - current_price
+    # Collect all entry points from multiple sources
+    support_levels = []
+    resistance_levels = []
 
-        # Check if near support or resistance
-        if support_dist < 30:  # Within 30 pts of support
+    # === SOURCE 1: VOLUME ORDER BLOCKS (Highest Priority) ===
+    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+        vob_data = st.session_state.vob_data_nifty
+
+        # Bullish VOB blocks (support zones)
+        bullish_blocks = vob_data.get('bullish_blocks', [])
+        for block in bullish_blocks:
+            if isinstance(block, dict):
+                block_upper = block.get('upper', 0)
+                block_lower = block.get('lower', 0)
+                block_mid = (block_upper + block_lower) / 2
+                volume_strength = block.get('volume', 0)
+
+                support_levels.append({
+                    'price': block_mid,
+                    'upper': block_upper,
+                    'lower': block_lower,
+                    'type': 'VOB Support',
+                    'source': 'Volume Order Block',
+                    'strength': 95,  # VOB has highest strength
+                    'volume': volume_strength,
+                    'priority': 1  # Highest priority
+                })
+
+        # Bearish VOB blocks (resistance zones)
+        bearish_blocks = vob_data.get('bearish_blocks', [])
+        for block in bearish_blocks:
+            if isinstance(block, dict):
+                block_upper = block.get('upper', 0)
+                block_lower = block.get('lower', 0)
+                block_mid = (block_upper + block_lower) / 2
+                volume_strength = block.get('volume', 0)
+
+                resistance_levels.append({
+                    'price': block_mid,
+                    'upper': block_upper,
+                    'lower': block_lower,
+                    'type': 'VOB Resistance',
+                    'source': 'Volume Order Block',
+                    'strength': 95,
+                    'volume': volume_strength,
+                    'priority': 1
+                })
+
+    # === SOURCE 2: HTF SUPPORT/RESISTANCE (Multi-Timeframe) ===
+    if intraday_levels:
+        for level in intraday_levels:
+            level_price = level['price']
+            level_source = level.get('source', 'HTF')
+            level_type = level.get('type', 'support')
+
+            # Determine timeframe strength (higher TF = higher strength)
+            if '30min' in level_source or '30m' in level_source:
+                htf_strength = 90
+                priority = 2
+            elif '15min' in level_source or '15m' in level_source:
+                htf_strength = 85
+                priority = 3
+            elif '5min' in level_source or '5m' in level_source:
+                htf_strength = 80
+                priority = 4
+            else:
+                htf_strength = 75
+                priority = 5
+
+            level_data = {
+                'price': level_price,
+                'upper': level_price + 5,
+                'lower': level_price - 5,
+                'type': f'HTF {level_source}',
+                'source': level_source,
+                'strength': htf_strength,
+                'priority': priority
+            }
+
+            if level_type == 'support' or level_price < current_price:
+                support_levels.append(level_data)
+            else:
+                resistance_levels.append(level_data)
+
+    # === SOURCE 3: DEPTH-BASED S/R (Option Chain Depth) ===
+    if market_depth:
+        depth_support = market_depth.get('support_level', 0)
+        depth_resistance = market_depth.get('resistance_level', 0)
+
+        if depth_support > 0:
+            support_levels.append({
+                'price': depth_support,
+                'upper': depth_support + 10,
+                'lower': depth_support - 10,
+                'type': 'Depth Support',
+                'source': 'Option Chain Depth',
+                'strength': 85,
+                'priority': 3
+            })
+
+        if depth_resistance > 0:
+            resistance_levels.append({
+                'price': depth_resistance,
+                'upper': depth_resistance + 10,
+                'lower': depth_resistance - 10,
+                'type': 'Depth Resistance',
+                'source': 'Option Chain Depth',
+                'strength': 85,
+                'priority': 3
+            })
+
+    # === SOURCE 4: FIBONACCI LEVELS (if available in session state) ===
+    if 'fibonacci_levels' in st.session_state:
+        fib_levels = st.session_state.fibonacci_levels
+        for fib in fib_levels:
+            fib_price = fib.get('price', 0)
+            fib_ratio = fib.get('ratio', 0)
+
+            # Key Fibonacci ratios have higher strength
+            if fib_ratio in [0.382, 0.5, 0.618, 0.786]:
+                fib_strength = 80
+            else:
+                fib_strength = 70
+
+            level_data = {
+                'price': fib_price,
+                'upper': fib_price + 5,
+                'lower': fib_price - 5,
+                'type': f'Fibonacci {fib_ratio:.3f}',
+                'source': 'Fibonacci Retracement',
+                'strength': fib_strength,
+                'priority': 4
+            }
+
+            if fib_price < current_price:
+                support_levels.append(level_data)
+            else:
+                resistance_levels.append(level_data)
+
+    # === SOURCE 5: STRUCTURAL LEVELS (from key levels) ===
+    if key_levels:
+        for level in key_levels:
+            if level['type'] in ['ATM Strike', 'Max Pain']:
+                continue  # Skip strikes, we want price levels
+
+            level_data = {
+                'price': level['price'],
+                'upper': level['price'] + 10,
+                'lower': level['price'] - 10,
+                'type': level['type'],
+                'source': level.get('source', 'Structural'),
+                'strength': level.get('strength', 70),
+                'priority': 5
+            }
+
+            if level['price'] < current_price:
+                support_levels.append(level_data)
+            else:
+                resistance_levels.append(level_data)
+
+    # Sort levels by priority and distance from current price
+    support_levels = sorted(support_levels, key=lambda x: (x['priority'], current_price - x['price']))
+    resistance_levels = sorted(resistance_levels, key=lambda x: (x['priority'], x['price'] - current_price))
+
+    # Find nearest and strongest levels
+    nearest_support_multi = support_levels[0] if support_levels else None
+    nearest_resistance_multi = resistance_levels[0] if resistance_levels else None
+
+    # Display precise entry zones
+    col_entry1, col_entry2 = st.columns(2)
+
+    with col_entry1:
+        st.markdown("**🟢 LONG ENTRY ZONES (Support Levels)**")
+
+        if support_levels:
+            # Show top 3 support levels
+            for i, sup in enumerate(support_levels[:3]):
+                dist_to_price = current_price - sup['price']
+
+                # Determine if we're in the zone
+                if 0 <= dist_to_price <= 30:
+                    status_color = "🟢 ACTIVE"
+                    bg_color = "#1a3d1a"
+                elif dist_to_price < 0:
+                    status_color = "⬆️ ABOVE"
+                    bg_color = "#1a1a2e"
+                else:
+                    status_color = "⬇️ BELOW"
+                    bg_color = "#2e1a1a"
+
+                st.markdown(f"""
+                <div style='background: {bg_color}; padding: 12px; border-radius: 8px; margin: 8px 0; border-left: 4px solid #00ff88;'>
+                    <div style='font-size: 13px; color: #888; margin-bottom: 4px;'>
+                        <strong>#{i+1}</strong> {sup['source']} {status_color}
+                    </div>
+                    <div style='font-size: 18px; font-weight: bold; color: #00ff88; margin: 6px 0;'>
+                        ₹{sup['price']:,.0f} <span style='font-size: 13px; color: #888;'>({dist_to_price:.0f} pts)</span>
+                    </div>
+                    <div style='font-size: 12px; color: #aaa;'>
+                        📍 Entry Zone: ₹{sup['lower']:,.0f} - ₹{sup['upper']:,.0f}<br/>
+                        💪 Strength: {sup['strength']:.0f}% | Type: {sup['type']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ No support levels identified. Wait for better setup.")
+
+    with col_entry2:
+        st.markdown("**🔴 SHORT ENTRY ZONES (Resistance Levels)**")
+
+        if resistance_levels:
+            # Show top 3 resistance levels
+            for i, res in enumerate(resistance_levels[:3]):
+                dist_to_price = res['price'] - current_price
+
+                # Determine if we're in the zone
+                if 0 <= dist_to_price <= 30:
+                    status_color = "🔴 ACTIVE"
+                    bg_color = "#3d1a1a"
+                elif dist_to_price < 0:
+                    status_color = "⬆️ ABOVE"
+                    bg_color = "#1a1a2e"
+                else:
+                    status_color = "⬇️ BELOW"
+                    bg_color = "#2e1a1a"
+
+                st.markdown(f"""
+                <div style='background: {bg_color}; padding: 12px; border-radius: 8px; margin: 8px 0; border-left: 4px solid #ff6666;'>
+                    <div style='font-size: 13px; color: #888; margin-bottom: 4px;'>
+                        <strong>#{i+1}</strong> {res['source']} {status_color}
+                    </div>
+                    <div style='font-size: 18px; font-weight: bold; color: #ff6666; margin: 6px 0;'>
+                        ₹{res['price']:,.0f} <span style='font-size: 13px; color: #888;'>(+{dist_to_price:.0f} pts)</span>
+                    </div>
+                    <div style='font-size: 12px; color: #aaa;'>
+                        📍 Entry Zone: ₹{res['lower']:,.0f} - ₹{res['upper']:,.0f}<br/>
+                        💪 Strength: {res['strength']:.0f}% | Type: {res['type']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ No resistance levels identified. Wait for better setup.")
+
+    # Trading action based on proximity
+    st.markdown("---")
+    st.markdown("**🎯 CURRENT POSITION & ACTION:**")
+
+    if nearest_support_multi and nearest_resistance_multi:
+        dist_to_sup = current_price - nearest_support_multi['price']
+        dist_to_res = nearest_resistance_multi['price'] - current_price
+
+        if dist_to_sup <= 15:
             st.success(f"""
-**🟢 NEAR SUPPORT ZONE**
+**🟢 AT SUPPORT - LONG SETUP ACTIVE**
 
-**LONG Entry Strategy:**
-- **Entry:** ₹{nearest_support['price']:,.0f} - ₹{nearest_support['price'] + 10:,.0f}
-- **Stop Loss:** ₹{nearest_support['price'] - 20:,.0f} (below support)
-- **Target 1:** ₹{current_price + 30:,.0f} (+30 pts)
-- **Target 2:** ₹{nearest_resistance['price'] if nearest_resistance else current_price + 50:,.0f} (resistance)
-- **Risk/Reward:** 1:2 to 1:3
-- **Confidence:** {nearest_support['strength']:.0f}%
+**Entry NOW:** ₹{nearest_support_multi['lower']:,.0f} - ₹{nearest_support_multi['upper']:,.0f} ({nearest_support_multi['type']})
+**Stop Loss:** ₹{nearest_support_multi['lower'] - 20:,.0f} (below support zone)
+**Target 1:** ₹{current_price + 30:,.0f} (+30 pts, Quick scalp)
+**Target 2:** ₹{nearest_resistance_multi['price']:,.0f} (Next resistance, +{dist_to_res + dist_to_sup:.0f} pts)
 
-**Why This Works:**
-- Price near strong support ({nearest_support['type']})
-- Multiple factors supporting bounce
-- Favorable R:R ratio
+**✅ Entry Confirmation Required:**
+1. Price bounces FROM support zone (don't chase if already moved up)
+2. Volume increases on bounce candle
+3. Regime supports LONG (check Market Regime above)
+4. ATM Bias BULLISH (check ATM Verdict above)
             """)
-        elif resistance_dist < 30:  # Within 30 pts of resistance
+        elif dist_to_res <= 15:
             st.error(f"""
-**🔴 NEAR RESISTANCE ZONE**
+**🔴 AT RESISTANCE - SHORT SETUP ACTIVE**
 
-**SHORT Entry Strategy:**
-- **Entry:** ₹{nearest_resistance['price'] - 10:,.0f} - ₹{nearest_resistance['price']:,.0f}
-- **Stop Loss:** ₹{nearest_resistance['price'] + 20:,.0f} (above resistance)
-- **Target 1:** ₹{current_price - 30:,.0f} (-30 pts)
-- **Target 2:** ₹{nearest_support['price'] if nearest_support else current_price - 50:,.0f} (support)
-- **Risk/Reward:** 1:2 to 1:3
-- **Confidence:** {nearest_resistance['strength']:.0f}%
+**Entry NOW:** ₹{nearest_resistance_multi['lower']:,.0f} - ₹{nearest_resistance_multi['upper']:,.0f} ({nearest_resistance_multi['type']})
+**Stop Loss:** ₹{nearest_resistance_multi['upper'] + 20:,.0f} (above resistance zone)
+**Target 1:** ₹{current_price - 30:,.0f} (-30 pts, Quick scalp)
+**Target 2:** ₹{nearest_support_multi['price']:,.0f} (Next support, -{dist_to_res + dist_to_sup:.0f} pts)
 
-**Why This Works:**
-- Price near strong resistance ({nearest_resistance['type']})
-- Multiple factors supporting rejection
-- Favorable R:R ratio
+**✅ Entry Confirmation Required:**
+1. Price rejects FROM resistance zone (don't chase if already moved down)
+2. Volume increases on rejection candle
+3. Regime supports SHORT (check Market Regime above)
+4. ATM Bias BEARISH (check ATM Verdict above)
             """)
-        else:  # In the middle
+        else:
             st.info(f"""
-**⚠️ NO-TRADE ZONE (Middle of Range)**
+**⚠️ MID-ZONE - WAIT FOR ENTRY ZONES**
 
-**Current Position:** ₹{current_price:,.2f}
-- **Distance to Support:** -{support_dist:.0f} pts
-- **Distance to Resistance:** +{resistance_dist:.0f} pts
+**Current Price:** ₹{current_price:,.2f}
+**Nearest Support:** ₹{nearest_support_multi['price']:,.0f} (-{dist_to_sup:.0f} pts) - {nearest_support_multi['type']}
+**Nearest Resistance:** ₹{nearest_resistance_multi['price']:,.0f} (+{dist_to_res:.0f} pts) - {nearest_resistance_multi['type']}
 
-**Recommended Action:** WAIT for price to reach entry zones
-- **Buy Zone:** ₹{nearest_support['price']:,.0f} - ₹{nearest_support['price'] + 10:,.0f}
-- **Sell Zone:** ₹{nearest_resistance['price'] - 10:,.0f} - ₹{nearest_resistance['price']:,.0f}
+**🚫 DO NOT TRADE HERE:**
+- Poor risk/reward ratio in the middle
+- Wait for price to reach entry zones (±15 pts of levels)
+- Set alerts at ₹{nearest_support_multi['price']:,.0f} (LONG) and ₹{nearest_resistance_multi['price']:,.0f} (SHORT)
 
-**Why Wait:**
-- Poor risk/reward in the middle
-- Higher probability at extremes
-- Patience = Profitability
+**Missing a trade is 100x better than a bad entry!**
             """)
 
     st.markdown("---")
