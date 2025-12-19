@@ -855,6 +855,127 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
+    # 🎯 CURRENT POSITION & ACTION - MOST IMPORTANT INFO AT TOP!
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("## 🎯 CURRENT POSITION & ACTION")
+
+    # Get current price
+    current_price = 0.0
+    if 'bias_analysis_results' in st.session_state:
+        df = st.session_state.bias_analysis_results.get('df')
+        if df is not None and len(df) > 0:
+            current_price = df['close'].iloc[-1]
+
+    # Get VOB data for nearest levels
+    nearest_support = None
+    nearest_resistance = None
+
+    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+        vob_data = st.session_state.vob_data_nifty
+
+        # Find nearest bullish VOB below current price (support)
+        bullish_blocks = vob_data.get('bullish_blocks', [])
+        min_dist_sup = float('inf')
+        for block in bullish_blocks:
+            if isinstance(block, dict):
+                block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
+                if block_mid < current_price:
+                    dist = current_price - block_mid
+                    if dist < min_dist_sup:
+                        min_dist_sup = dist
+                        nearest_support = {
+                            'price': block_mid,
+                            'type': 'VOB Support',
+                            'lower': block.get('lower', block_mid),
+                            'upper': block.get('upper', block_mid)
+                        }
+
+        # Find nearest bearish VOB above current price (resistance)
+        bearish_blocks = vob_data.get('bearish_blocks', [])
+        min_dist_res = float('inf')
+        for block in bearish_blocks:
+            if isinstance(block, dict):
+                block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
+                if block_mid > current_price:
+                    dist = block_mid - current_price
+                    if dist < min_dist_res:
+                        min_dist_res = dist
+                        nearest_resistance = {
+                            'price': block_mid,
+                            'type': 'VOB Resistance',
+                            'lower': block.get('lower', block_mid),
+                            'upper': block.get('upper', block_mid)
+                        }
+
+    # Display action based on position
+    if current_price > 0 and nearest_support and nearest_resistance:
+        dist_to_sup = current_price - nearest_support['price']
+        dist_to_res = nearest_resistance['price'] - current_price
+
+        if dist_to_sup <= 5:
+            st.success(f"""
+### 🟢 AT SUPPORT - LONG SETUP ACTIVE
+
+**Entry NOW:** ₹{nearest_support['lower']:,.0f} - ₹{nearest_support['upper']:,.0f} ({nearest_support['type']})
+**Stop Loss:** ₹{nearest_support['lower'] - 20:,.0f} (below support zone)
+**Target 1:** ₹{current_price + 30:,.0f} (+30 pts, Quick scalp)
+**Target 2:** ₹{nearest_resistance['price']:,.0f} (Next resistance, +{dist_to_res + dist_to_sup:.0f} pts)
+
+**✅ Entry Confirmation Required:**
+1. Price bounces FROM support zone (don't chase if already moved up)
+2. Volume increases on bounce candle
+3. Regime supports LONG (check Market Regime in AI Trading Signal)
+4. ATM Bias BULLISH (check below)
+            """)
+        elif dist_to_res <= 5:
+            st.error(f"""
+### 🔴 AT RESISTANCE - SHORT SETUP ACTIVE
+
+**Entry NOW:** ₹{nearest_resistance['lower']:,.0f} - ₹{nearest_resistance['upper']:,.0f} ({nearest_resistance['type']})
+**Stop Loss:** ₹{nearest_resistance['upper'] + 20:,.0f} (above resistance zone)
+**Target 1:** ₹{current_price - 30:,.0f} (-30 pts, Quick scalp)
+**Target 2:** ₹{nearest_support['price']:,.0f} (Next support, -{dist_to_res + dist_to_sup:.0f} pts)
+
+**✅ Entry Confirmation Required:**
+1. Price rejects FROM resistance zone (don't chase if already moved down)
+2. Volume increases on rejection candle
+3. Regime supports SHORT (check Market Regime in AI Trading Signal)
+4. ATM Bias BEARISH (check below)
+            """)
+        else:
+            st.info(f"""
+### ⚠️ MID-ZONE - WAIT FOR ENTRY ZONES
+
+**Current Price:** ₹{current_price:,.2f}
+**Nearest Support:** ₹{nearest_support['price']:,.0f} (-{dist_to_sup:.0f} pts) - {nearest_support['type']}
+**Nearest Resistance:** ₹{nearest_resistance['price']:,.0f} (+{dist_to_res:.0f} pts) - {nearest_resistance['type']}
+
+**🚫 DO NOT TRADE HERE:**
+- Poor risk/reward ratio in the middle
+- Wait for price to reach entry zones (±5 pts of levels)
+- Set alerts at ₹{nearest_support['price']:,.0f} (LONG) and ₹{nearest_resistance['price']:,.0f} (SHORT)
+
+**Missing a trade is 100x better than a bad entry!**
+            """)
+    elif current_price > 0:
+        st.warning(f"""
+### ⏳ LOADING ENTRY ZONES...
+
+**Current Price:** ₹{current_price:,.2f}
+
+Waiting for Volume Order Block data to identify precise entry zones.
+Check **Advanced Chart Analysis** tab to load VOB data.
+        """)
+    else:
+        st.warning("""
+### ⏳ WAITING FOR MARKET DATA...
+
+Loading current price and entry zones. Please wait...
+        """)
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
     # ENHANCED MARKET ANALYSIS SUMMARY CARD
     # ═══════════════════════════════════════════════════════════════════
     # This will be populated after we calculate overall sentiment
