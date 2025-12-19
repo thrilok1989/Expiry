@@ -155,8 +155,6 @@ def display_final_assessment(
     # FIX: Explicitly import streamlit to fix scope issue
     import streamlit as st
 
-    st.write("✅ Function started! Scope fix applied.")
-
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
     moment_data = nifty_screener_data.get('moment_metrics', {}) if nifty_screener_data else {}  # Fixed: moment_metrics not moment_detector
@@ -1416,7 +1414,7 @@ def display_final_assessment(
         'price': atm_strike,
         'type': 'ATM Strike',
         'strength': 100,
-        'bias': atm_bias_data.get('overall_bias', 'NEUTRAL') if atm_bias_data else 'NEUTRAL',
+        'bias': atm_bias_data.get('verdict', 'NEUTRAL') if atm_bias_data else 'NEUTRAL',
         'source': 'Option Chain'
     })
 
@@ -1963,7 +1961,7 @@ def display_final_assessment(
     st.markdown("### 📊 ATM ±2 Strikes - 14 Bias Metrics Tabulation")
 
     if atm_bias_data:
-        atm_verdict = atm_bias_data.get('overall_bias', 'NEUTRAL')
+        atm_verdict = atm_bias_data.get('verdict', 'NEUTRAL')
         atm_score = atm_bias_data.get('total_score', 0)
         atm_strike_val = atm_bias_data.get('atm_strike', atm_strike)
 
@@ -2104,8 +2102,8 @@ def display_final_assessment(
                 total_confidence += 20
 
             # Check ATM Bias alignment
-            if atm_bias_data and 'overall_bias' in atm_bias_data:
-                atm_bias = atm_bias_data['overall_bias']
+            if atm_bias_data and 'verdict' in atm_bias_data:
+                atm_bias = atm_bias_data['verdict']
                 if atm_bias in ['BULLISH', 'STRONGLY_BULLISH']:
                     factors.append(f"ATM Bias: {atm_bias} (13-factor alignment)")
                     total_confidence += 15
@@ -2168,8 +2166,8 @@ def display_final_assessment(
                 total_confidence += 20
 
             # Check ATM Bias alignment
-            if atm_bias_data and 'overall_bias' in atm_bias_data:
-                atm_bias = atm_bias_data['overall_bias']
+            if atm_bias_data and 'verdict' in atm_bias_data:
+                atm_bias = atm_bias_data['verdict']
                 if atm_bias in ['BEARISH', 'STRONGLY_BEARISH']:
                     factors.append(f"ATM Bias: {atm_bias} (13-factor alignment)")
                     total_confidence += 15
@@ -2322,15 +2320,16 @@ Regime supports direction = Trend/Range alignment
     st.markdown("**📊 ATM Verdict:**")
 
     if atm_bias_data:
-        atm_verdict = atm_bias_data.get('overall_bias', 'NEUTRAL')
+        # Get verdict from correct key ('verdict' not 'overall_bias')
+        atm_verdict = atm_bias_data.get('verdict', 'NEUTRAL')
 
-        # Normalize verdict text
-        verdict_text = atm_verdict.replace('STRONGLY_', 'STRONG ').replace('_', ' ')
+        # Remove emoji and normalize text
+        verdict_text = atm_verdict.replace('🐂 ', '').replace('🐻 ', '').replace('⚖️ ', '').strip()
 
         # Display verdict only
-        if 'BULLISH' in atm_verdict:
+        if 'BULLISH' in verdict_text:
             st.success(f"**{verdict_text}**")
-        elif 'BEARISH' in atm_verdict:
+        elif 'BEARISH' in verdict_text:
             st.error(f"**{verdict_text}**")
         else:
             st.info(f"**{verdict_text}**")
