@@ -155,8 +155,6 @@ def display_final_assessment(
     # FIX: Explicitly import streamlit to fix scope issue
     import streamlit as st
 
-    st.write("✅ Function started! Scope fix applied.")
-
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
     moment_data = nifty_screener_data.get('moment_metrics', {}) if nifty_screener_data else {}  # Fixed: moment_metrics not moment_detector
