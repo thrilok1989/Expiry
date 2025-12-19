@@ -1839,7 +1839,7 @@ st.divider()
 # ═══════════════════════════════════════════════════════════════════════
 
 # Native tabs - work seamlessly on mobile and desktop, no multiple clicks needed
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
     "🌟 Overall Market Sentiment",
     "🎯 Trade Setup",
     "📊 Active Signals",
@@ -1850,7 +1850,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "🎯 NIFTY Option Screener v7.0",
     "🌐 Enhanced Market Data",
     "🤖 MASTER AI ANALYSIS",
-    "🔬 Advanced Analytics"
+    "🔬 Advanced Analytics",
+    "📜 Signal History & Performance"
 ])
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -4828,6 +4829,63 @@ with tab11:
         st.error(f"Error in Advanced Analytics: {e}")
         import traceback
         st.code(traceback.format_exc())
+
+# ═══════════════════════════════════════════════════════════════════════
+# TAB 12: SIGNAL HISTORY & PERFORMANCE
+# ═══════════════════════════════════════════════════════════════════════
+
+with tab12:
+    try:
+        from signal_tracker import display_signal_history_tab, update_active_signals
+
+        # Auto-update active signals with current market data
+        if 'bias_analysis_results' in st.session_state and isinstance(st.session_state.bias_analysis_results, dict):
+            df_price = st.session_state.bias_analysis_results.get('df')
+            if df_price is not None and len(df_price) > 0:
+                current_price = df_price['close'].iloc[-1]
+
+                # Gather market data for ML exit analysis
+                market_data = {}
+
+                # Add ML regime
+                if 'ml_regime_result' in st.session_state:
+                    market_data['ml_regime'] = st.session_state.ml_regime_result
+
+                # Add money flow signals
+                if 'money_flow_signals' in st.session_state:
+                    market_data['money_flow_signals'] = st.session_state.money_flow_signals
+
+                # Add deltaflow signals
+                if 'deltaflow_signals' in st.session_state:
+                    market_data['deltaflow_signals'] = st.session_state.deltaflow_signals
+
+                # Add ATM bias data
+                if 'atm_bias_data' in st.session_state:
+                    market_data['atm_bias_data'] = st.session_state.atm_bias_data
+
+                # Add volatility result
+                if 'volatility_result' in st.session_state:
+                    market_data['volatility_result'] = st.session_state.volatility_result
+
+                # Update active signals with ML analysis
+                update_result = update_active_signals(current_price, market_data=market_data)
+
+        # Display signal history and performance metrics
+        display_signal_history_tab()
+
+    except Exception as e:
+        st.error(f"Error loading Signal History: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+        st.info("""
+        **Signal Tracker Not Available**
+
+        To use this feature:
+        1. Ensure signal_tracker.py is in the project root
+        2. Set up Supabase credentials in .streamlit/secrets.toml
+        3. Run the SQL schema in Supabase (see signal_tracker.py for SQL)
+        """)
 
 # ═══════════════════════════════════════════════════════════════════════
 # FOOTER

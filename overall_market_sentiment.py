@@ -927,6 +927,42 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
 3. Regime supports LONG (check Market Regime in AI Trading Signal)
 4. ATM Bias BULLISH (check below)
             """)
+
+            # Auto-save signal to Supabase
+            try:
+                from signal_tracker import save_entry_signal
+                import logging
+                logger = logging.getLogger(__name__)
+
+                entry_price_avg = (nearest_support['lower'] + nearest_support['upper']) / 2
+                stop_loss_price = nearest_support['lower'] - 20
+                target1_price = current_price + 30
+                target2_price = nearest_resistance['price']
+
+                # Build entry reason
+                entry_reason = f"LONG at {nearest_support['type']} ₹{nearest_support['price']:,.0f} | "
+                entry_reason += f"Dashboard Entry Zone Alert | "
+                entry_reason += f"Distance to support: {dist_to_sup:.0f} pts"
+
+                signal_id = save_entry_signal(
+                    signal_type="LONG",
+                    entry_price=entry_price_avg,
+                    stop_loss=stop_loss_price,
+                    target1=target1_price,
+                    target2=target2_price,
+                    support_level=nearest_support['price'],
+                    resistance_level=nearest_resistance['price'],
+                    entry_reason=entry_reason,
+                    current_price=current_price,
+                    source=nearest_support['type']
+                )
+
+                if signal_id:
+                    st.caption(f"✅ Signal #{signal_id} saved to trading history")
+
+            except Exception as e:
+                logger.warning(f"Could not auto-save signal: {e}")
+
         elif dist_to_res <= 5:
             st.error(f"""
 ### 🔴 AT RESISTANCE - SHORT SETUP ACTIVE
@@ -942,6 +978,41 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
 3. Regime supports SHORT (check Market Regime in AI Trading Signal)
 4. ATM Bias BEARISH (check below)
             """)
+
+            # Auto-save signal to Supabase
+            try:
+                from signal_tracker import save_entry_signal
+                import logging
+                logger = logging.getLogger(__name__)
+
+                entry_price_avg = (nearest_resistance['lower'] + nearest_resistance['upper']) / 2
+                stop_loss_price = nearest_resistance['upper'] + 20
+                target1_price = current_price - 30
+                target2_price = nearest_support['price']
+
+                # Build entry reason
+                entry_reason = f"SHORT at {nearest_resistance['type']} ₹{nearest_resistance['price']:,.0f} | "
+                entry_reason += f"Dashboard Entry Zone Alert | "
+                entry_reason += f"Distance to resistance: {dist_to_res:.0f} pts"
+
+                signal_id = save_entry_signal(
+                    signal_type="SHORT",
+                    entry_price=entry_price_avg,
+                    stop_loss=stop_loss_price,
+                    target1=target1_price,
+                    target2=target2_price,
+                    support_level=nearest_support['price'],
+                    resistance_level=nearest_resistance['price'],
+                    entry_reason=entry_reason,
+                    current_price=current_price,
+                    source=nearest_resistance['type']
+                )
+
+                if signal_id:
+                    st.caption(f"✅ Signal #{signal_id} saved to trading history")
+
+            except Exception as e:
+                logger.warning(f"Could not auto-save signal: {e}")
         else:
             st.info(f"""
 ### ⚠️ MID-ZONE - WAIT FOR ENTRY ZONES

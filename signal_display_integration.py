@@ -1918,6 +1918,41 @@ def display_final_assessment(
 3. Regime supports LONG (check Market Regime above)
 4. ATM Bias BULLISH (check ATM Verdict above)
             """)
+
+            # Auto-save signal to Supabase
+            try:
+                from signal_tracker import save_entry_signal
+
+                entry_price_avg = (nearest_support_multi['lower'] + nearest_support_multi['upper']) / 2
+                stop_loss_price = nearest_support_multi['lower'] - 20
+                target1_price = current_price + 30
+                target2_price = nearest_resistance_multi['price']
+
+                # Build entry reason
+                entry_reason = f"LONG at {nearest_support_multi['type']} support ₹{nearest_support_multi['price']:,.0f} | "
+                entry_reason += f"Regime: {ml_regime.regime if ml_regime else 'Unknown'} | "
+                entry_reason += f"ATM: {atm_bias_data.get('verdict', 'NEUTRAL') if atm_bias_data else 'N/A'} | "
+                entry_reason += f"Confluence: {nearest_support_multi.get('strength', 0)}% strength"
+
+                signal_id = save_entry_signal(
+                    signal_type="LONG",
+                    entry_price=entry_price_avg,
+                    stop_loss=stop_loss_price,
+                    target1=target1_price,
+                    target2=target2_price,
+                    support_level=nearest_support_multi['price'],
+                    resistance_level=nearest_resistance_multi['price'],
+                    entry_reason=entry_reason,
+                    current_price=current_price,
+                    confidence=nearest_support_multi.get('strength', 0),
+                    source=nearest_support_multi['type']
+                )
+
+                if signal_id:
+                    st.caption(f"✅ Signal #{signal_id} automatically saved to trading history")
+
+            except Exception as e:
+                logger.warning(f"Could not auto-save signal: {e}")
         elif dist_to_res <= 5:
             st.error(f"""
 **🔴 AT RESISTANCE - SHORT SETUP ACTIVE**
@@ -1933,6 +1968,41 @@ def display_final_assessment(
 3. Regime supports SHORT (check Market Regime above)
 4. ATM Bias BEARISH (check ATM Verdict above)
             """)
+
+            # Auto-save signal to Supabase
+            try:
+                from signal_tracker import save_entry_signal
+
+                entry_price_avg = (nearest_resistance_multi['lower'] + nearest_resistance_multi['upper']) / 2
+                stop_loss_price = nearest_resistance_multi['upper'] + 20
+                target1_price = current_price - 30
+                target2_price = nearest_support_multi['price']
+
+                # Build entry reason
+                entry_reason = f"SHORT at {nearest_resistance_multi['type']} resistance ₹{nearest_resistance_multi['price']:,.0f} | "
+                entry_reason += f"Regime: {ml_regime.regime if ml_regime else 'Unknown'} | "
+                entry_reason += f"ATM: {atm_bias_data.get('verdict', 'NEUTRAL') if atm_bias_data else 'N/A'} | "
+                entry_reason += f"Confluence: {nearest_resistance_multi.get('strength', 0)}% strength"
+
+                signal_id = save_entry_signal(
+                    signal_type="SHORT",
+                    entry_price=entry_price_avg,
+                    stop_loss=stop_loss_price,
+                    target1=target1_price,
+                    target2=target2_price,
+                    support_level=nearest_support_multi['price'],
+                    resistance_level=nearest_resistance_multi['price'],
+                    entry_reason=entry_reason,
+                    current_price=current_price,
+                    confidence=nearest_resistance_multi.get('strength', 0),
+                    source=nearest_resistance_multi['type']
+                )
+
+                if signal_id:
+                    st.caption(f"✅ Signal #{signal_id} automatically saved to trading history")
+
+            except Exception as e:
+                logger.warning(f"Could not auto-save signal: {e}")
         else:
             st.info(f"""
 **⚠️ MID-ZONE - WAIT FOR ENTRY ZONES**
