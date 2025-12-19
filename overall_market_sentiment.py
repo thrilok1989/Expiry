@@ -861,7 +861,7 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
 
     # Get current price
     current_price = 0.0
-    if 'bias_analysis_results' in st.session_state:
+    if 'bias_analysis_results' in st.session_state and isinstance(st.session_state.bias_analysis_results, dict):
         df = st.session_state.bias_analysis_results.get('df')
         if df is not None and len(df) > 0:
             current_price = df['close'].iloc[-1]

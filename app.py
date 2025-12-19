@@ -1122,7 +1122,7 @@ st.markdown("## 🎯 CURRENT POSITION & ACTION")
 
 # Get current price
 current_price_app = 0.0
-if 'bias_analysis_results' in st.session_state:
+if 'bias_analysis_results' in st.session_state and isinstance(st.session_state.bias_analysis_results, dict):
     df_app = st.session_state.bias_analysis_results.get('df')
     if df_app is not None and len(df_app) > 0:
         current_price_app = df_app['close'].iloc[-1]
