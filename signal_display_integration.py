@@ -164,6 +164,22 @@ def display_final_assessment(
     oi_pcr_data = nifty_screener_data.get('oi_pcr_metrics', {}) if nifty_screener_data else {}  # Fixed: oi_pcr_metrics not oi_pcr
     market_depth = nifty_screener_data.get('market_depth', {}) if nifty_screener_data else {}
 
+    # Extract volume data from market depth or set defaults
+    total_volume = 0
+    buy_volume = 0
+    sell_volume = 0
+
+    if market_depth and 'orderbook' in market_depth:
+        orderbook = market_depth['orderbook']
+        buy_volume = orderbook.get('total_buy_qty', 0)
+        sell_volume = orderbook.get('total_sell_qty', 0)
+        total_volume = buy_volume + sell_volume
+    elif money_flow_signals:
+        # Try to get volume from money flow signals
+        total_volume = money_flow_signals.get('total_volume', 0)
+        buy_volume = money_flow_signals.get('buy_volume', 0)
+        sell_volume = total_volume - buy_volume
+
     # Get regime from ML result
     regime = "RANGING"
     if ml_regime_result and hasattr(ml_regime_result, 'regime'):
