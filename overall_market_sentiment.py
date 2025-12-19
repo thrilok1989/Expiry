@@ -972,6 +972,102 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
                 'distance': resistance_level - current_price
             })
 
+    # SOURCE 4: FIBONACCI LEVELS (from advanced chart analysis)
+    if 'fibonacci_levels' in st.session_state and st.session_state.fibonacci_levels:
+        fib_levels = st.session_state.fibonacci_levels
+
+        for level_name, level_price in fib_levels.items():
+            if isinstance(level_price, (int, float)) and level_price > 0:
+                if level_price < current_price:
+                    all_support_levels.append({
+                        'price': level_price,
+                        'type': f'Fib {level_name}',
+                        'lower': level_price - 5,
+                        'upper': level_price + 5,
+                        'distance': current_price - level_price
+                    })
+                elif level_price > current_price:
+                    all_resistance_levels.append({
+                        'price': level_price,
+                        'type': f'Fib {level_name}',
+                        'lower': level_price - 5,
+                        'upper': level_price + 5,
+                        'distance': level_price - current_price
+                    })
+
+    # SOURCE 5: STRUCTURAL LEVELS (swing highs/lows)
+    if 'structural_levels' in st.session_state and st.session_state.structural_levels:
+        struct_levels = st.session_state.structural_levels
+
+        for swing_low in struct_levels.get('swing_lows', []):
+            if isinstance(swing_low, (int, float)) and swing_low < current_price:
+                all_support_levels.append({
+                    'price': swing_low,
+                    'type': 'Swing Low',
+                    'lower': swing_low - 10,
+                    'upper': swing_low + 10,
+                    'distance': current_price - swing_low
+                })
+
+        for swing_high in struct_levels.get('swing_highs', []):
+            if isinstance(swing_high, (int, float)) and swing_high > current_price:
+                all_resistance_levels.append({
+                    'price': swing_high,
+                    'type': 'Swing High',
+                    'lower': swing_high - 10,
+                    'upper': swing_high + 10,
+                    'distance': swing_high - current_price
+                })
+
+    # SOURCE 6: MONEY FLOW POC (Point of Control)
+    if 'money_flow_signals' in st.session_state:
+        mf_signals = st.session_state.money_flow_signals
+        if isinstance(mf_signals, dict) and mf_signals.get('success'):
+            poc_price = mf_signals.get('poc_price')
+            if poc_price and poc_price > 0:
+                if poc_price < current_price:
+                    all_support_levels.append({
+                        'price': poc_price,
+                        'type': 'MF POC',
+                        'lower': poc_price - 10,
+                        'upper': poc_price + 10,
+                        'distance': current_price - poc_price
+                    })
+                elif poc_price > current_price:
+                    all_resistance_levels.append({
+                        'price': poc_price,
+                        'type': 'MF POC',
+                        'lower': poc_price - 10,
+                        'upper': poc_price + 10,
+                        'distance': poc_price - current_price
+                    })
+
+    # SOURCE 7: LIQUIDITY ZONES
+    if 'liquidity_result' in st.session_state and st.session_state.liquidity_result:
+        liq_result = st.session_state.liquidity_result
+
+        if hasattr(liq_result, 'support_zones'):
+            for zone in liq_result.support_zones[:5]:
+                if zone < current_price:
+                    all_support_levels.append({
+                        'price': zone,
+                        'type': 'Liquidity Sup',
+                        'lower': zone - 15,
+                        'upper': zone + 15,
+                        'distance': current_price - zone
+                    })
+
+        if hasattr(liq_result, 'resistance_zones'):
+            for zone in liq_result.resistance_zones[:5]:
+                if zone > current_price:
+                    all_resistance_levels.append({
+                        'price': zone,
+                        'type': 'Liquidity Res',
+                        'lower': zone - 15,
+                        'upper': zone + 15,
+                        'distance': zone - current_price
+                    })
+
     # Find NEAREST support and resistance (minimum distance)
     nearest_support = None
     nearest_resistance = None
