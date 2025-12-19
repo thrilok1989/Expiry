@@ -866,46 +866,217 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
         if df is not None and len(df) > 0:
             current_price = df['close'].iloc[-1]
 
-    # Get VOB data for nearest levels
-    nearest_support = None
-    nearest_resistance = None
+    # Collect ALL support/resistance levels from ALL sources
+    all_support_levels = []
+    all_resistance_levels = []
 
+    # SOURCE 1: VOB DATA
     if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
         vob_data = st.session_state.vob_data_nifty
 
-        # Find nearest bullish VOB below current price (support)
+        # Bullish VOB blocks = Support
         bullish_blocks = vob_data.get('bullish_blocks', [])
-        min_dist_sup = float('inf')
         for block in bullish_blocks:
             if isinstance(block, dict):
                 block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
                 if block_mid < current_price:
-                    dist = current_price - block_mid
-                    if dist < min_dist_sup:
-                        min_dist_sup = dist
-                        nearest_support = {
-                            'price': block_mid,
-                            'type': 'VOB Support',
-                            'lower': block.get('lower', block_mid),
-                            'upper': block.get('upper', block_mid)
-                        }
+                    all_support_levels.append({
+                        'price': block_mid,
+                        'type': 'VOB Support',
+                        'lower': block.get('lower', block_mid),
+                        'upper': block.get('upper', block_mid),
+                        'distance': current_price - block_mid
+                    })
 
-        # Find nearest bearish VOB above current price (resistance)
+        # Bearish VOB blocks = Resistance
         bearish_blocks = vob_data.get('bearish_blocks', [])
-        min_dist_res = float('inf')
         for block in bearish_blocks:
             if isinstance(block, dict):
                 block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
                 if block_mid > current_price:
-                    dist = block_mid - current_price
-                    if dist < min_dist_res:
-                        min_dist_res = dist
-                        nearest_resistance = {
-                            'price': block_mid,
-                            'type': 'VOB Resistance',
-                            'lower': block.get('lower', block_mid),
-                            'upper': block.get('upper', block_mid)
-                        }
+                    all_resistance_levels.append({
+                        'price': block_mid,
+                        'type': 'VOB Resistance',
+                        'lower': block.get('lower', block_mid),
+                        'upper': block.get('upper', block_mid),
+                        'distance': block_mid - current_price
+                    })
+
+    # SOURCE 2: HTF SUPPORT/RESISTANCE (from advanced chart analysis)
+    if 'htf_sr_levels' in st.session_state and st.session_state.htf_sr_levels:
+        htf_levels = st.session_state.htf_sr_levels
+
+        # HTF Support levels
+        for level in htf_levels.get('support', []):
+            if isinstance(level, (int, float)) and level < current_price:
+                all_support_levels.append({
+                    'price': level,
+                    'type': 'HTF Support',
+                    'lower': level - 10,
+                    'upper': level + 10,
+                    'distance': current_price - level
+                })
+            elif isinstance(level, dict):
+                level_price = level.get('price', 0)
+                if level_price < current_price:
+                    all_support_levels.append({
+                        'price': level_price,
+                        'type': 'HTF Support',
+                        'lower': level_price - 10,
+                        'upper': level_price + 10,
+                        'distance': current_price - level_price
+                    })
+
+        # HTF Resistance levels
+        for level in htf_levels.get('resistance', []):
+            if isinstance(level, (int, float)) and level > current_price:
+                all_resistance_levels.append({
+                    'price': level,
+                    'type': 'HTF Resistance',
+                    'lower': level - 10,
+                    'upper': level + 10,
+                    'distance': level - current_price
+                })
+            elif isinstance(level, dict):
+                level_price = level.get('price', 0)
+                if level_price > current_price:
+                    all_resistance_levels.append({
+                        'price': level_price,
+                        'type': 'HTF Resistance',
+                        'lower': level_price - 10,
+                        'upper': level_price + 10,
+                        'distance': level_price - current_price
+                    })
+
+    # SOURCE 3: DEPTH-BASED S/R (from option screener)
+    if 'depth_sr_levels' in st.session_state and st.session_state.depth_sr_levels:
+        depth_levels = st.session_state.depth_sr_levels
+
+        support_level = depth_levels.get('support')
+        if support_level and support_level < current_price:
+            all_support_levels.append({
+                'price': support_level,
+                'type': 'Depth Support',
+                'lower': support_level - 10,
+                'upper': support_level + 10,
+                'distance': current_price - support_level
+            })
+
+        resistance_level = depth_levels.get('resistance')
+        if resistance_level and resistance_level > current_price:
+            all_resistance_levels.append({
+                'price': resistance_level,
+                'type': 'Depth Resistance',
+                'lower': resistance_level - 10,
+                'upper': resistance_level + 10,
+                'distance': resistance_level - current_price
+            })
+
+    # SOURCE 4: FIBONACCI LEVELS (from advanced chart analysis)
+    if 'fibonacci_levels' in st.session_state and st.session_state.fibonacci_levels:
+        fib_levels = st.session_state.fibonacci_levels
+
+        for level_name, level_price in fib_levels.items():
+            if isinstance(level_price, (int, float)) and level_price > 0:
+                if level_price < current_price:
+                    all_support_levels.append({
+                        'price': level_price,
+                        'type': f'Fib {level_name}',
+                        'lower': level_price - 5,
+                        'upper': level_price + 5,
+                        'distance': current_price - level_price
+                    })
+                elif level_price > current_price:
+                    all_resistance_levels.append({
+                        'price': level_price,
+                        'type': f'Fib {level_name}',
+                        'lower': level_price - 5,
+                        'upper': level_price + 5,
+                        'distance': level_price - current_price
+                    })
+
+    # SOURCE 5: STRUCTURAL LEVELS (swing highs/lows)
+    if 'structural_levels' in st.session_state and st.session_state.structural_levels:
+        struct_levels = st.session_state.structural_levels
+
+        for swing_low in struct_levels.get('swing_lows', []):
+            if isinstance(swing_low, (int, float)) and swing_low < current_price:
+                all_support_levels.append({
+                    'price': swing_low,
+                    'type': 'Swing Low',
+                    'lower': swing_low - 10,
+                    'upper': swing_low + 10,
+                    'distance': current_price - swing_low
+                })
+
+        for swing_high in struct_levels.get('swing_highs', []):
+            if isinstance(swing_high, (int, float)) and swing_high > current_price:
+                all_resistance_levels.append({
+                    'price': swing_high,
+                    'type': 'Swing High',
+                    'lower': swing_high - 10,
+                    'upper': swing_high + 10,
+                    'distance': swing_high - current_price
+                })
+
+    # SOURCE 6: MONEY FLOW POC (Point of Control)
+    if 'money_flow_signals' in st.session_state:
+        mf_signals = st.session_state.money_flow_signals
+        if isinstance(mf_signals, dict) and mf_signals.get('success'):
+            poc_price = mf_signals.get('poc_price')
+            if poc_price and poc_price > 0:
+                if poc_price < current_price:
+                    all_support_levels.append({
+                        'price': poc_price,
+                        'type': 'MF POC',
+                        'lower': poc_price - 10,
+                        'upper': poc_price + 10,
+                        'distance': current_price - poc_price
+                    })
+                elif poc_price > current_price:
+                    all_resistance_levels.append({
+                        'price': poc_price,
+                        'type': 'MF POC',
+                        'lower': poc_price - 10,
+                        'upper': poc_price + 10,
+                        'distance': poc_price - current_price
+                    })
+
+    # SOURCE 7: LIQUIDITY ZONES
+    if 'liquidity_result' in st.session_state and st.session_state.liquidity_result:
+        liq_result = st.session_state.liquidity_result
+
+        if hasattr(liq_result, 'support_zones'):
+            for zone in liq_result.support_zones[:5]:
+                if zone < current_price:
+                    all_support_levels.append({
+                        'price': zone,
+                        'type': 'Liquidity Sup',
+                        'lower': zone - 15,
+                        'upper': zone + 15,
+                        'distance': current_price - zone
+                    })
+
+        if hasattr(liq_result, 'resistance_zones'):
+            for zone in liq_result.resistance_zones[:5]:
+                if zone > current_price:
+                    all_resistance_levels.append({
+                        'price': zone,
+                        'type': 'Liquidity Res',
+                        'lower': zone - 15,
+                        'upper': zone + 15,
+                        'distance': zone - current_price
+                    })
+
+    # Find NEAREST support and resistance (minimum distance)
+    nearest_support = None
+    nearest_resistance = None
+
+    if all_support_levels:
+        nearest_support = min(all_support_levels, key=lambda x: x['distance'])
+
+    if all_resistance_levels:
+        nearest_resistance = min(all_resistance_levels, key=lambda x: x['distance'])
 
     # Display action based on position
     if current_price > 0 and nearest_support and nearest_resistance:
@@ -927,6 +1098,42 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
 3. Regime supports LONG (check Market Regime in AI Trading Signal)
 4. ATM Bias BULLISH (check below)
             """)
+
+            # Auto-save signal to Supabase
+            try:
+                from signal_tracker import save_entry_signal
+                import logging
+                logger = logging.getLogger(__name__)
+
+                entry_price_avg = (nearest_support['lower'] + nearest_support['upper']) / 2
+                stop_loss_price = nearest_support['lower'] - 20
+                target1_price = current_price + 30
+                target2_price = nearest_resistance['price']
+
+                # Build entry reason
+                entry_reason = f"LONG at {nearest_support['type']} ₹{nearest_support['price']:,.0f} | "
+                entry_reason += f"Dashboard Entry Zone Alert | "
+                entry_reason += f"Distance to support: {dist_to_sup:.0f} pts"
+
+                signal_id = save_entry_signal(
+                    signal_type="LONG",
+                    entry_price=entry_price_avg,
+                    stop_loss=stop_loss_price,
+                    target1=target1_price,
+                    target2=target2_price,
+                    support_level=nearest_support['price'],
+                    resistance_level=nearest_resistance['price'],
+                    entry_reason=entry_reason,
+                    current_price=current_price,
+                    source=nearest_support['type']
+                )
+
+                if signal_id:
+                    st.caption(f"✅ Signal #{signal_id} saved to trading history")
+
+            except Exception as e:
+                logger.warning(f"Could not auto-save signal: {e}")
+
         elif dist_to_res <= 5:
             st.error(f"""
 ### 🔴 AT RESISTANCE - SHORT SETUP ACTIVE
@@ -942,21 +1149,116 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
 3. Regime supports SHORT (check Market Regime in AI Trading Signal)
 4. ATM Bias BEARISH (check below)
             """)
+
+            # Auto-save signal to Supabase
+            try:
+                from signal_tracker import save_entry_signal
+                import logging
+                logger = logging.getLogger(__name__)
+
+                entry_price_avg = (nearest_resistance['lower'] + nearest_resistance['upper']) / 2
+                stop_loss_price = nearest_resistance['upper'] + 20
+                target1_price = current_price - 30
+                target2_price = nearest_support['price']
+
+                # Build entry reason
+                entry_reason = f"SHORT at {nearest_resistance['type']} ₹{nearest_resistance['price']:,.0f} | "
+                entry_reason += f"Dashboard Entry Zone Alert | "
+                entry_reason += f"Distance to resistance: {dist_to_res:.0f} pts"
+
+                signal_id = save_entry_signal(
+                    signal_type="SHORT",
+                    entry_price=entry_price_avg,
+                    stop_loss=stop_loss_price,
+                    target1=target1_price,
+                    target2=target2_price,
+                    support_level=nearest_support['price'],
+                    resistance_level=nearest_resistance['price'],
+                    entry_reason=entry_reason,
+                    current_price=current_price,
+                    source=nearest_resistance['type']
+                )
+
+                if signal_id:
+                    st.caption(f"✅ Signal #{signal_id} saved to trading history")
+
+            except Exception as e:
+                logger.warning(f"Could not auto-save signal: {e}")
         else:
-            st.info(f"""
+            # Determine message based on distance
+            if dist_to_sup > 100 or dist_to_res > 100:
+                st.warning(f"""
+### ⚠️ NO NEARBY ENTRY ZONES - LEVELS FAR AWAY
+
+**Current Price:** ₹{current_price:,.2f}
+
+**Nearest Support:** ₹{nearest_support['price']:,.0f} (**-{dist_to_sup:.0f} pts away**) - {nearest_support['type']}
+**Nearest Resistance:** ₹{nearest_resistance['price']:,.0f} (**+{dist_to_res:.0f} pts away**) - {nearest_resistance['type']}
+
+**🚫 LEVELS TOO FAR - DO NOT FORCE TRADES:**
+- Entry zones are {min(dist_to_sup, dist_to_res):.0f}+ points away
+- Wait for price to move closer to key levels (within 50 points)
+- Use this time to monitor regime, volume, and flow
+- Set price alerts at ₹{nearest_support['price']:,.0f} (LONG) and ₹{nearest_resistance['price']:,.0f} (SHORT)
+
+**⏰ PATIENCE:** Market will give you a setup - don't chase!
+                """)
+            elif dist_to_sup > 50 or dist_to_res > 50:
+                st.info(f"""
+### ⚠️ MID-ZONE - ENTRY LEVELS MODERATELY FAR
+
+**Current Price:** ₹{current_price:,.2f}
+
+**Nearest Support:** ₹{nearest_support['price']:,.0f} (-{dist_to_sup:.0f} pts) - {nearest_support['type']}
+**Nearest Resistance:** ₹{nearest_resistance['price']:,.0f} (+{dist_to_res:.0f} pts) - {nearest_resistance['type']}
+
+**🚫 WAIT FOR BETTER POSITIONING:**
+- Levels are 50-100 points away
+- Monitor for price movement toward key zones
+- Entry zones activate when within ±5 points
+- Set alerts at ₹{nearest_support['price']:,.0f} (LONG) and ₹{nearest_resistance['price']:,.0f} (SHORT)
+
+**📊 Use this time:** Check regime alignment, ATM bias, and volume flow!
+                """)
+            else:
+                st.info(f"""
 ### ⚠️ MID-ZONE - WAIT FOR ENTRY ZONES
 
 **Current Price:** ₹{current_price:,.2f}
+
 **Nearest Support:** ₹{nearest_support['price']:,.0f} (-{dist_to_sup:.0f} pts) - {nearest_support['type']}
 **Nearest Resistance:** ₹{nearest_resistance['price']:,.0f} (+{dist_to_res:.0f} pts) - {nearest_resistance['type']}
 
 **🚫 DO NOT TRADE HERE:**
-- Poor risk/reward ratio in the middle
+- Poor risk/reward ratio in the middle zone
 - Wait for price to reach entry zones (±5 pts of levels)
 - Set alerts at ₹{nearest_support['price']:,.0f} (LONG) and ₹{nearest_resistance['price']:,.0f} (SHORT)
 
-**Missing a trade is 100x better than a bad entry!**
-            """)
+**✅ READY:** Levels are close - entry signal will activate soon!
+                """)
+
+            # Show additional nearby levels (top 3 from each side)
+            st.markdown("---")
+            st.markdown("**📊 Additional Nearby Levels (Multi-Source):**")
+
+            col_sup, col_res = st.columns(2)
+
+            with col_sup:
+                st.markdown("**🟢 Support Levels:**")
+                # Sort by distance and show top 3
+                sorted_supports = sorted(all_support_levels, key=lambda x: x['distance'])[:3]
+                for i, sup in enumerate(sorted_supports):
+                    emoji = "🎯" if i == 0 else "📍"
+                    st.caption(f"{emoji} ₹{sup['price']:,.0f} (-{sup['distance']:.0f} pts) - {sup['type']}")
+
+            with col_res:
+                st.markdown("**🔴 Resistance Levels:**")
+                # Sort by distance and show top 3
+                sorted_resistances = sorted(all_resistance_levels, key=lambda x: x['distance'])[:3]
+                for i, res in enumerate(sorted_resistances):
+                    emoji = "🎯" if i == 0 else "📍"
+                    st.caption(f"{emoji} ₹{res['price']:,.0f} (+{res['distance']:.0f} pts) - {res['type']}")
+
     elif current_price > 0:
         st.warning(f"""
 ### ⏳ LOADING ENTRY ZONES...
