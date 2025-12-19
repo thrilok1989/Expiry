@@ -1833,8 +1833,8 @@ def display_final_assessment(
             for i, sup in enumerate(support_levels[:3]):
                 dist_to_price = current_price - sup['price']
 
-                # Determine if we're in the zone
-                if 0 <= dist_to_price <= 30:
+                # Determine if we're in the zone (±5 points)
+                if 0 <= dist_to_price <= 5:
                     status_color = "🟢 ACTIVE"
                     bg_color = "#1a3d1a"
                 elif dist_to_price < 0:
@@ -1869,8 +1869,8 @@ def display_final_assessment(
             for i, res in enumerate(resistance_levels[:3]):
                 dist_to_price = res['price'] - current_price
 
-                # Determine if we're in the zone
-                if 0 <= dist_to_price <= 30:
+                # Determine if we're in the zone (±5 points)
+                if 0 <= dist_to_price <= 5:
                     status_color = "🔴 ACTIVE"
                     bg_color = "#3d1a1a"
                 elif dist_to_price < 0:
@@ -1905,7 +1905,7 @@ def display_final_assessment(
         dist_to_sup = current_price - nearest_support_multi['price']
         dist_to_res = nearest_resistance_multi['price'] - current_price
 
-        if dist_to_sup <= 15:
+        if dist_to_sup <= 5:
             st.success(f"""
 **🟢 AT SUPPORT - LONG SETUP ACTIVE**
 
@@ -1920,7 +1920,7 @@ def display_final_assessment(
 3. Regime supports LONG (check Market Regime above)
 4. ATM Bias BULLISH (check ATM Verdict above)
             """)
-        elif dist_to_res <= 15:
+        elif dist_to_res <= 5:
             st.error(f"""
 **🔴 AT RESISTANCE - SHORT SETUP ACTIVE**
 
@@ -1941,11 +1941,11 @@ def display_final_assessment(
 
 **Current Price:** ₹{current_price:,.2f}
 **Nearest Support:** ₹{nearest_support_multi['price']:,.0f} (-{dist_to_sup:.0f} pts) - {nearest_support_multi['type']}
-**Nearest Resistance:** ₹{nearest_resistance_multi['price']:,.0f} (+{dist_to_res:.0f} pts) - {nearest_resistance_multi['type']}
+**Nearest Resistance:** ₹{nearest_resistance_multi['price']:,.0f} (+{dist_to_res:.0f} pts) - {nearest_support_multi['type']}
 
 **🚫 DO NOT TRADE HERE:**
 - Poor risk/reward ratio in the middle
-- Wait for price to reach entry zones (±15 pts of levels)
+- Wait for price to reach entry zones (±5 pts of levels)
 - Set alerts at ₹{nearest_support_multi['price']:,.0f} (LONG) and ₹{nearest_resistance_multi['price']:,.0f} (SHORT)
 
 **Missing a trade is 100x better than a bad entry!**
