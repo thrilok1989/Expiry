@@ -152,6 +152,9 @@ def display_final_assessment(
 
     Uses comprehensive multi-factor analysis for scoring and entries.
     """
+    # Debug: Test if function starts
+    st.write("DEBUG: display_final_assessment function started")
+
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
     moment_data = nifty_screener_data.get('moment_metrics', {}) if nifty_screener_data else {}  # Fixed: moment_metrics not moment_detector
