@@ -152,8 +152,10 @@ def display_final_assessment(
 
     Uses comprehensive multi-factor analysis for scoring and entries.
     """
-    # Debug: Test if function starts
-    st.write("DEBUG: display_final_assessment function started")
+    # FIX: Explicitly import streamlit to fix scope issue
+    import streamlit as st
+
+    st.write("✅ Function started! Scope fix applied.")
 
     # Extract data
     atm_bias_data = nifty_screener_data.get('atm_bias', {}) if nifty_screener_data else {}
