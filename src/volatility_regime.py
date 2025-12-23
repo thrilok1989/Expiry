@@ -47,6 +47,11 @@ class VolatilityRegimeResult:
     recommended_strategy: str
     confidence: float  # 0-1
     signals: List[str]
+    # PHASE 4: Expiry spike analysis
+    expiry_spike_detected: bool = False
+    expiry_spike_type: Optional[str] = None  # "SUPPORT SPIKE", "RESISTANCE SPIKE", etc.
+    expiry_spike_probability: float = 0.0  # 0-100
+    expiry_spike_intensity: Optional[str] = None  # "HIGH", "MODERATE", "LOW"
 
 
 class VolatilityRegimeDetector:
@@ -92,7 +97,8 @@ class VolatilityRegimeDetector:
         vix_current: float,
         vix_history: pd.Series,
         option_chain: Optional[Dict] = None,
-        days_to_expiry: int = 0
+        days_to_expiry: int = 0,
+        expiry_spike_data: Optional[Dict] = None
     ) -> VolatilityRegimeResult:
         """
         Complete volatility regime analysis
@@ -103,6 +109,7 @@ class VolatilityRegimeDetector:
             vix_history: Historical VIX series
             option_chain: Option chain data for IV calculation
             days_to_expiry: Days until weekly/monthly expiry
+            expiry_spike_data: Expiry spike detection data (PHASE 4)
 
         Returns:
             VolatilityRegimeResult with complete analysis
@@ -166,6 +173,23 @@ class VolatilityRegimeDetector:
             vix_percentile, atr_percentile, regime_duration
         )
 
+        # 12. PHASE 4: Expiry Spike Analysis
+        expiry_spike_detected = False
+        expiry_spike_type = None
+        expiry_spike_probability = 0.0
+        expiry_spike_intensity = None
+
+        if expiry_spike_data and expiry_spike_data.get('active', False):
+            expiry_spike_detected = True
+            expiry_spike_type = expiry_spike_data.get('type', 'UNKNOWN')
+            expiry_spike_probability = expiry_spike_data.get('probability', 0)
+            expiry_spike_intensity = expiry_spike_data.get('intensity', 'UNKNOWN')
+
+            # Add to signals
+            if expiry_spike_type:
+                spike_emoji = "🔥" if expiry_spike_intensity == "HIGH" else ("⚡" if expiry_spike_intensity == "MODERATE" else "⚠️")
+                signals.append(f"{spike_emoji} {expiry_spike_type} ({expiry_spike_probability}% prob)")
+
         return VolatilityRegimeResult(
             regime=regime,
             trend=trend,
@@ -181,7 +205,12 @@ class VolatilityRegimeDetector:
             compression_score=compression_score,
             recommended_strategy=recommended_strategy,
             confidence=confidence,
-            signals=signals
+            signals=signals,
+            # PHASE 4: Expiry spike analysis
+            expiry_spike_detected=expiry_spike_detected,
+            expiry_spike_type=expiry_spike_type,
+            expiry_spike_probability=expiry_spike_probability,
+            expiry_spike_intensity=expiry_spike_intensity
         )
 
     def _analyze_vix(
