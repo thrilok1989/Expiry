@@ -1560,43 +1560,58 @@ Loading current price and entry zones. Please wait...
         # ═══════════════════════════════════════════════════════════════════
         # ENRICH nifty_screener_data with VOB, HTF, and FUTURES DATA for XGBoost
         # ═══════════════════════════════════════════════════════════════════
+        # Ensure nifty_screener_data is a dict (not None)
         if nifty_screener_data is None:
+            nifty_screener_data = {}
+        elif not isinstance(nifty_screener_data, dict):
+            # If it's not a dict, convert to empty dict for safety
             nifty_screener_data = {}
 
         # Add VOB signals from session state
         if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
             vob_data = st.session_state.vob_data_nifty
-            vob_signals = []
+            # Ensure vob_data is a dict before accessing
+            if isinstance(vob_data, dict):
+                vob_signals = []
 
-            # Process bullish VOB blocks as support
-            for block in vob_data.get('bullish_blocks', []):
-                if isinstance(block, dict):
-                    block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
-                    vob_signals.append({
-                        'price': block_mid,
-                        'type': 'VOB Support',
-                        'strength': block.get('strength', 'Medium'),
-                        'lower': block.get('lower', block_mid),
-                        'upper': block.get('upper', block_mid)
-                    })
+                # Process bullish VOB blocks as support
+                bullish_blocks = vob_data.get('bullish_blocks', [])
+                if isinstance(bullish_blocks, list):
+                    for block in bullish_blocks:
+                        if isinstance(block, dict):
+                            block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
+                            vob_signals.append({
+                                'price': block_mid,
+                                'type': 'VOB Support',
+                                'strength': block.get('strength', 'Medium'),
+                                'lower': block.get('lower', block_mid),
+                                'upper': block.get('upper', block_mid)
+                            })
 
-            # Process bearish VOB blocks as resistance
-            for block in vob_data.get('bearish_blocks', []):
-                if isinstance(block, dict):
-                    block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
-                    vob_signals.append({
-                        'price': block_mid,
-                        'type': 'VOB Resistance',
-                        'strength': block.get('strength', 'Medium'),
-                        'lower': block.get('lower', block_mid),
-                        'upper': block.get('upper', block_mid)
-                    })
+                # Process bearish VOB blocks as resistance
+                bearish_blocks = vob_data.get('bearish_blocks', [])
+                if isinstance(bearish_blocks, list):
+                    for block in bearish_blocks:
+                        if isinstance(block, dict):
+                            block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
+                            vob_signals.append({
+                                'price': block_mid,
+                                'type': 'VOB Resistance',
+                                'strength': block.get('strength', 'Medium'),
+                                'lower': block.get('lower', block_mid),
+                                'upper': block.get('upper', block_mid)
+                            })
 
-            nifty_screener_data['vob_signals'] = vob_signals
+                # Only add if we have signals
+                if vob_signals:
+                    nifty_screener_data['vob_signals'] = vob_signals
 
         # Add HTF S/R levels from session state
         if 'htf_sr_levels' in st.session_state and st.session_state.htf_sr_levels:
-            nifty_screener_data['htf_sr_levels'] = st.session_state.htf_sr_levels
+            htf_levels = st.session_state.htf_sr_levels
+            # Ensure it's a dict before adding
+            if isinstance(htf_levels, dict):
+                nifty_screener_data['htf_sr_levels'] = htf_levels
 
         # Add NIFTY Futures analysis (CRITICAL for institutional positioning)
         # TODO: This requires fetching futures data from DhanHQ or similar source
