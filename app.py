@@ -2096,7 +2096,140 @@ with tab2:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab3:
-    st.header("📊 Active Signal Setups")
+    st.header("📊 Active Signals")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # ML ENTRY FINDER - Automated Entry Signal Analysis
+    # ═══════════════════════════════════════════════════════════════════════
+
+    st.subheader("🤖 ML Entry Finder")
+    st.caption("AI-powered entry signal detection using comprehensive market analysis")
+
+    try:
+        from ml_entry_finder import MLEntryFinder
+        from comprehensive_chart_integration import ComprehensiveChartIntegrator
+
+        # Create ML Entry Finder
+        ml_finder = MLEntryFinder()
+
+        # Gather comprehensive data
+        integrator = ComprehensiveChartIntegrator()
+        comprehensive_data = integrator.gather_all_tab_data()
+
+        # Extract institutional levels
+        institutional_levels = integrator.extract_institutional_levels(comprehensive_data)
+
+        # Get current price
+        current_price = nifty_data['spot_price']
+
+        # Get chart indicators if available
+        chart_indicators = None
+        if 'chart_indicators' in st.session_state:
+            chart_indicators = st.session_state.chart_indicators
+
+        # Get futures analysis if available
+        futures_analysis = None
+        if 'nifty_screener_data' in st.session_state:
+            screener_data = st.session_state.nifty_screener_data
+            if isinstance(screener_data, dict):
+                futures_analysis = screener_data.get('futures_analysis')
+
+        # Analyze entry opportunity
+        entry_signal = ml_finder.analyze_entry_opportunity(
+            current_price=current_price,
+            support_levels=institutional_levels.get('support', []),
+            resistance_levels=institutional_levels.get('resistance', []),
+            market_sentiment=comprehensive_data.get('market_sentiment', {}),
+            chart_indicators=chart_indicators,
+            futures_analysis=futures_analysis
+        )
+
+        # Display entry signal
+        if entry_signal:
+            # Direction and confidence
+            direction = entry_signal['direction']
+            confidence = entry_signal['confidence']
+
+            # Color coding
+            if direction == 'LONG':
+                direction_color = '🟢'
+                bg_color = '#1e3a2e'
+            elif direction == 'SHORT':
+                direction_color = '🔴'
+                bg_color = '#3a1e1e'
+            else:
+                direction_color = '⚪'
+                bg_color = '#2e2e2e'
+
+            # Main signal display
+            col1, col2, col3 = st.columns([2, 1, 1])
+
+            with col1:
+                st.markdown(f"### {direction_color} **{direction}** Signal")
+                st.caption(f"Confidence: {confidence}%")
+
+            with col2:
+                if entry_signal.get('entry_price'):
+                    st.metric("Entry Price", f"₹{entry_signal['entry_price']:.2f}")
+
+            with col3:
+                if entry_signal.get('stop_loss'):
+                    st.metric("Stop Loss", f"₹{entry_signal['stop_loss']:.2f}")
+
+            # Target levels
+            if entry_signal.get('targets'):
+                st.markdown("**🎯 Targets:**")
+                target_cols = st.columns(len(entry_signal['targets']))
+                for i, target in enumerate(entry_signal['targets']):
+                    with target_cols[i]:
+                        st.metric(f"T{i+1}", f"₹{target:.2f}")
+
+            # Analysis breakdown
+            with st.expander("📊 Signal Analysis Breakdown", expanded=False):
+                if entry_signal.get('reasoning'):
+                    st.markdown("**Reasoning:**")
+                    for reason in entry_signal['reasoning']:
+                        st.write(f"• {reason}")
+
+                # Support/Resistance levels
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("**Support Levels:**")
+                    if entry_signal.get('nearest_support'):
+                        support = entry_signal['nearest_support']
+                        st.write(f"• {support['price']:.2f} ({support.get('type', 'Unknown')}) - {support.get('strength', 'N/A')} strength")
+                        if support.get('distance'):
+                            st.caption(f"  Distance: {support['distance']:.2f} pts")
+
+                with col2:
+                    st.markdown("**Resistance Levels:**")
+                    if entry_signal.get('nearest_resistance'):
+                        resistance = entry_signal['nearest_resistance']
+                        st.write(f"• {resistance['price']:.2f} ({resistance.get('type', 'Unknown')}) - {resistance.get('strength', 'N/A')} strength")
+                        if resistance.get('distance'):
+                            st.caption(f"  Distance: {resistance['distance']:.2f} pts")
+
+                # Market conditions
+                if entry_signal.get('market_conditions'):
+                    st.markdown("**Market Conditions:**")
+                    conditions = entry_signal['market_conditions']
+                    for key, value in conditions.items():
+                        st.write(f"• {key}: {value}")
+
+        else:
+            st.info("⏳ No clear entry signal detected. Waiting for better setup...")
+
+    except Exception as e:
+        st.warning(f"⚠️ ML Entry Finder unavailable: {e}")
+
+    st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MANUAL SIGNAL SETUPS
+    # ═══════════════════════════════════════════════════════════════════════
+
+    st.subheader("📊 Manual Signal Setups")
 
     active_setups = st.session_state.signal_manager.get_active_setups()
 
