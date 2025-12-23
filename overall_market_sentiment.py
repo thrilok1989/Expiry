@@ -1619,18 +1619,26 @@ Loading current price and entry zones. Please wait...
         # futures_analysis = analyze_futures_bias(spot_price=current_price, ...)
         # nifty_screener_data['futures_analysis'] = futures_analysis
 
+        # ADD HTF S/R DATA TO nifty_screener_data for comprehensive S/R analysis
+        if bias_results and isinstance(bias_results, dict):
+            # Add nearest support/resistance from bias analysis (HTF S/R)
+            if 'nearest_support' in bias_results:
+                nifty_screener_data['nearest_support'] = bias_results['nearest_support']
+            if 'nearest_resistance' in bias_results:
+                nifty_screener_data['nearest_resistance'] = bias_results['nearest_resistance']
+
         # Display SIMPLIFIED ASSESSMENT - Only essentials
-        if nifty_screener_data or enhanced_market_data:
-            display_simple_assessment(
-                nifty_screener_data=nifty_screener_data,
-                enhanced_market_data=enhanced_market_data,
-                ml_regime_result=ml_regime_result,
-                current_price=current_price if current_price > 0 else 24500,
-                atm_strike=atm_strike if atm_strike else 24500,
-                option_chain=option_chain,
-                money_flow_signals=money_flow_signals,
-                deltaflow_signals=deltaflow_signals
-            )
+        # Always display (even if dict is empty) to show user the signal
+        display_simple_assessment(
+            nifty_screener_data=nifty_screener_data if nifty_screener_data else {},
+            enhanced_market_data=enhanced_market_data,
+            ml_regime_result=ml_regime_result,
+            current_price=current_price if current_price > 0 else 24500,
+            atm_strike=atm_strike if atm_strike else 24500,
+            option_chain=option_chain,
+            money_flow_signals=money_flow_signals,
+            deltaflow_signals=deltaflow_signals
+        )
 
         # Generate signal if we have data
         if df is not None and len(df) > 10:

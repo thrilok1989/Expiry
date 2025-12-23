@@ -155,7 +155,7 @@ def display_simple_assessment(
             'support_level': support,
             'resistance_level': resistance,
             'pcr': pcr,
-            'vix': 15.0,  # Will update below
+            'vix': vix,  # REAL VIX from Enhanced Market Data
             'atm_bias_score': atm_bias_score,
         }
 
@@ -250,14 +250,20 @@ def display_simple_assessment(
     # === GET MARKET BIAS ===
     market_bias = atm_bias_verdict  # From ATM Bias
 
-    # Get VIX
-    vix = 15.0
-    if enhanced_market_data and 'vix' in enhanced_market_data:
-        vix_data = enhanced_market_data['vix']
-        if isinstance(vix_data, dict):
-            vix = vix_data.get('current', 15.0)
-        else:
-            vix = vix_data
+    # Get VIX from Enhanced Market Data (REAL VIX, not hardcoded)
+    vix = 15.0  # Fallback only
+    if enhanced_market_data:
+        # Try multiple locations for VIX
+        if 'vix' in enhanced_market_data:
+            vix_data = enhanced_market_data['vix']
+            if isinstance(vix_data, dict):
+                vix = vix_data.get('current', vix_data.get('value', 15.0))
+            elif isinstance(vix_data, (int, float)):
+                vix = vix_data
+        elif 'india_vix' in enhanced_market_data:
+            vix = enhanced_market_data['india_vix']
+        elif 'VIX' in enhanced_market_data:
+            vix = enhanced_market_data['VIX']
 
     # === CALCULATE CONFIDENCE ===
 
