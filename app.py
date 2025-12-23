@@ -1300,7 +1300,7 @@ Loading current price and entry zones. Please wait...
 
 st.markdown("---")
 
-if st.session_state.active_vob_signals:
+if 'active_vob_signals' in st.session_state and st.session_state.active_vob_signals:
     for signal in st.session_state.active_vob_signals:
         signal_emoji = "🟢" if signal['direction'] == 'CALL' else "🔴"
         direction_label = "BULLISH" if signal['direction'] == 'CALL' else "BEARISH"
@@ -1579,7 +1579,7 @@ st.divider()
 # ═══════════════════════════════════════════════════════════════════════
 
 # Display AI analysis results if available
-if st.session_state.ai_analysis_results:
+if 'ai_analysis_results' in st.session_state and st.session_state.ai_analysis_results:
     report = st.session_state.ai_analysis_results
     
     st.markdown("### 🤖 AI Market Analysis")
@@ -1783,7 +1783,7 @@ with col2:
 
 st.divider()
 
-if st.session_state.active_htf_sr_signals:
+if 'active_htf_sr_signals' in st.session_state and st.session_state.active_htf_sr_signals:
     for signal in st.session_state.active_htf_sr_signals:
         signal_emoji = "🟢" if signal['direction'] == 'CALL' else "🔴"
         direction_label = "BULLISH" if signal['direction'] == 'CALL' else "BEARISH"
