@@ -369,9 +369,6 @@ if 'htf_data_nifty' not in st.session_state:
 if 'htf_data_sensex' not in st.session_state:
     st.session_state.htf_data_sensex = None
 
-if 'last_refresh' not in st.session_state:
-    st.session_state.last_refresh = time.time()
-
 if 'active_setup_id' not in st.session_state:
     st.session_state.active_setup_id = None
 
@@ -455,11 +452,78 @@ if 'overall_option_data' not in st.session_state:
 refresh_count = st_autorefresh(interval=AUTO_REFRESH_INTERVAL * 1000, key="data_refresh")
 
 # ═══════════════════════════════════════════════════════════════════════
+# UNIFIED REFRESH SYSTEM - Single Source of Truth
+# ═══════════════════════════════════════════════════════════════════════
+# This is the ONLY refresh mechanism. All tabs, nested tabs, and data
+# are refreshed through this unified system every 60 seconds.
+#
+# - Global auto-refresh triggers page reload every 60 seconds
+# - All cached data is cleared to force fresh data fetch
+# - XGBoost market regime re-runs automatically
+# - All analysis tabs reload with new data
+# - No separate/conflicting refresh timers
+
+# Initialize last refresh time
+if 'last_full_refresh_time' not in st.session_state:
+    st.session_state.last_full_refresh_time = 0
+
+# Check if we need to force refresh
+current_time = time.time()
+time_since_refresh = current_time - st.session_state.last_full_refresh_time
+
+# Force refresh every minute - Clear ALL cached data
+if time_since_refresh >= 60:  # 60 seconds
+
+    # === ANALYSIS DATA ===
+    cached_keys = [
+        'bias_analysis_results',
+        'ml_regime_result',
+        'money_flow_signals',
+        'deltaflow_signals',
+        'atm_bias_data',
+        'ai_analysis_results',
+
+        # === MARKET DATA ===
+        'option_chain',
+        'enhanced_market_data',
+        'cached_sentiment',
+        'data_df',
+
+        # === VOB & HTF DATA ===
+        'vob_data_nifty',
+        'vob_data_sensex',
+        'htf_data_nifty',
+        'htf_data_sensex',
+        'active_vob_signals',
+        'active_htf_sr_signals',
+
+        # === CHART DATA ===
+        'chart_data',
+        'chart_data_cache',
+        'chart_data_cache_time',
+        'chart_needs_refresh',
+        'last_chart_params',
+        'last_chart_update',
+    ]
+
+    # Clear all cached data
+    for key in cached_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+
+    # Update last refresh time
+    st.session_state.last_full_refresh_time = current_time
+
+    # Set flag to re-run all analyses (including XGBoost)
+    st.session_state.force_analysis_run = True
+
+# ═══════════════════════════════════════════════════════════════════════
 # HEADER
 # ═══════════════════════════════════════════════════════════════════════
 
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
+st.caption(f"🔄 Last full refresh: {time.strftime('%H:%M:%S', time.localtime(st.session_state.last_full_refresh_time)) if st.session_state.last_full_refresh_time > 0 else 'Never'} | Next in: {max(0, 60 - int(time_since_refresh))}s")
 
 # Check and run AI analysis if needed
 check_and_run_ai_analysis()
@@ -612,7 +676,7 @@ with st.sidebar:
         else:
             st.info(f"⏳ {name} Loading...")
 
-    st.caption("🔄 Auto-refreshing every 60-120 seconds (optimized for performance)")
+    st.caption("🔄 All data refreshes every 60 seconds via unified refresh system")
 
 # ═══════════════════════════════════════════════════════════════════════
 # MAIN CONTENT
@@ -2383,7 +2447,7 @@ with tab4:
 
 with tab5:
     st.header("🎯 Comprehensive Bias Analysis Pro")
-    st.caption("13 Bias Indicators with Adaptive Weighted Scoring | 🔄 Auto-refreshing every 60 seconds")
+    st.caption("13 Bias Indicators with Adaptive Weighted Scoring | 🔄 Refreshes every 60 seconds via unified system")
 
     # Auto-load cached results if not already in session state
     if not st.session_state.bias_analysis_results:
@@ -2759,9 +2823,10 @@ with tab6:
 with tab7:
     st.header("📈 Advanced Chart Analysis")
     st.caption("TradingView-style Chart with Advanced Indicators: Volume Bars, Volume Order Blocks, HTF Support/Resistance (3min, 5min, 10min, 15min levels), Volume Footprint (1D timeframe, 10 bins, Dynamic POC), Ultimate RSI, OM Indicator (Order Flow & Momentum), Advanced Price Action (BOS, CHOCH, Fibonacci, Geometric Patterns)")
+    st.info("🔄 Chart auto-refreshes every 60 seconds via unified refresh system. Use 'Manual Refresh' button for immediate update.")
 
     # Chart controls
-    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
 
     with col1:
         chart_symbol = st.selectbox(
@@ -2788,16 +2853,7 @@ with tab7:
         )
 
     with col4:
-        chart_auto_refresh = st.selectbox(
-            "Auto Refresh",
-            ["Off", "30s", "60s", "2m", "5m"],
-            index=2,
-            key="chart_auto_refresh",
-            help="Automatically refresh chart at selected interval"
-        )
-
-    with col5:
-        if st.button("🔄 Refresh", type="primary", use_container_width=True, key="manual_refresh_chart"):
+        if st.button("🔄 Manual Refresh", type="primary", use_container_width=True, key="manual_refresh_chart"):
             st.session_state.chart_needs_refresh = True
 
     st.divider()
@@ -2818,29 +2874,12 @@ with tab7:
         st.session_state.chart_needs_refresh = True
         st.session_state.last_chart_params = current_params
 
-    # Handle auto-refresh timing
-    should_auto_refresh = False
-    if chart_auto_refresh != "Off" and st.session_state.last_chart_update is not None:
-        # Convert refresh interval to seconds
-        refresh_seconds = {
-            "30s": 30,
-            "60s": 60,
-            "2m": 120,
-            "5m": 300
-        }.get(chart_auto_refresh, 60)
-
-        # Check if enough time has passed
-        from datetime import timedelta
-        time_since_update = (get_current_time_ist() - st.session_state.last_chart_update).total_seconds()
-        if time_since_update >= refresh_seconds:
-            should_auto_refresh = True
-            st.session_state.chart_needs_refresh = True
-
-    # Auto-load chart data on first load or when refresh is needed
+    # Load chart data on first load or when refresh is needed
+    # Note: Chart auto-refreshes every 60 seconds via unified refresh system
     if st.session_state.chart_needs_refresh:
         with st.spinner("Loading chart data and calculating indicators..."):
             try:
-                # Fetch data using cached function (60s cache)
+                # Fetch data using cached function
                 df = get_cached_chart_data(symbol_code, chart_period, chart_interval)
 
                 if df is not None and len(df) > 0:
@@ -2856,25 +2895,6 @@ with tab7:
                 st.session_state.chart_data = None
 
         st.session_state.chart_needs_refresh = False
-
-    # Show auto-refresh countdown
-    if chart_auto_refresh != "Off" and st.session_state.chart_data is not None and st.session_state.last_chart_update is not None:
-        refresh_seconds = {
-            "30s": 30,
-            "60s": 60,
-            "2m": 120,
-            "5m": 300
-        }.get(chart_auto_refresh, 60)
-
-        time_since_update = (get_current_time_ist() - st.session_state.last_chart_update).total_seconds()
-        time_until_refresh = max(0, refresh_seconds - time_since_update)
-
-        if time_until_refresh <= 0:
-            # Time for refresh
-            st.session_state.chart_needs_refresh = True
-            st.rerun()
-        else:
-            st.info(f"⏱️ Next auto-refresh in {int(time_until_refresh)} seconds (auto-refresh enabled)")
 
     st.divider()
 
@@ -4532,7 +4552,7 @@ with tab7:
         1. Select market (NIFTY, SENSEX, or DOW)
         2. Choose period and interval (default: 1 day, 1 minute)
         3. Chart loads automatically - no need to click any button!
-        4. Set auto-refresh interval (default: 60s) or click Refresh for manual update
+        4. Chart auto-refreshes every 60s via unified refresh system. Use Manual Refresh button for immediate update.
         5. Toggle indicators on/off as needed
         6. Analyze chart and trading signals
         7. Use signals to inform your trading decisions

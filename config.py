@@ -127,8 +127,8 @@ VOB_TOUCH_TOLERANCE = 5  # Points
 # UI SETTINGS
 # ═══════════════════════════════════════════════════════════════════════
 
-# Auto-refresh interval: 5 minutes (300 seconds)
-AUTO_REFRESH_INTERVAL = 300  # seconds (5 minutes - optimized for fast clicks)
+# Auto-refresh interval: 1 minute (60 seconds)
+AUTO_REFRESH_INTERVAL = 60  # seconds (1 minute - fast refresh for all tabs)
 DEMO_MODE = False
 
 APP_TITLE = "🎯 NIFTY/SENSEX Manual Trader"
