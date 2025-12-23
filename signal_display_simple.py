@@ -57,15 +57,46 @@ def display_simple_assessment(
     pcr = oi_pcr_data.get('pcr', 1.0)
 
     # === GET SUPPORT & RESISTANCE FROM MULTIPLE SOURCES ===
-    # Priority: HTF S/R > VOB > ML Analysis > OI Walls > GEX > Calculated (±100)
+    # Priority: OI Walls > GEX > HTF S/R > VOB > ML Analysis > Calculated (±100)
+    # OI and GEX are PRIMARY because they show institutional positioning
 
     support = current_price - 100  # Fallback (last resort)
     resistance = current_price + 100  # Fallback (last resort)
     support_type = "Calculated"
     resistance_type = "Calculated"
 
-    # PRIORITY 1: Try HTF S/R levels from session state (most reliable)
-    if 'htf_nearest_support' in st.session_state and st.session_state.htf_nearest_support:
+    # PRIORITY 1: OI Walls (Max PUT/CALL OI strikes) - Primary institutional levels
+    if nifty_screener_data and 'oi_pcr_metrics' in nifty_screener_data:
+        oi_metrics = nifty_screener_data['oi_pcr_metrics']
+        # Max PUT OI = Support (where institutions defend)
+        if 'max_pe_strike' in oi_metrics and oi_metrics['max_pe_strike']:
+            max_pe = oi_metrics['max_pe_strike']
+            if max_pe < current_price:
+                support = max_pe
+                support_type = "OI Wall (Max PUT OI)"
+        # Max CALL OI = Resistance (where institutions defend)
+        if 'max_ce_strike' in oi_metrics and oi_metrics['max_ce_strike']:
+            max_ce = oi_metrics['max_ce_strike']
+            if max_ce > current_price:
+                resistance = max_ce
+                resistance_type = "OI Wall (Max CALL OI)"
+
+    # PRIORITY 2: GEX (Gamma Exposure) Walls - Market maker hedging levels
+    if nifty_screener_data and support_type == "Calculated" and 'gamma_exposure' in nifty_screener_data:
+        gex_data = nifty_screener_data['gamma_exposure']
+        if 'gamma_walls' in gex_data and gex_data['gamma_walls']:
+            for wall in gex_data['gamma_walls']:
+                if isinstance(wall, dict):
+                    wall_price = wall.get('strike', 0)
+                    if wall_price < current_price and support_type == "Calculated":
+                        support = wall_price
+                        support_type = "GEX Wall (Gamma Support)"
+                    elif wall_price > current_price and resistance_type == "Calculated":
+                        resistance = wall_price
+                        resistance_type = "GEX Wall (Gamma Resistance)"
+
+    # PRIORITY 3: HTF S/R levels from session state (pivot-based technical levels)
+    if support_type == "Calculated" and 'htf_nearest_support' in st.session_state and st.session_state.htf_nearest_support:
         htf_sup = st.session_state.htf_nearest_support
         if isinstance(htf_sup, dict):
             support = htf_sup.get('price', support)
@@ -74,7 +105,7 @@ def display_simple_assessment(
             support = htf_sup
             support_type = "HTF Support"
 
-    if 'htf_nearest_resistance' in st.session_state and st.session_state.htf_nearest_resistance:
+    if resistance_type == "Calculated" and 'htf_nearest_resistance' in st.session_state and st.session_state.htf_nearest_resistance:
         htf_res = st.session_state.htf_nearest_resistance
         if isinstance(htf_res, dict):
             resistance = htf_res.get('price', resistance)
@@ -83,8 +114,8 @@ def display_simple_assessment(
             resistance = htf_res
             resistance_type = "HTF Resistance"
 
-    # PRIORITY 2: Try to get from ML regime result (uses 165+ features)
-    if ml_regime_result and support_type == "Calculated":  # Only if HTF didn't provide
+    # PRIORITY 4: Try to get from ML regime result (uses 165+ features)
+    if ml_regime_result and support_type == "Calculated":  # Only if OI/GEX/HTF didn't provide
         if hasattr(ml_regime_result, 'support_level') and ml_regime_result.support_level:
             support = ml_regime_result.support_level
             support_type = "ML Analysis (165+ features)"
@@ -126,9 +157,9 @@ def display_simple_assessment(
                     resistance = nearest_res
                     resistance_type = "HTF Resistance"
 
-        # Priority 2: VOB levels (Volume Order Blocks)
+        # Priority 5: VOB levels (Volume Order Blocks)
         vob_levels = nifty_screener_data.get('vob_signals', [])
-        if vob_levels and support_type == "Calculated":  # Only if not found from HTF
+        if vob_levels and support_type == "Calculated":  # Only if not found from OI/GEX/HTF
             support_levels = [v for v in vob_levels if v.get('price', 0) < current_price]
             resistance_levels = [v for v in vob_levels if v.get('price', 0) > current_price]
 
@@ -146,38 +177,7 @@ def display_simple_assessment(
                 vob_strength = nearest_resistance.get('strength', 'Medium')
                 resistance_type = f"VOB Resistance ({vob_strength})"
 
-        # Priority 3: OI Walls (Max PUT/CALL OI strikes)
-        if support_type == "Calculated":
-            if 'oi_pcr_metrics' in nifty_screener_data:
-                oi_metrics = nifty_screener_data['oi_pcr_metrics']
-                # Max PUT OI = Support
-                if 'max_pe_strike' in oi_metrics and oi_metrics['max_pe_strike']:
-                    max_pe = oi_metrics['max_pe_strike']
-                    if max_pe < current_price:
-                        support = max_pe
-                        support_type = "OI Wall (Max PUT OI)"
-                # Max CALL OI = Resistance
-                if 'max_ce_strike' in oi_metrics and oi_metrics['max_ce_strike']:
-                    max_ce = oi_metrics['max_ce_strike']
-                    if max_ce > current_price:
-                        resistance = max_ce
-                        resistance_type = "OI Wall (Max CALL OI)"
-
-        # Priority 4: GEX (Gamma Exposure) Walls
-        if support_type == "Calculated" and 'gamma_exposure' in nifty_screener_data:
-            gex_data = nifty_screener_data['gamma_exposure']
-            if 'gamma_walls' in gex_data and gex_data['gamma_walls']:
-                for wall in gex_data['gamma_walls']:
-                    if isinstance(wall, dict):
-                        wall_price = wall.get('strike', 0)
-                        if wall_price < current_price and support_type == "Calculated":
-                            support = wall_price
-                            support_type = "GEX Wall (Gamma Support)"
-                        elif wall_price > current_price and resistance_type == "Calculated":
-                            resistance = wall_price
-                            resistance_type = "GEX Wall (Gamma Resistance)"
-
-        # Priority 5: Fallback to simple nearest_support/resistance
+        # Priority 6: Fallback to simple nearest_support/resistance
         if support_type == "Calculated":
             if 'nearest_support' in nifty_screener_data:
                 support = nifty_screener_data['nearest_support']
