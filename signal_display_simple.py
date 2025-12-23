@@ -56,40 +56,146 @@ def display_simple_assessment(
     oi_pcr_data = nifty_screener_data.get('oi_pcr_metrics', {}) if nifty_screener_data else {}
     pcr = oi_pcr_data.get('pcr', 1.0)
 
-    # === GET SUPPORT & RESISTANCE ===
-    support = current_price - 100
-    resistance = current_price + 100
+    # === GET SUPPORT & RESISTANCE FROM MULTIPLE SOURCES ===
+    # Priority: ML Analysis > VOB > HTF S/R > Calculated
+
+    support = current_price - 100  # Fallback
+    resistance = current_price + 100  # Fallback
     support_type = "Calculated"
     resistance_type = "Calculated"
 
+    # Try to get from ML regime result first (uses 165+ features)
+    if ml_regime_result:
+        if hasattr(ml_regime_result, 'support_level') and ml_regime_result.support_level:
+            support = ml_regime_result.support_level
+            support_type = "ML Analysis (165+ features)"
+        if hasattr(ml_regime_result, 'resistance_level') and ml_regime_result.resistance_level:
+            resistance = ml_regime_result.resistance_level
+            resistance_type = "ML Analysis (165+ features)"
+
+        # Also check if it's a dict
+        if isinstance(ml_regime_result, dict):
+            if 'support_level' in ml_regime_result and ml_regime_result['support_level']:
+                support = ml_regime_result['support_level']
+                support_type = "ML Analysis"
+            if 'resistance_level' in ml_regime_result and ml_regime_result['resistance_level']:
+                resistance = ml_regime_result['resistance_level']
+                resistance_type = "ML Analysis"
+
+    # Get from nifty_screener_data
     if nifty_screener_data:
-        # Try to get from VOB levels first
+        # Priority 1: Try HTF S/R levels (from bias analysis results)
+        if 'bias_analysis_results' in st.session_state:
+            bias_results = st.session_state['bias_analysis_results']
+
+            # Look for HTF support/resistance
+            if 'nearest_support' in bias_results and bias_results['nearest_support']:
+                nearest_sup = bias_results['nearest_support']
+                if isinstance(nearest_sup, dict):
+                    support = nearest_sup.get('price', support)
+                    support_type = f"HTF {nearest_sup.get('type', 'S/R')} ({nearest_sup.get('timeframe', '1H')})"
+                elif isinstance(nearest_sup, (int, float)):
+                    support = nearest_sup
+                    support_type = "HTF Support"
+
+            if 'nearest_resistance' in bias_results and bias_results['nearest_resistance']:
+                nearest_res = bias_results['nearest_resistance']
+                if isinstance(nearest_res, dict):
+                    resistance = nearest_res.get('price', resistance)
+                    resistance_type = f"HTF {nearest_res.get('type', 'S/R')} ({nearest_res.get('timeframe', '1H')})"
+                elif isinstance(nearest_res, (int, float)):
+                    resistance = nearest_res
+                    resistance_type = "HTF Resistance"
+
+        # Priority 2: VOB levels (Volume Order Blocks)
         vob_levels = nifty_screener_data.get('vob_signals', [])
-        if vob_levels:
+        if vob_levels and support_type == "Calculated":  # Only if not found from HTF
             support_levels = [v for v in vob_levels if v.get('price', 0) < current_price]
             resistance_levels = [v for v in vob_levels if v.get('price', 0) > current_price]
 
             if support_levels:
+                # Get nearest VOB support
                 nearest_support = max(support_levels, key=lambda x: x.get('price', 0))
                 support = nearest_support.get('price', support)
-                support_type = f"{nearest_support.get('type', 'VOB')} ({nearest_support.get('strength', 'Medium')})"
+                vob_strength = nearest_support.get('strength', 'Medium')
+                support_type = f"VOB Support ({vob_strength})"
 
             if resistance_levels:
+                # Get nearest VOB resistance
                 nearest_resistance = min(resistance_levels, key=lambda x: x.get('price', 0))
                 resistance = nearest_resistance.get('price', resistance)
-                resistance_type = f"{nearest_resistance.get('type', 'VOB')} ({nearest_resistance.get('strength', 'Medium')})"
+                vob_strength = nearest_resistance.get('strength', 'Medium')
+                resistance_type = f"VOB Resistance ({vob_strength})"
 
-        # Fallback to nearest_support/resistance
-        if 'nearest_support' in nifty_screener_data:
-            support = nifty_screener_data['nearest_support']
-            support_type = "Key Support"
-        if 'nearest_resistance' in nifty_screener_data:
-            resistance = nifty_screener_data['nearest_resistance']
-            resistance_type = "Key Resistance"
+        # Priority 3: Fallback to simple nearest_support/resistance
+        if support_type == "Calculated":
+            if 'nearest_support' in nifty_screener_data:
+                support = nifty_screener_data['nearest_support']
+                support_type = "Key Support"
+            if 'nearest_resistance' in nifty_screener_data:
+                resistance = nifty_screener_data['nearest_resistance']
+                resistance_type = "Key Resistance"
 
-    # === GET ZONE WIDTH ===
-    zone_width = resistance - support
+    # === GET ZONE WIDTH FROM COMPREHENSIVE S/R ANALYSIS ===
+    # Use 10-factor analysis with GEX, Market Depth, Volume, Delta Flow, OI, etc.
+    zone_width = resistance - support  # Default
     zone_quality = "NARROW" if zone_width < 75 else "MEDIUM" if zone_width < 150 else "WIDE"
+
+    # Try to use comprehensive S/R analysis for precise zone widths
+    try:
+        from src.comprehensive_sr_analysis import analyze_sr_strength_comprehensive
+
+        # Build features dict from available data
+        features = {
+            'close': current_price,
+            'support_level': support,
+            'resistance_level': resistance,
+            'pcr': pcr,
+            'vix': 15.0,  # Will update below
+            'atm_bias_score': atm_bias_score,
+        }
+
+        # Add regime features if available
+        if ml_regime_result:
+            if hasattr(ml_regime_result, 'regime_confidence'):
+                features['regime_confidence'] = ml_regime_result.regime_confidence
+            if hasattr(ml_regime_result, 'trend_strength'):
+                features['trend_strength'] = ml_regime_result.trend_strength
+            elif isinstance(ml_regime_result, dict):
+                features['regime_confidence'] = ml_regime_result.get('regime_confidence', 50.0)
+                features['trend_strength'] = ml_regime_result.get('trend_strength', 0.0)
+
+        # Add nifty_screener_data features
+        if nifty_screener_data:
+            # GEX features
+            if 'gamma_exposure' in nifty_screener_data:
+                gex_data = nifty_screener_data['gamma_exposure']
+                features['gamma_squeeze_probability'] = gex_data.get('squeeze_probability', 0.0)
+
+            # Market depth features
+            if 'market_depth' in nifty_screener_data:
+                depth_data = nifty_screener_data['market_depth']
+                features['market_depth_order_imbalance'] = depth_data.get('order_imbalance', 0.0)
+
+            # OI buildup
+            if 'oi_buildup_pattern' in nifty_screener_data:
+                features['oi_buildup_pattern'] = nifty_screener_data['oi_buildup_pattern']
+
+        # Run comprehensive S/R analysis
+        sr_analysis = analyze_sr_strength_comprehensive(features)
+
+        # Get precise zone widths from analysis
+        if 'zone_width_support' in sr_analysis:
+            support_zone_width = sr_analysis['zone_width_support']
+            resistance_zone_width = sr_analysis['zone_width_resistance']
+
+            # Use average zone width
+            zone_width = (support_zone_width + resistance_zone_width) / 2
+            zone_quality = "NARROW" if zone_width < 20 else "MEDIUM" if zone_width < 35 else "WIDE"
+
+    except Exception as e:
+        # Fallback to simple calculation
+        pass
 
     # === GET VOB MAJOR/MINOR ===
     vob_major_support = None
