@@ -460,34 +460,203 @@ def display_simple_assessment(
 
     st.markdown("---")
 
-    # SUPPORT & RESISTANCE (2 columns)
-    st.markdown("### 📊 Support & Resistance")
+    # === COMPREHENSIVE S/R LEVELS FROM ALL DATA SOURCES ===
+    st.markdown("### 📊 Comprehensive Support & Resistance Levels")
 
+    # Collect ALL S/R levels from multiple sources
+    all_support_levels = []
+    all_resistance_levels = []
+
+    # 1. VOB Levels
+    if nifty_screener_data and 'vob_signals' in nifty_screener_data:
+        for vob in nifty_screener_data['vob_signals']:
+            if isinstance(vob, dict):
+                vob_price = vob.get('price', 0)
+                vob_strength = vob.get('strength', 'Medium')
+                if vob_price < current_price:
+                    all_support_levels.append({
+                        'price': vob_price,
+                        'source': f"VOB ({vob_strength})",
+                        'strength': 3 if vob_strength == 'Major' else 2
+                    })
+                elif vob_price > current_price:
+                    all_resistance_levels.append({
+                        'price': vob_price,
+                        'source': f"VOB ({vob_strength})",
+                        'strength': 3 if vob_strength == 'Major' else 2
+                    })
+
+    # 2. HTF S/R Levels
+    if 'bias_analysis_results' in st.session_state:
+        bias_res = st.session_state['bias_analysis_results']
+        if 'nearest_support' in bias_res and bias_res['nearest_support']:
+            sup_data = bias_res['nearest_support']
+            if isinstance(sup_data, dict):
+                all_support_levels.append({
+                    'price': sup_data.get('price', 0),
+                    'source': f"HTF {sup_data.get('type', 'S/R')}",
+                    'strength': 3
+                })
+            elif isinstance(sup_data, (int, float)):
+                all_support_levels.append({
+                    'price': sup_data,
+                    'source': "HTF Support",
+                    'strength': 3
+                })
+
+        if 'nearest_resistance' in bias_res and bias_res['nearest_resistance']:
+            res_data = bias_res['nearest_resistance']
+            if isinstance(res_data, dict):
+                all_resistance_levels.append({
+                    'price': res_data.get('price', 0),
+                    'source': f"HTF {res_data.get('type', 'S/R')}",
+                    'strength': 3
+                })
+            elif isinstance(res_data, (int, float)):
+                all_resistance_levels.append({
+                    'price': res_data,
+                    'source': "HTF Resistance",
+                    'strength': 3
+                })
+
+    # 3. OI Strikes (Max OI levels)
+    if nifty_screener_data:
+        if 'oi_pcr_metrics' in nifty_screener_data:
+            oi_metrics = nifty_screener_data['oi_pcr_metrics']
+            if 'max_ce_strike' in oi_metrics and oi_metrics['max_ce_strike']:
+                max_ce = oi_metrics['max_ce_strike']
+                if max_ce > current_price:
+                    all_resistance_levels.append({
+                        'price': max_ce,
+                        'source': "Max CALL OI",
+                        'strength': 2
+                    })
+            if 'max_pe_strike' in oi_metrics and oi_metrics['max_pe_strike']:
+                max_pe = oi_metrics['max_pe_strike']
+                if max_pe < current_price:
+                    all_support_levels.append({
+                        'price': max_pe,
+                        'source': "Max PUT OI",
+                        'strength': 2
+                    })
+
+    # 4. GEX Walls (if available)
+    if nifty_screener_data and 'gamma_exposure' in nifty_screener_data:
+        gex = nifty_screener_data['gamma_exposure']
+        if 'gamma_walls' in gex:
+            for wall in gex['gamma_walls']:
+                if isinstance(wall, dict):
+                    wall_price = wall.get('strike', 0)
+                    if wall_price < current_price:
+                        all_support_levels.append({
+                            'price': wall_price,
+                            'source': "GEX Wall",
+                            'strength': 2
+                        })
+                    elif wall_price > current_price:
+                        all_resistance_levels.append({
+                            'price': wall_price,
+                            'source': "GEX Wall",
+                            'strength': 2
+                        })
+
+    # Remove duplicates and sort
+    def deduplicate_levels(levels):
+        unique = {}
+        for level in levels:
+            price = level['price']
+            if price not in unique or level['strength'] > unique[price]['strength']:
+                unique[price] = level
+        return sorted(unique.values(), key=lambda x: x['price'], reverse=True)
+
+    all_support_levels = deduplicate_levels(all_support_levels)
+    all_resistance_levels = deduplicate_levels(all_resistance_levels)
+
+    # Find NEAREST and MAJOR levels (with safe fallbacks)
+    if all_support_levels:
+        # Filter valid levels (price must be a number)
+        valid_supports = [x for x in all_support_levels if isinstance(x.get('price'), (int, float)) and x.get('price', 0) > 0]
+        if valid_supports:
+            nearest_support = min(valid_supports, key=lambda x: abs(x['price'] - current_price))
+            major_support = max(valid_supports, key=lambda x: x.get('strength', 1))
+        else:
+            nearest_support = {'price': support, 'source': support_type, 'strength': 1}
+            major_support = nearest_support
+    else:
+        nearest_support = {'price': support, 'source': support_type, 'strength': 1}
+        major_support = nearest_support
+
+    if all_resistance_levels:
+        # Filter valid levels (price must be a number)
+        valid_resistances = [x for x in all_resistance_levels if isinstance(x.get('price'), (int, float)) and x.get('price', 0) > 0]
+        if valid_resistances:
+            nearest_resistance = min(valid_resistances, key=lambda x: abs(x['price'] - current_price))
+            major_resistance = max(valid_resistances, key=lambda x: x.get('strength', 1))
+        else:
+            nearest_resistance = {'price': resistance, 'source': resistance_type, 'strength': 1}
+            major_resistance = nearest_resistance
+    else:
+        nearest_resistance = {'price': resistance, 'source': resistance_type, 'strength': 1}
+        major_resistance = nearest_resistance
+
+    # DISPLAY: 2 columns - Support | Resistance
     col_sup, col_res = st.columns(2)
 
     with col_sup:
-        st.markdown("#### 🟢 SUPPORT")
-        st.markdown(f"### ₹{support:,.0f}")
-        st.caption(f"**Source:** {support_type}")
-        st.caption(f"**Distance:** {abs(current_price - support):.0f} points away")
+        st.markdown("#### 🟢 SUPPORT LEVELS")
 
-        # Show support zone width
-        support_zone_lower = support - (support_zone_width / 2)
-        support_zone_upper = support + (support_zone_width / 2)
+        # Nearest Support
+        st.markdown(f"**📍 NEAREST:** ₹{nearest_support['price']:,.0f}")
+        st.caption(f"Source: {nearest_support['source']}")
+        st.caption(f"Distance: {abs(current_price - nearest_support['price']):.0f} pts away")
+
+        # Zone
+        sup_zone_lower = nearest_support['price'] - (support_zone_width / 2)
+        sup_zone_upper = nearest_support['price'] + (support_zone_width / 2)
         zone_emoji = "🟢" if zone_quality_support == "NARROW" else ("🟡" if zone_quality_support == "MEDIUM" else "🔴")
-        st.caption(f"**Zone:** {zone_emoji} ₹{support_zone_lower:,.0f} - ₹{support_zone_upper:,.0f} ({support_zone_width:.0f} pts)")
+        st.caption(f"Zone: {zone_emoji} ₹{sup_zone_lower:,.0f} - ₹{sup_zone_upper:,.0f}")
+
+        st.markdown("---")
+
+        # Major Support
+        st.markdown(f"**💪 MAJOR:** ₹{major_support['price']:,.0f}")
+        st.caption(f"Source: {major_support['source']}")
+        st.caption(f"Distance: {abs(current_price - major_support['price']):.0f} pts away")
+
+        # Show all supports
+        if len(all_support_levels) > 2:
+            with st.expander(f"📋 All {len(all_support_levels)} Support Levels"):
+                for lvl in all_support_levels[:5]:  # Top 5
+                    strength_emoji = "💪" if lvl['strength'] == 3 else "📊"
+                    st.caption(f"{strength_emoji} ₹{lvl['price']:,.0f} - {lvl['source']}")
 
     with col_res:
-        st.markdown("#### 🔴 RESISTANCE")
-        st.markdown(f"### ₹{resistance:,.0f}")
-        st.caption(f"**Source:** {resistance_type}")
-        st.caption(f"**Distance:** {abs(resistance - current_price):.0f} points away")
+        st.markdown("#### 🔴 RESISTANCE LEVELS")
 
-        # Show resistance zone width
-        resistance_zone_lower = resistance - (resistance_zone_width / 2)
-        resistance_zone_upper = resistance + (resistance_zone_width / 2)
+        # Nearest Resistance
+        st.markdown(f"**📍 NEAREST:** ₹{nearest_resistance['price']:,.0f}")
+        st.caption(f"Source: {nearest_resistance['source']}")
+        st.caption(f"Distance: {abs(nearest_resistance['price'] - current_price):.0f} pts away")
+
+        # Zone
+        res_zone_lower = nearest_resistance['price'] - (resistance_zone_width / 2)
+        res_zone_upper = nearest_resistance['price'] + (resistance_zone_width / 2)
         zone_emoji = "🟢" if zone_quality_resistance == "NARROW" else ("🟡" if zone_quality_resistance == "MEDIUM" else "🔴")
-        st.caption(f"**Zone:** {zone_emoji} ₹{resistance_zone_lower:,.0f} - ₹{resistance_zone_upper:,.0f} ({resistance_zone_width:.0f} pts)")
+        st.caption(f"Zone: {zone_emoji} ₹{res_zone_lower:,.0f} - ₹{res_zone_upper:,.0f}")
+
+        st.markdown("---")
+
+        # Major Resistance
+        st.markdown(f"**💪 MAJOR:** ₹{major_resistance['price']:,.0f}")
+        st.caption(f"Source: {major_resistance['source']}")
+        st.caption(f"Distance: {abs(major_resistance['price'] - current_price):.0f} pts away")
+
+        # Show all resistances
+        if len(all_resistance_levels) > 2:
+            with st.expander(f"📋 All {len(all_resistance_levels)} Resistance Levels"):
+                for lvl in all_resistance_levels[:5]:  # Top 5
+                    strength_emoji = "💪" if lvl['strength'] == 3 else "📊"
+                    st.caption(f"{strength_emoji} ₹{lvl['price']:,.0f} - {lvl['source']}")
 
     st.markdown("---")
 
