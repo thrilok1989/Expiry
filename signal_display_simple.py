@@ -31,6 +31,11 @@ def display_simple_assessment(
     8. Reason
     """
 
+    # Store current time for Telegram alerts
+    from datetime import datetime
+    from config import IST
+    st.session_state.current_time_ist = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
+
     # === EXTRACT ESSENTIAL DATA ===
 
     # Get ATM Bias
@@ -373,8 +378,100 @@ def display_simple_assessment(
             Current: ₹{current_price:,.2f} | PCR: {pcr:.2f} | Bullish: {bullish_signals} | Bearish: {bearish_signals}
         </div>
 
+        <!-- Zone Status Alert -->
+        {"<div style='background: #1a4d1a; padding: 10px; border-radius: 8px; margin-top: 10px; text-align: center; border: 2px solid #00ff88;'><strong style='color: #00ff88; font-size: 14px;'>🎯 PRICE IN ENTRY ZONE - Telegram Alert Sent!</strong></div>" if state == "TRADE" and (abs(current_price - support) <= 20 if direction == "LONG" else abs(current_price - resistance) <= 20 if direction == "SHORT" else False) and direction != "NEUTRAL" else ""}
+
     </div>
     """, unsafe_allow_html=True)
+
+    # === TELEGRAM ALERT - When price in zone + signals align ===
+
+    # Check if price is in entry zone
+    in_entry_zone = False
+    if direction == "LONG":
+        # Check if price near support (within entry zone)
+        if abs(current_price - support) <= 20:  # Within 20 points of support
+            in_entry_zone = True
+    elif direction == "SHORT":
+        # Check if price near resistance (within entry zone)
+        if abs(current_price - resistance) <= 20:  # Within 20 points of resistance
+            in_entry_zone = True
+
+    # Send Telegram if:
+    # 1. State is TRADE (confidence >= 75)
+    # 2. Price is in entry zone
+    # 3. Direction is clear (not NEUTRAL)
+    # 4. Signals align (bullish or bearish signals > neutral)
+
+    if state == "TRADE" and in_entry_zone and direction != "NEUTRAL":
+        # Check if we already sent alert for this setup (prevent spam)
+        alert_key = f"telegram_alert_{direction}_{int(current_price)}_{regime}"
+
+        if 'last_telegram_alert' not in st.session_state:
+            st.session_state.last_telegram_alert = {}
+
+        # Only send if we haven't sent this exact alert in last 5 minutes
+        import time
+        current_time = time.time()
+        last_alert_time = st.session_state.last_telegram_alert.get(alert_key, 0)
+
+        if current_time - last_alert_time > 300:  # 5 minutes
+            try:
+                from telegram_alerts import TelegramBot
+
+                telegram_bot = TelegramBot()
+
+                # Construct alert message
+                alert_message = f"""
+🚨 **ENTRY SIGNAL - XGBoost Aligned** 🚨
+
+**Direction:** {dir_emoji} {direction}
+**Confidence:** {confidence}%
+**State:** {state_emoji} {state}
+
+**Market Analysis:**
+• Regime: {regime}
+• Bias: {market_bias}
+• Zone Width: {zone_width:.0f} pts ({zone_quality})
+
+**Levels:**
+• Support: ₹{support:,.0f} ({abs(current_price - support):.0f} pts away)
+• Resistance: ₹{resistance:,.0f} ({abs(resistance - current_price):.0f} pts away)
+
+**Entry Setup:**
+• Type: {setup_type}
+• Entry Zone: {entry_zone}
+• Stop Loss: {stop_loss}
+• Target: {target}
+
+**Current Price:** ₹{current_price:,.2f}
+**PCR:** {pcr:.2f}
+
+**Risk Factors:**
+• Expiry: {expiry_spike}
+• GEX: {gex_level}
+• VIX: {vix:.1f}
+
+**Signals Aligned:**
+• Bullish: {bullish_signals}
+• Bearish: {bearish_signals}
+
+💡 **Why:** {reason}
+
+⏰ **Time:** {st.session_state.get('current_time_ist', 'N/A')}
+"""
+
+                # Send the alert
+                success = telegram_bot.send_message(alert_message)
+
+                if success:
+                    st.session_state.last_telegram_alert[alert_key] = current_time
+                    st.success("✅ Telegram alert sent - Price in entry zone with XGBoost signals aligned!")
+                else:
+                    st.warning("⚠️ Failed to send Telegram alert. Check bot configuration.")
+
+            except Exception as e:
+                st.warning(f"⚠️ Telegram alert error: {e}")
 
     # === ACTIONABLE GUIDANCE ===
 
