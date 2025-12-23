@@ -2468,8 +2468,22 @@ with tab5:
         )
         symbol_code = bias_symbol.split()[0]
 
+    # AUTO-RUN: Run bias analysis automatically on page load/refresh if not already run
+    # This integrates with the 60-second unified refresh system
+    auto_run_analysis = False
+    if 'bias_analysis_results' not in st.session_state or st.session_state.bias_analysis_results is None:
+        auto_run_analysis = True
+    elif st.session_state.get('force_analysis_run', False):
+        # Re-run when unified refresh triggers (every 60 seconds)
+        auto_run_analysis = True
+        st.session_state.force_analysis_run = False  # Reset flag
+
     with col2:
-        if st.button("🔍 Analyze All Bias", type="primary", use_container_width=True):
+        manual_trigger = st.button("🔍 Re-Analyze Bias", type="primary", use_container_width=True,
+                                   help="Click to manually re-run bias analysis")
+
+        # Run analysis if auto-triggered OR manually clicked
+        if auto_run_analysis or manual_trigger:
             with st.spinner("Analyzing bias indicators..."):
                 try:
                     bias_analyzer = get_bias_analyzer()
@@ -2479,14 +2493,15 @@ with tab5:
                     cache_manager = get_cache_manager()
                     cache_manager.set('bias_analysis', results)
                     if results['success']:
-                        st.success("✅ Bias analysis completed!")
+                        if manual_trigger:  # Only show success message for manual clicks
+                            st.success("✅ Bias analysis completed!")
                     else:
                         st.error(f"❌ Analysis failed: {results.get('error')}")
                 except Exception as e:
                     st.error(f"❌ Analysis failed: {e}")
 
     with col3:
-        if st.session_state.bias_analysis_results:
+        if 'bias_analysis_results' in st.session_state and st.session_state.bias_analysis_results:
             if st.button("🗑️ Clear Analysis", use_container_width=True):
                 st.session_state.bias_analysis_results = None
                 st.rerun()
