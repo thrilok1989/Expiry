@@ -1408,7 +1408,7 @@ col1, col2 = st.columns(2)
 # NIFTY VOB Summary
 with col1:
     st.markdown("**NIFTY VOB**")
-    if st.session_state.vob_data_nifty:
+    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
 
@@ -1453,7 +1453,7 @@ with col1:
 # SENSEX VOB Summary
 with col2:
     st.markdown("**SENSEX VOB**")
-    if st.session_state.vob_data_sensex:
+    if 'vob_data_sensex' in st.session_state and st.session_state.vob_data_sensex:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
 
@@ -1506,7 +1506,7 @@ with col2:
 
             # Prepare NIFTY VOB data
             nifty_vob_summary = {}
-            if st.session_state.vob_data_nifty:
+            if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
                 df_nifty = get_cached_chart_data('^NSEI', '1d', '1m')
                 if df_nifty is not None:
                     bullish_blocks = st.session_state.vob_data_nifty.get('bullish_blocks', [])
@@ -1686,7 +1686,7 @@ with col1:
     st.markdown("**NIFTY**")
 
     # VOB Status
-    if st.session_state.vob_data_nifty:
+    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
         df_nifty = get_cached_chart_data('^NSEI', '1d', '1m')
@@ -1707,7 +1707,7 @@ with col1:
             st.caption(f"**VOB Bear:** {bear_strength['strength_score']}/100 {trend_emoji} {bear_strength['trend']}")
 
     # HTF S/R Status
-    if st.session_state.htf_data_nifty:
+    if 'htf_data_nifty' in st.session_state and st.session_state.htf_data_nifty:
         from indicators.htf_sr_strength_tracker import HTFSRStrengthTracker
         htf_tracker = HTFSRStrengthTracker()
         df_nifty = get_cached_chart_data('^NSEI', '7d', '1m')
@@ -1737,7 +1737,7 @@ with col2:
     st.markdown("**SENSEX**")
 
     # VOB Status
-    if st.session_state.vob_data_sensex:
+    if 'vob_data_sensex' in st.session_state and st.session_state.vob_data_sensex:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
         df_sensex = get_cached_chart_data('^BSESN', '1d', '1m')
@@ -1758,7 +1758,7 @@ with col2:
             st.caption(f"**VOB Bear:** {bear_strength['strength_score']}/100 {trend_emoji} {bear_strength['trend']}")
 
     # HTF S/R Status
-    if st.session_state.htf_data_sensex:
+    if 'htf_data_sensex' in st.session_state and st.session_state.htf_data_sensex:
         from indicators.htf_sr_strength_tracker import HTFSRStrengthTracker
         htf_tracker = HTFSRStrengthTracker()
         df_sensex = get_cached_chart_data('^BSESN', '7d', '1m')
