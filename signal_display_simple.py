@@ -137,9 +137,13 @@ def display_simple_assessment(
                 resistance_type = "Key Resistance"
 
     # === GET ZONE WIDTH FROM COMPREHENSIVE S/R ANALYSIS ===
-    # Use 10-factor analysis with GEX, Market Depth, Volume, Delta Flow, OI, etc.
-    zone_width = resistance - support  # Default
-    zone_quality = "NARROW" if zone_width < 75 else "MEDIUM" if zone_width < 150 else "WIDE"
+    # Zone width = width of ZONE around the level (NOT distance between S/R)
+    # Example: Support at 26,050 with zone_width=20 means entry zone is 26,040 to 26,060
+
+    support_zone_width = 20.0  # Default: ±10 pts around support
+    resistance_zone_width = 20.0  # Default: ±10 pts around resistance
+    zone_quality_support = "MEDIUM"
+    zone_quality_resistance = "MEDIUM"
 
     # Try to use comprehensive S/R analysis for precise zone widths
     try:
@@ -184,17 +188,17 @@ def display_simple_assessment(
         # Run comprehensive S/R analysis
         sr_analysis = analyze_sr_strength_comprehensive(features)
 
-        # Get precise zone widths from analysis
+        # Get precise zone widths from analysis (separate for support and resistance)
         if 'zone_width_support' in sr_analysis:
             support_zone_width = sr_analysis['zone_width_support']
-            resistance_zone_width = sr_analysis['zone_width_resistance']
+            zone_quality_support = "NARROW" if support_zone_width < 15 else "MEDIUM" if support_zone_width < 25 else "WIDE"
 
-            # Use average zone width
-            zone_width = (support_zone_width + resistance_zone_width) / 2
-            zone_quality = "NARROW" if zone_width < 20 else "MEDIUM" if zone_width < 35 else "WIDE"
+        if 'zone_width_resistance' in sr_analysis:
+            resistance_zone_width = sr_analysis['zone_width_resistance']
+            zone_quality_resistance = "NARROW" if resistance_zone_width < 15 else "MEDIUM" if resistance_zone_width < 25 else "WIDE"
 
     except Exception as e:
-        # Fallback to simple calculation
+        # Fallback to default zone widths
         pass
 
     # === GET VOB MAJOR/MINOR ===
@@ -350,18 +354,30 @@ def display_simple_assessment(
         state = "WAIT"
         state_emoji = "🔴"
 
-    # === DETERMINE SETUP ===
+    # === DETERMINE SETUP WITH PRECISE ZONE WIDTHS ===
 
     if direction == "LONG":
-        entry_zone = f"₹{support - 10:,.0f} - ₹{support + 10:,.0f}"
-        stop_loss = f"₹{support - 30:,.0f}"
+        # Entry zone = support ± (zone_width / 2)
+        entry_lower = support - (support_zone_width / 2)
+        entry_upper = support + (support_zone_width / 2)
+        entry_zone = f"₹{entry_lower:,.0f} - ₹{entry_upper:,.0f} (±{support_zone_width/2:.0f} pts)"
+
+        # Stop loss below the support zone
+        stop_loss = f"₹{entry_lower - 10:,.0f} (Below zone - 10 pts)"
         target = f"₹{resistance:,.0f}"
-        setup_type = "Support Bounce"
+        setup_type = f"Support Bounce ({zone_quality_support} zone)"
+
     elif direction == "SHORT":
-        entry_zone = f"₹{resistance - 10:,.0f} - ₹{resistance + 10:,.0f}"
-        stop_loss = f"₹{resistance + 30:,.0f}"
+        # Entry zone = resistance ± (zone_width / 2)
+        entry_lower = resistance - (resistance_zone_width / 2)
+        entry_upper = resistance + (resistance_zone_width / 2)
+        entry_zone = f"₹{entry_lower:,.0f} - ₹{entry_upper:,.0f} (±{resistance_zone_width/2:.0f} pts)"
+
+        # Stop loss above the resistance zone
+        stop_loss = f"₹{entry_upper + 10:,.0f} (Above zone + 10 pts)"
         target = f"₹{support:,.0f}"
-        setup_type = "Resistance Rejection"
+        setup_type = f"Resistance Rejection ({zone_quality_resistance} zone)"
+
     else:
         entry_zone = "Wait for clear direction"
         stop_loss = "N/A"
@@ -414,11 +430,26 @@ def display_simple_assessment(
         )
 
     with col4:
-        zone_indicator = "🟢" if zone_quality == "NARROW" else ("🟡" if zone_quality == "MEDIUM" else "🔴")
+        # Show zone width based on direction
+        if direction == "LONG":
+            zone_width_display = support_zone_width
+            zone_quality_display = zone_quality_support
+            zone_label = "Support Zone Width"
+        elif direction == "SHORT":
+            zone_width_display = resistance_zone_width
+            zone_quality_display = zone_quality_resistance
+            zone_label = "Resistance Zone Width"
+        else:
+            # For NEUTRAL, show both
+            zone_width_display = (support_zone_width + resistance_zone_width) / 2
+            zone_quality_display = "MEDIUM"
+            zone_label = "Avg Zone Width"
+
+        zone_indicator = "🟢" if zone_quality_display == "NARROW" else ("🟡" if zone_quality_display == "MEDIUM" else "🔴")
         st.metric(
-            label="Zone Width",
-            value=f"{zone_indicator} {zone_width:.0f} pts",
-            delta=zone_quality
+            label=zone_label,
+            value=f"{zone_indicator} {zone_width_display:.0f} pts",
+            delta=zone_quality_display
         )
 
     st.markdown("---")
@@ -434,11 +465,23 @@ def display_simple_assessment(
         st.caption(f"**Source:** {support_type}")
         st.caption(f"**Distance:** {abs(current_price - support):.0f} points away")
 
+        # Show support zone width
+        support_zone_lower = support - (support_zone_width / 2)
+        support_zone_upper = support + (support_zone_width / 2)
+        zone_emoji = "🟢" if zone_quality_support == "NARROW" else ("🟡" if zone_quality_support == "MEDIUM" else "🔴")
+        st.caption(f"**Zone:** {zone_emoji} ₹{support_zone_lower:,.0f} - ₹{support_zone_upper:,.0f} ({support_zone_width:.0f} pts)")
+
     with col_res:
         st.markdown("#### 🔴 RESISTANCE")
         st.markdown(f"### ₹{resistance:,.0f}")
         st.caption(f"**Source:** {resistance_type}")
         st.caption(f"**Distance:** {abs(resistance - current_price):.0f} points away")
+
+        # Show resistance zone width
+        resistance_zone_lower = resistance - (resistance_zone_width / 2)
+        resistance_zone_upper = resistance + (resistance_zone_width / 2)
+        zone_emoji = "🟢" if zone_quality_resistance == "NARROW" else ("🟡" if zone_quality_resistance == "MEDIUM" else "🔴")
+        st.caption(f"**Zone:** {zone_emoji} ₹{resistance_zone_lower:,.0f} - ₹{resistance_zone_upper:,.0f} ({resistance_zone_width:.0f} pts)")
 
     st.markdown("---")
 
