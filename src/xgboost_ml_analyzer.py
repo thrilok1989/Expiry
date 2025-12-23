@@ -758,6 +758,178 @@ class XGBoostMLAnalyzer:
             features['fib_in_golden_pocket'] = 0
             features['fib_extension_distance'] = 0
 
+        # ========== NIFTY FUTURES FEATURES (CRITICAL MISSING) ==========
+        # Futures data from advanced_entry_logic.analyze_futures_bias()
+        # This is CRITICAL institutional positioning data
+        if nifty_screener_data:
+            futures_analysis = nifty_screener_data.get('futures_analysis', {})
+            if futures_analysis:
+                # Premium/Discount (futures vs spot)
+                features['futures_premium_pct'] = futures_analysis.get('premium_pct', 0)
+                features['futures_premium_bias'] = 1 if futures_analysis.get('premium_bias') == 'BULLISH' else (-1 if futures_analysis.get('premium_bias') == 'BEARISH' else 0)
+
+                # Futures OI change bias
+                features['futures_oi_bias'] = 1 if futures_analysis.get('oi_bias') == 'BULLISH' else (-1 if futures_analysis.get('oi_bias') == 'BEARISH' else 0)
+
+                # Combined futures bias
+                features['futures_combined_bias'] = 1 if futures_analysis.get('combined_bias') == 'BULLISH' else (-1 if futures_analysis.get('combined_bias') == 'BEARISH' else 0)
+
+                # Futures confidence (0-100)
+                features['futures_confidence'] = futures_analysis.get('confidence', 50)
+
+                # Premium strength (absolute value indicates institutional conviction)
+                features['futures_premium_strength'] = abs(futures_analysis.get('premium_pct', 0)) * 100
+            else:
+                # Default values if futures data not available
+                features['futures_premium_pct'] = 0
+                features['futures_premium_bias'] = 0
+                features['futures_oi_bias'] = 0
+                features['futures_combined_bias'] = 0
+                features['futures_confidence'] = 50
+                features['futures_premium_strength'] = 0
+        else:
+            features['futures_premium_pct'] = 0
+            features['futures_premium_bias'] = 0
+            features['futures_oi_bias'] = 0
+            features['futures_combined_bias'] = 0
+            features['futures_confidence'] = 50
+            features['futures_premium_strength'] = 0
+
+        # ========== VOB EXACT PRICES (TAB 7 - CRITICAL MISSING) ==========
+        # Volume Order Blocks - Major/Minor Support/Resistance exact prices
+        # This data comes from session_state.vob_data_nifty or nifty_screener_data['vob_signals']
+        if nifty_screener_data and 'vob_signals' in nifty_screener_data:
+            vob_signals = nifty_screener_data['vob_signals']
+            current_price = df['close'].iloc[-1] if len(df) > 0 else 0
+
+            # Find nearest VOB major/minor levels
+            vob_major_support = None
+            vob_major_resistance = None
+            vob_minor_support = None
+            vob_minor_resistance = None
+
+            for vob in vob_signals:
+                vob_price = vob.get('price', 0)
+                vob_strength = vob.get('strength', 'Medium')
+                vob_type = vob.get('type', '')
+
+                # VOB Support (below current price)
+                if vob_price < current_price:
+                    if vob_strength == 'Major' and (vob_major_support is None or vob_price > vob_major_support):
+                        vob_major_support = vob_price
+                    elif vob_strength == 'Minor' and (vob_minor_support is None or vob_price > vob_minor_support):
+                        vob_minor_support = vob_price
+
+                # VOB Resistance (above current price)
+                elif vob_price > current_price:
+                    if vob_strength == 'Major' and (vob_major_resistance is None or vob_price < vob_major_resistance):
+                        vob_major_resistance = vob_price
+                    elif vob_strength == 'Minor' and (vob_minor_resistance is None or vob_price < vob_minor_resistance):
+                        vob_minor_resistance = vob_price
+
+            # Calculate distances as percentages
+            if vob_major_support and current_price > 0:
+                features['vob_major_support_distance_pct'] = ((current_price - vob_major_support) / current_price) * 100
+            else:
+                features['vob_major_support_distance_pct'] = 10.0
+
+            if vob_major_resistance and current_price > 0:
+                features['vob_major_resistance_distance_pct'] = ((vob_major_resistance - current_price) / current_price) * 100
+            else:
+                features['vob_major_resistance_distance_pct'] = 10.0
+
+            if vob_minor_support and current_price > 0:
+                features['vob_minor_support_distance_pct'] = ((current_price - vob_minor_support) / current_price) * 100
+            else:
+                features['vob_minor_support_distance_pct'] = 10.0
+
+            if vob_minor_resistance and current_price > 0:
+                features['vob_minor_resistance_distance_pct'] = ((vob_minor_resistance - current_price) / current_price) * 100
+            else:
+                features['vob_minor_resistance_distance_pct'] = 10.0
+        else:
+            # Default values if VOB data not available
+            features['vob_major_support_distance_pct'] = 10.0
+            features['vob_major_resistance_distance_pct'] = 10.0
+            features['vob_minor_support_distance_pct'] = 10.0
+            features['vob_minor_resistance_distance_pct'] = 10.0
+
+        # ========== HTF S/R EXACT LEVELS (TAB 7 - CRITICAL MISSING) ==========
+        # Higher Timeframe Support/Resistance - Multi-timeframe (3m/5m/10m/15m) exact prices
+        # This data comes from session_state.htf_sr_levels
+        if nifty_screener_data and 'htf_sr_levels' in nifty_screener_data:
+            htf_levels = nifty_screener_data['htf_sr_levels']
+            current_price = df['close'].iloc[-1] if len(df) > 0 else 0
+
+            # Extract support and resistance lists
+            htf_support_list = htf_levels.get('support', [])
+            htf_resistance_list = htf_levels.get('resistance', [])
+
+            # Find nearest HTF support
+            nearest_htf_support = None
+            for level in htf_support_list:
+                if isinstance(level, dict):
+                    level_price = level.get('price', 0)
+                else:
+                    level_price = float(level) if level else 0
+
+                if level_price < current_price:
+                    if nearest_htf_support is None or level_price > nearest_htf_support:
+                        nearest_htf_support = level_price
+
+            # Find nearest HTF resistance
+            nearest_htf_resistance = None
+            for level in htf_resistance_list:
+                if isinstance(level, dict):
+                    level_price = level.get('price', 0)
+                else:
+                    level_price = float(level) if level else 0
+
+                if level_price > current_price:
+                    if nearest_htf_resistance is None or level_price < nearest_htf_resistance:
+                        nearest_htf_resistance = level_price
+
+            # Calculate distances
+            if nearest_htf_support and current_price > 0:
+                features['htf_nearest_support_distance_pct'] = ((current_price - nearest_htf_support) / current_price) * 100
+                features['htf_num_support_levels'] = len([s for s in htf_support_list if (isinstance(s, dict) and s.get('price', 0) > 0) or (isinstance(s, (int, float)) and s > 0)])
+            else:
+                features['htf_nearest_support_distance_pct'] = 10.0
+                features['htf_num_support_levels'] = 0
+
+            if nearest_htf_resistance and current_price > 0:
+                features['htf_nearest_resistance_distance_pct'] = ((nearest_htf_resistance - current_price) / current_price) * 100
+                features['htf_num_resistance_levels'] = len([r for r in htf_resistance_list if (isinstance(r, dict) and r.get('price', 0) > 0) or (isinstance(r, (int, float)) and r > 0)])
+            else:
+                features['htf_nearest_resistance_distance_pct'] = 10.0
+                features['htf_num_resistance_levels'] = 0
+        else:
+            # Default values if HTF data not available
+            features['htf_nearest_support_distance_pct'] = 10.0
+            features['htf_nearest_resistance_distance_pct'] = 10.0
+            features['htf_num_support_levels'] = 0
+            features['htf_num_resistance_levels'] = 0
+
+        # ========== VOLUME FOOTPRINT POC (TAB 7 - CRITICAL MISSING) ==========
+        # Point of Control from Money Flow Profile
+        # POC shows the price level with highest volume - key support/resistance
+        if money_flow_signals and money_flow_signals.get('success'):
+            poc_price = money_flow_signals.get('poc_price', 0)
+            current_price = df['close'].iloc[-1] if len(df) > 0 else 0
+
+            if poc_price > 0 and current_price > 0:
+                # Distance to POC (percentage)
+                features['volume_poc_distance_pct'] = ((poc_price - current_price) / current_price) * 100
+
+                # POC position (1 if above current price, -1 if below)
+                features['volume_poc_position'] = 1 if poc_price > current_price else -1
+            else:
+                features['volume_poc_distance_pct'] = 0
+                features['volume_poc_position'] = 0
+        else:
+            features['volume_poc_distance_pct'] = 0
+            features['volume_poc_position'] = 0
+
         # Convert to DataFrame
         feature_df = pd.DataFrame([features])
 
