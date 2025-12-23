@@ -1,6 +1,7 @@
 """
 SIMPLIFIED AI Trading Signal Display
 Shows ONLY what's needed - clean and actionable
+UPDATED: Now uses NATIVE Streamlit components (NO HTML)
 """
 
 import streamlit as st
@@ -19,6 +20,7 @@ def display_simple_assessment(
 ):
     """
     SIMPLE AI TRADING SIGNAL - Only essentials
+    Using NATIVE Streamlit Components (NO HTML)
 
     Shows:
     1. State (TRADE/WAIT/SCAN)
@@ -115,7 +117,7 @@ def display_simple_assessment(
                     vob_minor_resistance = vob_price
 
     # === GET EXPIRY SPIKE ===
-    expiry_spike = "Normal"
+    expiry_spike = "✅ Normal"
     expiry_days = 1
     if nifty_screener_data and 'expiry_spike_data' in nifty_screener_data:
         expiry_data = nifty_screener_data['expiry_spike_data']
@@ -214,30 +216,24 @@ def display_simple_assessment(
     # Determine direction
     if bullish_signals > bearish_signals + 1:
         direction = "LONG"
-        dir_color = "#00ff88"
         dir_emoji = "🚀"
     elif bearish_signals > bullish_signals + 1:
         direction = "SHORT"
-        dir_color = "#ff4444"
         dir_emoji = "🔻"
     else:
         direction = "NEUTRAL"
-        dir_color = "#ffa500"
         dir_emoji = "⚖️"
 
     # === DETERMINE STATE ===
 
     if confidence < 60:
         state = "WAIT"
-        state_color = "#ff4444"
         state_emoji = "🔴"
     elif confidence < 75:
         state = "SCAN"
-        state_color = "#ffa500"
         state_emoji = "🟡"
     else:
         state = "TRADE"
-        state_color = "#00ff88"
         state_emoji = "🟢"
 
     # Distance check - if too far from support/resistance, WAIT
@@ -246,7 +242,6 @@ def display_simple_assessment(
 
     if dist_to_support > 50 and dist_to_resistance > 50:
         state = "WAIT"
-        state_color = "#ff4444"
         state_emoji = "🔴"
 
     # === DETERMINE SETUP ===
@@ -276,113 +271,178 @@ def display_simple_assessment(
     else:
         reason = f"Strong {direction} setup with {confidence}% confidence. {setup_type} active."
 
-    # === DISPLAY ESSENTIAL DATA ===
+    # === DISPLAY USING NATIVE STREAMLIT COMPONENTS ===
 
-    st.markdown(f"""
-    <div style='background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%);
-                border-radius: 15px; padding: 30px; margin: 20px 0;
-                border-left: 8px solid {state_color}; box-shadow: 0 8px 20px rgba(0,0,0,0.4);'>
+    # HEADER
+    bias_emoji_map = {
+        "BULLISH": "🟢",
+        "BEARISH": "🔴",
+        "NEUTRAL": "⚖️",
+        "PUT SELLERS DOMINANT": "🐂",
+        "CALL SELLERS DOMINANT": "🐻"
+    }
+    bias_display_emoji = bias_emoji_map.get(market_bias, "⚖️")
 
-        <h1 style='margin: 0 0 20px 0; color: {state_color}; font-size: 36px;'>
-            {state_emoji} {state} - {dir_emoji} {direction}
-        </h1>
+    st.markdown(f"## {state_emoji} **{state}** - {dir_emoji} {direction}")
+    st.markdown("---")
 
-        <!-- Core Metrics -->
-        <div style='display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0;'>
-            <div style='background: #0a0a0a; padding: 15px; border-radius: 10px; text-align: center;'>
-                <div style='color: #6495ED; font-size: 32px; font-weight: bold;'>{confidence}%</div>
-                <div style='color: #888; font-size: 12px;'>Confidence</div>
-            </div>
+    # CORE METRICS (4 columns)
+    col1, col2, col3, col4 = st.columns(4)
 
-            <div style='background: #0a0a0a; padding: 15px; border-radius: 10px; text-align: center;'>
-                <div style='color: #ff9500; font-size: 20px; font-weight: bold;'>{regime}</div>
-                <div style='color: #888; font-size: 12px;'>XGBoost Regime</div>
-            </div>
+    with col1:
+        st.metric(
+            label="Confidence",
+            value=f"{confidence}%"
+        )
 
-            <div style='background: #0a0a0a; padding: 15px; border-radius: 10px; text-align: center;'>
-                <div style='color: {"#00ff88" if "PUT" in market_bias else "#ff4444" if "CALL" in market_bias else "#ffa500"}; font-size: 18px; font-weight: bold;'>{market_bias}</div>
-                <div style='color: #888; font-size: 12px;'>Market Bias</div>
-            </div>
+    with col2:
+        st.metric(
+            label="XGBoost Regime",
+            value=regime
+        )
 
-            <div style='background: #0a0a0a; padding: 15px; border-radius: 10px; text-align: center;'>
-                <div style='color: {"#00ff88" if zone_quality == "NARROW" else "#ffa500" if zone_quality == "MEDIUM" else "#ff4444"}; font-size: 20px; font-weight: bold;'>{zone_width:.0f} pts</div>
-                <div style='color: #888; font-size: 12px;'>Zone Width ({zone_quality})</div>
-            </div>
-        </div>
+    with col3:
+        st.metric(
+            label="Market Bias",
+            value=f"{bias_display_emoji} {market_bias}"
+        )
 
-        <!-- Support & Resistance -->
-        <div style='background: #0a0a0a; padding: 20px; border-radius: 10px; margin: 15px 0;'>
-            <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 20px;'>
-                <div>
-                    <div style='color: #00ff88; font-size: 16px; font-weight: bold; margin-bottom: 10px;'>🟢 SUPPORT</div>
-                    <div style='color: #00ff88; font-size: 28px; font-weight: bold;'>₹{support:,.0f}</div>
-                    <div style='color: #888; font-size: 13px; margin-top: 5px;'>{support_type}</div>
-                    <div style='color: #666; font-size: 13px; margin-top: 5px;'>{abs(current_price - support):.0f} points away</div>
-                </div>
-                <div style='text-align: right;'>
-                    <div style='color: #ff4444; font-size: 16px; font-weight: bold; margin-bottom: 10px;'>🔴 RESISTANCE</div>
-                    <div style='color: #ff4444; font-size: 28px; font-weight: bold;'>₹{resistance:,.0f}</div>
-                    <div style='color: #888; font-size: 13px; margin-top: 5px;'>{resistance_type}</div>
-                    <div style='color: #666; font-size: 13px; margin-top: 5px;'>{abs(resistance - current_price):.0f} points away</div>
-                </div>
-            </div>
-        </div>
+    with col4:
+        zone_indicator = "🟢" if zone_quality == "NARROW" else ("🟡" if zone_quality == "MEDIUM" else "🔴")
+        st.metric(
+            label="Zone Width",
+            value=f"{zone_indicator} {zone_width:.0f} pts",
+            delta=zone_quality
+        )
 
-        <!-- VOB Levels -->
-        <div style='background: #0a0a0a; padding: 15px; border-radius: 10px; margin: 15px 0;'>
-            <div style='color: #6495ED; font-size: 14px; font-weight: bold; margin-bottom: 10px;'>📊 VOB LEVELS</div>
-            <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;'>
-                <div style='color: #00ff88;'>Major Support: {f"₹{vob_major_support:,.0f}" if vob_major_support else "N/A"}</div>
-                <div style='color: #ff4444; text-align: right;'>Major Resistance: {f"₹{vob_major_resistance:,.0f}" if vob_major_resistance else "N/A"}</div>
-                <div style='color: #888;'>Minor Support: {f"₹{vob_minor_support:,.0f}" if vob_minor_support else "N/A"}</div>
-                <div style='color: #888; text-align: right;'>Minor Resistance: {f"₹{vob_minor_resistance:,.0f}" if vob_minor_resistance else "N/A"}</div>
-            </div>
-        </div>
+    st.markdown("---")
 
-        <!-- Entry Setup -->
-        <div style='background: #1a4d1a; padding: 20px; border-radius: 10px; margin: 15px 0; border: 2px solid {dir_color};'>
-            <div style='color: #ffffff; font-size: 18px; font-weight: bold; margin-bottom: 15px;'>🎯 ENTRY SETUP</div>
-            <div style='color: #ffffff; font-size: 15px; line-height: 2;'>
-                <strong style='color: #6495ED;'>Setup Type:</strong> {setup_type}<br>
-                <strong style='color: #00ff88;'>Entry Zone:</strong> {entry_zone}<br>
-                <strong style='color: #ff4444;'>Stop Loss:</strong> {stop_loss}<br>
-                <strong style='color: #00ff88;'>Target:</strong> {target}
-            </div>
-        </div>
+    # SUPPORT & RESISTANCE (2 columns)
+    st.markdown("### 📊 Support & Resistance")
 
-        <!-- Additional Info -->
-        <div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0;'>
-            <div style='background: #0a0a0a; padding: 10px; border-radius: 8px; text-align: center;'>
-                <div style='color: #888; font-size: 11px;'>Expiry</div>
-                <div style='color: {"#ff4444" if expiry_days <= 0.5 else "#ffa500" if expiry_days <= 1 else "#00ff88"}; font-size: 14px; font-weight: bold;'>{expiry_spike}</div>
-            </div>
-            <div style='background: #0a0a0a; padding: 10px; border-radius: 8px; text-align: center;'>
-                <div style='color: #888; font-size: 11px;'>GEX Level</div>
-                <div style='color: #ffa500; font-size: 14px; font-weight: bold;'>{gex_level}</div>
-            </div>
-            <div style='background: #0a0a0a; padding: 10px; border-radius: 8px; text-align: center;'>
-                <div style='color: #888; font-size: 11px;'>VIX</div>
-                <div style='color: {"#00ff88" if vix < 15 else "#ffa500" if vix < 20 else "#ff4444"}; font-size: 14px; font-weight: bold;'>{vix:.1f}</div>
-            </div>
-        </div>
+    col_sup, col_res = st.columns(2)
 
-        <!-- Reason -->
-        <div style='background: #1a1a2e; padding: 15px; border-radius: 10px; margin: 15px 0;'>
-            <div style='color: #cccccc; font-size: 14px; line-height: 1.6;'>
-                💡 <strong>Analysis:</strong> {reason}
-            </div>
-        </div>
+    with col_sup:
+        st.markdown("#### 🟢 SUPPORT")
+        st.markdown(f"### ₹{support:,.0f}")
+        st.caption(f"**Source:** {support_type}")
+        st.caption(f"**Distance:** {abs(current_price - support):.0f} points away")
 
-        <!-- Footer -->
-        <div style='color: #666; font-size: 12px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; text-align: center;'>
-            Current: ₹{current_price:,.2f} | PCR: {pcr:.2f} | Bullish: {bullish_signals} | Bearish: {bearish_signals}
-        </div>
+    with col_res:
+        st.markdown("#### 🔴 RESISTANCE")
+        st.markdown(f"### ₹{resistance:,.0f}")
+        st.caption(f"**Source:** {resistance_type}")
+        st.caption(f"**Distance:** {abs(resistance - current_price):.0f} points away")
 
-        <!-- Zone Status Alert -->
-        {"<div style='background: #1a4d1a; padding: 10px; border-radius: 8px; margin-top: 10px; text-align: center; border: 2px solid #00ff88;'><strong style='color: #00ff88; font-size: 14px;'>🎯 PRICE IN ENTRY ZONE - Telegram Alert Sent!</strong></div>" if state == "TRADE" and (abs(current_price - support) <= 20 if direction == "LONG" else abs(current_price - resistance) <= 20 if direction == "SHORT" else False) and direction != "NEUTRAL" else ""}
+    st.markdown("---")
 
-    </div>
-    """, unsafe_allow_html=True)
+    # VOB LEVELS
+    st.markdown("### 📊 VOB LEVELS")
+
+    vob_col1, vob_col2 = st.columns(2)
+
+    with vob_col1:
+        major_sup = f"₹{vob_major_support:,.0f}" if vob_major_support else "N/A"
+        minor_sup = f"₹{vob_minor_support:,.0f}" if vob_minor_support else "N/A"
+        st.markdown(f"**Major Support:** {major_sup}")
+        st.markdown(f"**Minor Support:** {minor_sup}")
+
+    with vob_col2:
+        major_res = f"₹{vob_major_resistance:,.0f}" if vob_major_resistance else "N/A"
+        minor_res = f"₹{vob_minor_resistance:,.0f}" if vob_minor_resistance else "N/A"
+        st.markdown(f"**Major Resistance:** {major_res}")
+        st.markdown(f"**Minor Resistance:** {minor_res}")
+
+    st.markdown("---")
+
+    # ENTRY SETUP
+    st.markdown("### 🎯 ENTRY SETUP")
+
+    # Choose container based on state and direction
+    if state == "TRADE":
+        if direction == "LONG":
+            container = st.success
+        elif direction == "SHORT":
+            container = st.error
+        else:
+            container = st.info
+    elif state == "SCAN":
+        container = st.warning
+    else:  # WAIT
+        container = st.warning
+
+    with container("Setup Details"):
+        st.markdown(f"**Setup Type:** {setup_type}")
+        st.markdown(f"**Entry Zone:** {entry_zone}")
+        st.markdown(f"**Stop Loss:** {stop_loss}")
+        st.markdown(f"**Target:** {target}")
+
+    st.markdown("---")
+
+    # ADDITIONAL INFO (3 columns)
+    st.markdown("### 📈 Additional Information")
+
+    info_col1, info_col2, info_col3 = st.columns(3)
+
+    with info_col1:
+        st.metric(
+            label="Expiry Status",
+            value=expiry_spike
+        )
+
+    with info_col2:
+        st.metric(
+            label="GEX Level",
+            value=gex_level
+        )
+
+    with info_col3:
+        st.metric(
+            label="VIX",
+            value=f"{vix:.1f}"
+        )
+
+    st.markdown("---")
+
+    # ANALYSIS REASON
+    st.markdown("### 💡 Analysis")
+    st.info(reason)
+
+    st.markdown("---")
+
+    # FOOTER
+    footer_text = f"**Current:** ₹{current_price:,.2f} | **PCR:** {pcr:.2f} | **Bullish:** {bullish_signals} | **Bearish:** {bearish_signals}"
+    st.caption(footer_text)
+
+    # TRADE RECOMMENDATION
+    if state == "WAIT":
+        st.error("### 🔴 NO TRADE")
+        st.warning("""
+        **Wait for better setup**
+        - Price in mid-zone or confidence too low
+        - Be patient - missing a trade is better than a bad trade
+        """)
+    elif state == "SCAN":
+        st.warning("### 🟡 SCAN MODE")
+        st.info("""
+        **Moderate Setup - Monitor Closely**
+        - Some signals aligned but not all
+        - Consider smaller position size
+        - Wait for full confirmation
+        """)
+    else:  # TRADE
+        # Check if price in entry zone
+        in_entry_zone = False
+        if direction == "LONG":
+            if abs(current_price - support) <= 20:
+                in_entry_zone = True
+        elif direction == "SHORT":
+            if abs(current_price - resistance) <= 20:
+                in_entry_zone = True
+
+        if in_entry_zone and direction != "NEUTRAL":
+            st.success("### 🎯 PRICE IN ENTRY ZONE")
+            st.balloons()
 
     # === TELEGRAM ALERT - When price in zone + signals align ===
 
@@ -398,107 +458,56 @@ def display_simple_assessment(
             in_entry_zone = True
 
     # Send Telegram if:
-    # 1. State is TRADE (confidence >= 75)
-    # 2. Price is in entry zone
-    # 3. Direction is clear (not NEUTRAL)
-    # 4. Signals align (bullish or bearish signals > neutral)
+    # 1. State = TRADE (high confidence)
+    # 2. Direction != NEUTRAL
+    # 3. Price in entry zone
+    # 4. Not sent recently (prevent spam)
 
-    if state == "TRADE" and in_entry_zone and direction != "NEUTRAL":
-        # Check if we already sent alert for this setup (prevent spam)
-        alert_key = f"telegram_alert_{direction}_{int(current_price)}_{regime}"
+    send_telegram = False
+    if state == "TRADE" and direction != "NEUTRAL" and in_entry_zone:
+        # Check if we sent recently
+        last_telegram_time = st.session_state.get('last_telegram_signal_time', None)
+        current_time = datetime.now(IST)
 
-        if 'last_telegram_alert' not in st.session_state:
-            st.session_state.last_telegram_alert = {}
+        if last_telegram_time is None:
+            send_telegram = True
+        else:
+            # Only send if 15+ minutes since last signal
+            time_diff = (current_time - last_telegram_time).total_seconds() / 60
+            if time_diff >= 15:
+                send_telegram = True
 
-        # Only send if we haven't sent this exact alert in last 5 minutes
-        import time
-        current_time = time.time()
-        last_alert_time = st.session_state.last_telegram_alert.get(alert_key, 0)
+    if send_telegram:
+        try:
+            from telegram_integration import send_telegram_message
 
-        if current_time - last_alert_time > 300:  # 5 minutes
-            try:
-                from telegram_alerts import TelegramBot
+            telegram_message = f"""
+🎯 **TRADING SIGNAL ALERT** 🎯
 
-                telegram_bot = TelegramBot()
-
-                # Construct alert message
-                alert_message = f"""
-🚨 **ENTRY SIGNAL - XGBoost Aligned** 🚨
-
+**State:** {state_emoji} {state}
 **Direction:** {dir_emoji} {direction}
 **Confidence:** {confidence}%
-**State:** {state_emoji} {state}
 
-**Market Analysis:**
-• Regime: {regime}
-• Bias: {market_bias}
-• Zone Width: {zone_width:.0f} pts ({zone_quality})
+**Setup:** {setup_type}
+**Entry Zone:** {entry_zone}
+**Stop Loss:** {stop_loss}
+**Target:** {target}
 
-**Levels:**
-• Support: ₹{support:,.0f} ({abs(current_price - support):.0f} pts away)
-• Resistance: ₹{resistance:,.0f} ({abs(resistance - current_price):.0f} pts away)
+**Market Data:**
+- Current Price: ₹{current_price:,.2f}
+- Support: ₹{support:,.0f} ({support_type})
+- Resistance: ₹{resistance:,.0f} ({resistance_type})
+- PCR: {pcr:.2f}
+- VIX: {vix:.1f}
 
-**Entry Setup:**
-• Type: {setup_type}
-• Entry Zone: {entry_zone}
-• Stop Loss: {stop_loss}
-• Target: {target}
+**Analysis:** {reason}
 
-**Current Price:** ₹{current_price:,.2f}
-**PCR:** {pcr:.2f}
+*Time: {st.session_state.current_time_ist}*
+            """
 
-**Risk Factors:**
-• Expiry: {expiry_spike}
-• GEX: {gex_level}
-• VIX: {vix:.1f}
+            send_telegram_message(telegram_message)
+            st.session_state.last_telegram_signal_time = current_time
+            st.toast(f"✅ Telegram alert sent: {direction} signal at {current_time.strftime('%H:%M:%S')}")
 
-**Signals Aligned:**
-• Bullish: {bullish_signals}
-• Bearish: {bearish_signals}
-
-💡 **Why:** {reason}
-
-⏰ **Time:** {st.session_state.get('current_time_ist', 'N/A')}
-"""
-
-                # Send the alert
-                success = telegram_bot.send_message(alert_message)
-
-                if success:
-                    st.session_state.last_telegram_alert[alert_key] = current_time
-                    st.success("✅ Telegram alert sent - Price in entry zone with XGBoost signals aligned!")
-                else:
-                    st.warning("⚠️ Failed to send Telegram alert. Check bot configuration.")
-
-            except Exception as e:
-                st.warning(f"⚠️ Telegram alert error: {e}")
-
-    # === ACTIONABLE GUIDANCE ===
-
-    if state == "TRADE":
-        st.success(f"""
-        ✅ **TRADE SIGNAL ACTIVE**
-
-        - Direction: {direction}
-        - Entry: Wait for price to reach {entry_zone}
-        - Stop: Exit if price breaks {stop_loss}
-        - Target: Book profit at {target}
-        - Position Size: Full size (confidence {confidence}%)
-        """)
-    elif state == "SCAN":
-        st.warning(f"""
-        ⚠️ **PAPER TRADE ONLY**
-
-        - Direction: {direction} bias detected
-        - Entry: {entry_zone}
-        - Position Size: 50% or paper trade only
-        - Confidence: {confidence}% (not high enough for full position)
-        """)
-    else:
-        st.error("""
-        🔴 **NO TRADE**
-
-        - Wait for better setup
-        - Price in mid-zone or confidence too low
-        - Be patient - missing a trade is better than a bad trade
-        """)
+        except Exception as e:
+            st.warning(f"⚠️ Telegram notification failed: {e}")
