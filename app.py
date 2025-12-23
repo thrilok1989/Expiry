@@ -475,8 +475,10 @@ time_since_refresh = current_time - st.session_state.last_full_refresh_time
 if time_since_refresh >= 60:  # 60 seconds
 
     # === ANALYSIS DATA ===
+    # Note: bias_analysis_results is excluded from auto-clear because
+    # it requires manual "Analyze All Bias" button click and should persist
     cached_keys = [
-        'bias_analysis_results',
+        # 'bias_analysis_results',  # EXCLUDED - Manual analysis, should persist
         'ml_regime_result',
         'money_flow_signals',
         'deltaflow_signals',
