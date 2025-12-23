@@ -43,7 +43,8 @@ class MLEntryFinder:
         market_sentiment: Dict,
         vix: float = 15.0,
         pcr: float = 1.0,
-        chart_indicators: Optional[Dict] = None
+        chart_indicators: Optional[Dict] = None,
+        futures_analysis: Optional[Dict] = None
     ) -> Dict:
         """
         Analyze and find optimal entry based on all S/R levels
@@ -104,7 +105,7 @@ class MLEntryFinder:
         support_distance = abs(current_price - nearest_support['price']) if nearest_support else 999
         resistance_distance = abs(nearest_resistance['price'] - current_price) if nearest_resistance else 999
 
-        # Determine trade direction based on ML analysis + chart indicators
+        # Determine trade direction based on ML analysis + chart indicators + futures
         direction, direction_confidence = self._determine_direction(
             current_price=current_price,
             nearest_support=nearest_support,
@@ -116,7 +117,8 @@ class MLEntryFinder:
             pcr=pcr,
             support_scores=support_scores,
             resistance_scores=resistance_scores,
-            chart_indicators=chart_indicators  # ADD CHART INDICATORS
+            chart_indicators=chart_indicators,
+            futures_analysis=futures_analysis  # ADD FUTURES ANALYSIS
         )
 
         # If NO_TRADE, return early
@@ -296,19 +298,18 @@ class MLEntryFinder:
         pcr: float,
         support_scores: List[float],
         resistance_scores: List[float],
-        chart_indicators: Optional[Dict] = None
+        chart_indicators: Optional[Dict] = None,
+        futures_analysis: Optional[Dict] = None
     ) -> Tuple[str, float]:
         """
         Use ML logic to determine trade direction and confidence
 
-        Now integrates ALL chart indicators:
-        - RSI (Ultimate RSI)
-        - OM Indicator (Order Flow & Momentum)
-        - Money Flow Profile (POC, sentiment)
-        - DeltaFlow Profile (delta imbalances)
-        - BOS/CHOCH (Price action signals)
-        - Fibonacci levels
-        - Chart patterns
+        Now integrates:
+        - NIFTY Futures analysis (premium/discount, OI bias)
+        - ALL chart indicators (RSI, OM, Money Flow, DeltaFlow, BOS, CHOCH, Fibonacci)
+        - Support/Resistance levels (OI walls, GEX walls, HTF S/R)
+        - Market sentiment
+        - VIX, PCR
 
         Returns:
             (direction, confidence)
@@ -320,41 +321,76 @@ class MLEntryFinder:
         confidence = 50  # Base confidence
 
         # ============================================
-        # FACTOR 1: Proximity to MAJOR S/R Levels (30%)
+        # FACTOR 1: Proximity to MAJOR S/R Levels (25%)
         # ============================================
         if support_distance < 20:  # Within 20 points of support
-            long_score += 30
-            confidence += 12
+            long_score += 25
+            confidence += 10
         if resistance_distance < 20:  # Within 20 points of resistance
-            short_score += 30
-            confidence += 12
+            short_score += 25
+            confidence += 10
 
         # ============================================
-        # FACTOR 2: Level Strength (20%)
+        # FACTOR 2: Level Strength (15%)
         # ============================================
         avg_support_score = np.mean(support_scores) if support_scores else 0
         avg_resistance_score = np.mean(resistance_scores) if resistance_scores else 0
 
         if avg_support_score > avg_resistance_score:
-            long_score += 20
-            confidence += 8
-        elif avg_resistance_score > avg_support_score:
-            short_score += 20
-            confidence += 8
-
-        # ============================================
-        # FACTOR 3: Market Sentiment (15%)
-        # ============================================
-        sentiment_overall = market_sentiment.get('overall', 'NEUTRAL')
-        if 'BULL' in sentiment_overall:
             long_score += 15
             confidence += 6
-        elif 'BEAR' in sentiment_overall:
+        elif avg_resistance_score > avg_support_score:
             short_score += 15
             confidence += 6
 
         # ============================================
-        # FACTOR 4: CHART INDICATORS (25% - NEW!)
+        # FACTOR 3: NIFTY FUTURES ANALYSIS (20% - NEW!)
+        # Futures premium/discount shows institutional positioning
+        # ============================================
+        if futures_analysis:
+            # Futures Premium Bias (10%)
+            futures_bias = futures_analysis.get('premium_bias', 'NEUTRAL')
+            if 'BULL' in futures_bias:
+                long_score += 10
+                confidence += 5
+            elif 'BEAR' in futures_bias:
+                short_score += 10
+                confidence += 5
+
+            # Futures OI Bias (5%)
+            futures_oi_bias = futures_analysis.get('oi_bias', 'NEUTRAL')
+            if 'BULL' in futures_oi_bias:
+                long_score += 5
+                confidence += 3
+            elif 'BEAR' in futures_oi_bias:
+                short_score += 5
+                confidence += 3
+
+            # Combined Futures Bias (5%)
+            combined_bias = futures_analysis.get('combined_bias', 'NEUTRAL')
+            if 'BULL' in combined_bias:
+                long_score += 5
+            elif 'BEAR' in combined_bias:
+                short_score += 5
+
+            # Premium Strength Bonus (higher premium = stronger conviction)
+            premium_pct = abs(futures_analysis.get('premium_pct', 0))
+            if premium_pct > 0.5:  # >0.5% premium/discount is significant
+                confidence += 3
+
+        # ============================================
+        # FACTOR 4: Market Sentiment (10%)
+        # ============================================
+        sentiment_overall = market_sentiment.get('overall', 'NEUTRAL')
+        if 'BULL' in sentiment_overall:
+            long_score += 10
+            confidence += 4
+        elif 'BEAR' in sentiment_overall:
+            short_score += 10
+            confidence += 4
+
+        # ============================================
+        # FACTOR 5: CHART INDICATORS (20%)
         # ============================================
         if chart_indicators:
             # RSI Signal (5%)
@@ -596,12 +632,13 @@ class MLEntryFinder:
 # Helper Functions
 # ==========================================
 
-def find_best_entry(comprehensive_params: Dict) -> Dict:
+def find_best_entry(comprehensive_params: Dict, chart_indicators: Optional[Dict] = None) -> Dict:
     """
     Find best entry using comprehensive tab data
 
     Args:
         comprehensive_params: Output from ComprehensiveChartIntegrator
+        chart_indicators: Optional dict with chart indicator signals (RSI, OM, etc.)
 
     Returns:
         Entry analysis dict
@@ -613,6 +650,10 @@ def find_best_entry(comprehensive_params: Dict) -> Dict:
     vix = comprehensive_params.get('vix', 15.0)
     pcr = comprehensive_params.get('pcr', 1.0)
     current_price = comprehensive_params.get('current_price', 0)
+
+    # Extract futures analysis from raw data
+    raw_data = comprehensive_params.get('raw_data', {})
+    futures_analysis = raw_data.get('futures_analysis')
 
     if current_price == 0:
         return {
@@ -627,7 +668,9 @@ def find_best_entry(comprehensive_params: Dict) -> Dict:
         resistance_levels=institutional_levels.get('resistance', []),
         market_sentiment=market_sentiment,
         vix=vix,
-        pcr=pcr
+        pcr=pcr,
+        chart_indicators=chart_indicators,
+        futures_analysis=futures_analysis
     )
 
     return entry_analysis

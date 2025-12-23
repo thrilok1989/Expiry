@@ -103,6 +103,10 @@ class ComprehensiveChartIntegrator:
             if 'atm_bias' in screener_data:
                 comprehensive_data['atm_bias'] = screener_data['atm_bias']
 
+            # NIFTY Futures Analysis
+            if 'futures_analysis' in screener_data:
+                comprehensive_data['futures_analysis'] = screener_data['futures_analysis']
+
         # ==========================================
         # TAB 9: Enhanced Market Data (VIX, etc.)
         # ==========================================
