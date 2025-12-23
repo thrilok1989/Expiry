@@ -1,14 +1,19 @@
 """
 Streamlit Signal Display Integration
 Easy-to-use functions for displaying trading signals in Streamlit
+
+UPDATED: Now uses NATIVE Streamlit components (NO HTML)
+Re-exports functions from streamlit_native_signal_display for backwards compatibility
 """
 
 import streamlit as st
 from typing import Optional, Dict
-from src.signal_display_html_generator import (
-    SignalDisplayData,
-    generate_signal_html,
-    generate_signal_html_from_dict
+
+# Import native Streamlit display functions
+from src.streamlit_native_signal_display import (
+    SignalData,
+    display_signal_native,
+    display_trading_signal
 )
 from src.enhanced_signal_generator import TradingSignal
 
@@ -24,7 +29,8 @@ def display_signal_in_streamlit(
     zone_width: float = 200.0
 ) -> None:
     """
-    Display TradingSignal in Streamlit using HTML
+    Display TradingSignal in Streamlit using NATIVE Python components
+    NO HTML - Pure Streamlit
 
     Args:
         signal: TradingSignal object from enhanced_signal_generator
@@ -101,7 +107,7 @@ def display_signal_in_streamlit(
     if signal_type == "ENTRY":
         setup_type = f"{direction} at {support_source if direction == 'LONG' else resistance_source}"
         entry_zone = f"₹{signal.entry_range_low:,.0f} - ₹{signal.entry_range_high:,.0f}" if signal.entry_range_low else "N/A"
-        stop_loss_text = f"₹{signal.stop_loss:,.0f}"
+        stop_loss_text = f"₹{signal.stop_loss:,.0f}" if signal.stop_loss else "N/A"
         if hasattr(signal, 'stop_loss_reason') and signal.stop_loss_reason:
             stop_loss_text += f" ({signal.stop_loss_reason})"
         target = f"₹{signal.target_1:,.0f}" if signal.target_1 else "N/A"
@@ -143,21 +149,20 @@ def display_signal_in_streamlit(
     # Analysis text
     analysis_text = signal.reason if signal.reason else "No clear setup detected."
 
-    # Create SignalDisplayData
-    display_data = SignalDisplayData(
+    # Use native Streamlit display
+    display_trading_signal(
         signal_type=signal_type,
         direction=direction,
         confidence=confidence,
+        support=support_price,
+        resistance=resistance_price,
+        current_price=current_price,
         xgboost_regime=market_regime,
         market_bias=market_bias,
         zone_width=zone_width,
         zone_width_status=zone_width_status,
-        support_price=support_price,
         support_source=support_source,
-        support_distance=support_distance,
-        resistance_price=resistance_price,
         resistance_source=resistance_source,
-        resistance_distance=resistance_distance,
         vob_major_support=vob_major_support,
         vob_major_resistance=vob_major_resistance,
         vob_minor_support=vob_minor_support,
@@ -170,15 +175,10 @@ def display_signal_in_streamlit(
         gex_level=gex_level,
         vix=vix,
         analysis_text=analysis_text,
-        current_price=current_price,
         pcr=pcr,
         bullish_count=bullish_count,
         bearish_count=bearish_count
     )
-
-    # Generate and display HTML
-    html = generate_signal_html(display_data)
-    st.markdown(html, unsafe_allow_html=True)
 
 
 def display_custom_signal(
@@ -191,7 +191,8 @@ def display_custom_signal(
     **kwargs
 ) -> None:
     """
-    Display custom signal with minimal parameters
+    Display custom signal with minimal parameters using NATIVE Streamlit components
+    NO HTML - Pure Python
 
     Args:
         signal_type: "ENTRY", "EXIT", "WAIT"
@@ -203,21 +204,16 @@ def display_custom_signal(
         **kwargs: Additional optional parameters
     """
 
-    signal_dict = {
-        'signal_type': signal_type,
-        'direction': direction,
-        'confidence': confidence,
-        'support_price': support,
-        'resistance_price': resistance,
-        'current_price': current_price,
-        'support_distance': abs(current_price - support),
-        'resistance_distance': abs(resistance - current_price),
-        'zone_width': abs(resistance - support),
+    # Use native Streamlit display function
+    display_trading_signal(
+        signal_type=signal_type,
+        direction=direction,
+        confidence=confidence,
+        support=support,
+        resistance=resistance,
+        current_price=current_price,
         **kwargs
-    }
-
-    html = generate_signal_html_from_dict(signal_dict)
-    st.markdown(html, unsafe_allow_html=True)
+    )
 
 
 # ============================================================
@@ -227,7 +223,7 @@ def display_custom_signal(
 def example_streamlit_app():
     """Example Streamlit app demonstrating signal display"""
 
-    st.title("🎯 Trading Signal Display Examples")
+    st.title("🎯 Trading Signal Display Examples (Native Python)")
 
     st.markdown("---")
 
@@ -272,7 +268,7 @@ def example_streamlit_app():
         vob_minor_resistance=26325.0,
         setup_type="LONG at VOB Support",
         entry_zone="₹26,100 - ₹26,120",
-        stop_loss="₹26,030 (Below VOB Support)",
+        stop_loss="₹26,030 (Below VOB Support - 20 pts)",
         target="₹26,300 (HTF Resistance)",
         analysis_text="Strong bullish setup with 75% confidence. Price at major VOB support with trending regime.",
         pcr=1.15,
@@ -300,8 +296,8 @@ def example_streamlit_app():
         vob_major_support=26000.0,
         vob_major_resistance=26280.0,
         setup_type="SHORT at VOB Resistance",
-        entry_zone="₹26,250 - ₹26,270",
-        stop_loss="₹26,320 (Above VOB Resistance)",
+        entry_zone="₹26,240 - ₹26,260",
+        stop_loss="₹26,310 (Above VOB Resistance + 20 pts)",
         target="₹26,050 (HTF Support)",
         analysis_text="Bearish setup with 72% confidence. Price rejecting at major VOB resistance.",
         pcr=0.85,
@@ -326,7 +322,7 @@ def example_streamlit_app():
         market_bias="NEUTRAL",
         setup_type="Exit Position",
         entry_zone="Close all positions",
-        analysis_text="⚠️ SCENARIO CHANGED - Support level changed by 0.8% (from 26,100 to 26,000). Original trade thesis invalidated.",
+        analysis_text="⚠️ SCENARIO CHANGED - Support level changed by 0.8%. Exit position.",
         pcr=1.0,
         vix=18.5
     )
