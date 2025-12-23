@@ -736,9 +736,51 @@ if 'chart_data_cache_time' not in st.session_state:
 
 @st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
 def get_cached_chart_data(symbol, period, interval):
-    """Cached chart data fetcher - reduces API calls"""
+    """
+    Cached chart data fetcher - reduces API calls
+    Filters to show ONLY today's data from 9:00 AM to 3:40 PM IST
+    """
     chart_analyzer = AdvancedChartAnalysis()
-    return chart_analyzer.fetch_intraday_data(symbol, period=period, interval=interval)
+    df = chart_analyzer.fetch_intraday_data(symbol, period=period, interval=interval)
+
+    if df is None or len(df) == 0:
+        return df
+
+    # Filter for today's trading hours only (9:00 AM - 3:40 PM IST)
+    try:
+        from config import IST
+        from datetime import datetime, time as dt_time
+
+        # Ensure index is datetime
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+
+        # Convert to IST if needed
+        if df.index.tz is None:
+            df.index = df.index.tz_localize('UTC').tz_convert(IST)
+        elif df.index.tz != IST:
+            df.index = df.index.tz_convert(IST)
+
+        # Get today's date in IST
+        today = datetime.now(IST).date()
+
+        # Filter for today only
+        df_today = df[df.index.date == today]
+
+        # Filter for trading hours (9:00 AM - 3:40 PM)
+        market_start = dt_time(9, 0)   # 9:00 AM
+        market_end = dt_time(15, 40)   # 3:40 PM
+
+        df_filtered = df_today[
+            (df_today.index.time >= market_start) &
+            (df_today.index.time <= market_end)
+        ]
+
+        return df_filtered if len(df_filtered) > 0 else df  # Fallback to full data if no today data
+
+    except Exception as e:
+        logger.warning(f"Error filtering chart data for trading hours: {e}")
+        return df  # Return unfiltered data on error
 
 @st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
 def calculate_vob_indicators(df_key, sensitivity=5):
@@ -3462,6 +3504,35 @@ with tab7:
                     money_flow_params=money_flow_params,
                     deltaflow_params=deltaflow_params
                 )
+
+                # ========================================
+                # COMPREHENSIVE TAB INTEGRATION
+                # Add data from ALL tabs to chart
+                # ========================================
+                try:
+                    from comprehensive_chart_integration import (
+                        ComprehensiveChartIntegrator,
+                        add_institutional_levels_to_chart,
+                        display_comprehensive_chart_info
+                    )
+
+                    # Create integrator and gather all tab data
+                    integrator = ComprehensiveChartIntegrator()
+                    comprehensive_params = integrator.create_comprehensive_chart_params()
+
+                    # Add institutional levels (OI walls, GEX walls, HTF S/R, VOB) to chart
+                    fig = add_institutional_levels_to_chart(
+                        fig,
+                        comprehensive_params['institutional_levels'],
+                        row=1,
+                        col=1
+                    )
+
+                    # Display comprehensive info in sidebar
+                    display_comprehensive_chart_info(comprehensive_params)
+
+                except Exception as e:
+                    st.warning(f"⚠️ Could not integrate comprehensive data: {e}")
 
                 # Display chart
                 st.plotly_chart(fig, use_container_width=True)
