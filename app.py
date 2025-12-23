@@ -3463,6 +3463,35 @@ with tab7:
                     deltaflow_params=deltaflow_params
                 )
 
+                # ========================================
+                # COMPREHENSIVE TAB INTEGRATION
+                # Add data from ALL tabs to chart
+                # ========================================
+                try:
+                    from comprehensive_chart_integration import (
+                        ComprehensiveChartIntegrator,
+                        add_institutional_levels_to_chart,
+                        display_comprehensive_chart_info
+                    )
+
+                    # Create integrator and gather all tab data
+                    integrator = ComprehensiveChartIntegrator()
+                    comprehensive_params = integrator.create_comprehensive_chart_params()
+
+                    # Add institutional levels (OI walls, GEX walls, HTF S/R, VOB) to chart
+                    fig = add_institutional_levels_to_chart(
+                        fig,
+                        comprehensive_params['institutional_levels'],
+                        row=1,
+                        col=1
+                    )
+
+                    # Display comprehensive info in sidebar
+                    display_comprehensive_chart_info(comprehensive_params)
+
+                except Exception as e:
+                    st.warning(f"⚠️ Could not integrate comprehensive data: {e}")
+
                 # Display chart
                 st.plotly_chart(fig, use_container_width=True)
 
