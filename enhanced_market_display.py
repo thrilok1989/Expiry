@@ -28,14 +28,15 @@ def render_enhanced_market_data_tab(enhanced_data: Dict[str, Any]):
     st.markdown("---")
 
     # Create tabs for different categories
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📊 Summary",
         "⚡ India VIX",
         "🏢 Sector Rotation",
         "🌍 Global Markets",
         "💰 Intermarket",
         "🎯 Gamma Squeeze",
-        "⏰ Intraday Timing"
+        "⏰ Intraday Timing",
+        "📈 NIFTY Futures"  # NEW TAB
     ])
 
     with tab1:
@@ -58,6 +59,9 @@ def render_enhanced_market_data_tab(enhanced_data: Dict[str, Any]):
 
     with tab7:
         _render_intraday_timing_tab(enhanced_data)
+
+    with tab8:
+        _render_nifty_futures_tab()  # NEW TAB RENDER
 
 
 def _render_summary_cards(enhanced_data: Dict[str, Any]):
@@ -564,3 +568,266 @@ def _render_intraday_timing_tab(enhanced_data: Dict[str, Any]):
     ])
 
     st.dataframe(session_guide, use_container_width=True, hide_index=True)
+
+
+def _render_nifty_futures_tab():
+    """Render NIFTY Futures Analysis tab"""
+    st.markdown("### 📈 NIFTY Futures Analysis")
+    st.caption("Institutional positioning via futures premium/discount and OI analysis")
+
+    # Get futures data from session state
+    futures_data = None
+    if 'nifty_screener_data' in st.session_state:
+        screener_data = st.session_state.nifty_screener_data
+        if isinstance(screener_data, dict):
+            futures_data = screener_data.get('futures_analysis')
+
+    if not futures_data:
+        st.warning("""
+        ⚠️ **NIFTY Futures data not available**
+
+        **How to enable:**
+        1. Go to Tab 8 (NIFTY Option Screener v7.0)
+        2. Run the analysis
+        3. Futures data will be calculated and displayed here
+
+        **What you'll see:**
+        - Futures vs Spot premium/discount %
+        - Premium bias (BULLISH/BEARISH/NEUTRAL)
+        - Futures OI bias
+        - Combined futures bias
+        - Institutional positioning insights
+        """)
+        return
+
+    # ==========================================
+    # FUTURES OVERVIEW CARDS
+    # ==========================================
+    st.markdown("#### 📊 Futures Premium/Discount Analysis")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    # Premium/Discount %
+    with col1:
+        premium_pct = futures_data.get('premium_pct', 0)
+        premium_abs = abs(premium_pct) * 100
+
+        if premium_pct > 0:
+            st.metric(
+                label="Futures Premium",
+                value=f"+{premium_abs:.2f}%",
+                delta="Bullish bias",
+                delta_color="normal"
+            )
+        elif premium_pct < 0:
+            st.metric(
+                label="Futures Discount",
+                value=f"{premium_abs:.2f}%",
+                delta="Bearish bias",
+                delta_color="inverse"
+            )
+        else:
+            st.metric(
+                label="Futures Premium",
+                value="0.00%",
+                delta="Neutral"
+            )
+
+    # Premium Bias
+    with col2:
+        premium_bias = futures_data.get('premium_bias', 'NEUTRAL')
+        bias_emoji = "🟢" if premium_bias == "BULLISH" else ("🔴" if premium_bias == "BEARISH" else "⚖️")
+
+        st.metric(
+            label="Premium Bias",
+            value=f"{bias_emoji} {premium_bias}"
+        )
+
+    # Futures OI Bias
+    with col3:
+        oi_bias = futures_data.get('oi_bias', 'NEUTRAL')
+        oi_emoji = "🟢" if oi_bias == "BULLISH" else ("🔴" if oi_bias == "BEARISH" else "⚖️")
+
+        st.metric(
+            label="Futures OI Bias",
+            value=f"{oi_emoji} {oi_bias}"
+        )
+
+    # Combined Bias
+    with col4:
+        combined_bias = futures_data.get('combined_bias', 'NEUTRAL')
+        combined_emoji = "🟢" if combined_bias == "BULLISH" else ("🔴" if combined_bias == "BEARISH" else "⚖️")
+        confidence = futures_data.get('confidence', 50)
+
+        st.metric(
+            label="Combined Bias",
+            value=f"{combined_emoji} {combined_bias}",
+            delta=f"{confidence}% confidence"
+        )
+
+    st.markdown("---")
+
+    # ==========================================
+    # DETAILED FUTURES DATA
+    # ==========================================
+    st.markdown("#### 📋 Detailed Futures Data")
+
+    # Create detailed data table
+    futures_details = []
+
+    # Spot Price
+    spot_price = futures_data.get('spot_price', 0)
+    futures_price = futures_data.get('futures_price', 0)
+
+    futures_details.append({
+        'Metric': 'NIFTY Spot Price',
+        'Value': f"₹{spot_price:,.2f}" if spot_price else 'N/A',
+        'Description': 'Current spot market price'
+    })
+
+    futures_details.append({
+        'Metric': 'NIFTY Futures Price',
+        'Value': f"₹{futures_price:,.2f}" if futures_price else 'N/A',
+        'Description': 'Current month futures price'
+    })
+
+    futures_details.append({
+        'Metric': 'Premium/Discount',
+        'Value': f"{premium_pct*100:+.2f}%",
+        'Description': 'Futures vs Spot (positive = premium, negative = discount)'
+    })
+
+    futures_details.append({
+        'Metric': 'Premium Bias',
+        'Value': f"{bias_emoji} {premium_bias}",
+        'Description': 'Bias based on premium/discount level'
+    })
+
+    futures_details.append({
+        'Metric': 'Futures OI Change',
+        'Value': futures_data.get('oi_change_pct', 'N/A'),
+        'Description': 'Open Interest % change'
+    })
+
+    futures_details.append({
+        'Metric': 'OI Bias',
+        'Value': f"{oi_emoji} {oi_bias}",
+        'Description': 'Bias based on OI buildup/reduction'
+    })
+
+    futures_details.append({
+        'Metric': 'Combined Signal',
+        'Value': f"{combined_emoji} {combined_bias}",
+        'Description': 'Overall futures market positioning'
+    })
+
+    futures_details.append({
+        'Metric': 'Signal Confidence',
+        'Value': f"{confidence}%",
+        'Description': 'Reliability of combined signal'
+    })
+
+    futures_df = pd.DataFrame(futures_details)
+    st.dataframe(futures_df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ==========================================
+    # INTERPRETATION GUIDE
+    # ==========================================
+    st.markdown("#### 💡 Interpretation Guide")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        **Premium/Discount Analysis:**
+
+        🟢 **Premium (Positive):**
+        - Futures trading above spot
+        - Institutions building long positions
+        - Bullish market expectation
+        - Higher the premium, stronger the bullish bias
+
+        🔴 **Discount (Negative):**
+        - Futures trading below spot
+        - Institutions building short positions
+        - Bearish market expectation
+        - Higher the discount, stronger the bearish bias
+
+        ⚖️ **Neutral (Near Zero):**
+        - Futures aligned with spot
+        - No strong directional bias
+        - Market in equilibrium
+        """)
+
+    with col2:
+        st.markdown("""
+        **OI Bias Analysis:**
+
+        🟢 **Bullish OI:**
+        - OI increasing + Premium = Long buildup
+        - Strong institutional buying
+        - Expect upward move
+
+        🔴 **Bearish OI:**
+        - OI increasing + Discount = Short buildup
+        - Strong institutional selling
+        - Expect downward move
+
+        ⚖️ **Neutral OI:**
+        - OI stable or mixed signals
+        - No clear positioning
+        - Wait for clarity
+
+        **Key Thresholds:**
+        - Premium >0.5%: Significantly bullish
+        - Discount <-0.5%: Significantly bearish
+        - Premium between -0.5% to +0.5%: Neutral
+        """)
+
+    st.markdown("---")
+
+    # ==========================================
+    # TRADING IMPLICATIONS
+    # ==========================================
+    st.markdown("#### 🎯 Trading Implications")
+
+    if combined_bias == "BULLISH":
+        st.success(f"""
+        **🟢 BULLISH Futures Positioning ({confidence}% confidence)**
+
+        - Institutions are net long via futures market
+        - Premium suggests expectation of higher prices
+        - Consider LONG positions on pullbacks to support
+        - Use futures premium to gauge institutional conviction
+        - Strong bullish signal when combined with OI buildup
+        """)
+    elif combined_bias == "BEARISH":
+        st.error(f"""
+        **🔴 BEARISH Futures Positioning ({confidence}% confidence)**
+
+        - Institutions are net short via futures market
+        - Discount suggests expectation of lower prices
+        - Consider SHORT positions on rallies to resistance
+        - Use futures discount to gauge institutional conviction
+        - Strong bearish signal when combined with OI buildup
+        """)
+    else:
+        st.info(f"""
+        **⚖️ NEUTRAL Futures Positioning ({confidence}% confidence)**
+
+        - No clear institutional directional bias
+        - Futures aligned with spot market
+        - Market in consolidation/range
+        - Wait for clear bias before taking directional trades
+        - Focus on range-bound strategies
+        """)
+
+    st.markdown("---")
+
+    st.caption("""
+    **Note:** Futures data is sourced from Option Screener analysis.
+    For most accurate data, ensure Option Screener (Tab 8) analysis is recently run.
+    Futures analysis is integrated into ML Entry Finder with 20% weight.
+    """)
