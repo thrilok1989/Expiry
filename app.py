@@ -671,10 +671,21 @@ if not nifty_data or not nifty_data.get('success'):
 # Store spot price in session state for browser tab title (used at top of script)
 if nifty_data and nifty_data.get('success') and nifty_data.get('spot_price'):
     st.session_state.last_spot_price = nifty_data['spot_price']
+    # Update browser tab title with current spot price using JavaScript
+    spot_price = nifty_data['spot_price']
+    st.markdown(f"""
+    <script>
+        // Update browser tab title to always show spot price
+        document.title = "NIFTY ₹{spot_price:,.2f} | Trader";
+    </script>
+    """, unsafe_allow_html=True)
 else:
-    # Clear spot price if data fetch failed
-    if 'last_spot_price' in st.session_state:
-        del st.session_state.last_spot_price
+    # Use default title if spot price unavailable
+    st.markdown("""
+    <script>
+        document.title = "NIFTY/SENSEX Trader";
+    </script>
+    """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════
 # CACHED CHART DATA FETCHER (Performance Optimization)
