@@ -369,6 +369,9 @@ if 'htf_data_nifty' not in st.session_state:
 if 'htf_data_sensex' not in st.session_state:
     st.session_state.htf_data_sensex = None
 
+if 'last_refresh' not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
 if 'active_setup_id' not in st.session_state:
     st.session_state.active_setup_id = None
 
@@ -452,80 +455,11 @@ if 'overall_option_data' not in st.session_state:
 refresh_count = st_autorefresh(interval=AUTO_REFRESH_INTERVAL * 1000, key="data_refresh")
 
 # ═══════════════════════════════════════════════════════════════════════
-# UNIFIED REFRESH SYSTEM - Single Source of Truth
-# ═══════════════════════════════════════════════════════════════════════
-# This is the ONLY refresh mechanism. All tabs, nested tabs, and data
-# are refreshed through this unified system every 60 seconds.
-#
-# - Global auto-refresh triggers page reload every 60 seconds
-# - All cached data is cleared to force fresh data fetch
-# - XGBoost market regime re-runs automatically
-# - All analysis tabs reload with new data
-# - No separate/conflicting refresh timers
-
-# Initialize last refresh time
-if 'last_full_refresh_time' not in st.session_state:
-    st.session_state.last_full_refresh_time = 0
-
-# Check if we need to force refresh
-current_time = time.time()
-time_since_refresh = current_time - st.session_state.last_full_refresh_time
-
-# Force refresh every minute - Clear ALL cached data
-if time_since_refresh >= 60:  # 60 seconds
-
-    # === ANALYSIS DATA ===
-    # Note: bias_analysis_results is excluded from auto-clear because
-    # it requires manual "Analyze All Bias" button click and should persist
-    cached_keys = [
-        # 'bias_analysis_results',  # EXCLUDED - Manual analysis, should persist
-        'ml_regime_result',
-        'money_flow_signals',
-        'deltaflow_signals',
-        'atm_bias_data',
-        'ai_analysis_results',
-
-        # === MARKET DATA ===
-        'option_chain',
-        'enhanced_market_data',
-        'cached_sentiment',
-        'data_df',
-
-        # === VOB & HTF DATA ===
-        'vob_data_nifty',
-        'vob_data_sensex',
-        'htf_data_nifty',
-        'htf_data_sensex',
-        'active_vob_signals',
-        'active_htf_sr_signals',
-
-        # === CHART DATA ===
-        'chart_data',
-        'chart_data_cache',
-        'chart_data_cache_time',
-        'chart_needs_refresh',
-        'last_chart_params',
-        'last_chart_update',
-    ]
-
-    # Clear all cached data
-    for key in cached_keys:
-        if key in st.session_state:
-            del st.session_state[key]
-
-    # Update last refresh time
-    st.session_state.last_full_refresh_time = current_time
-
-    # Set flag to re-run all analyses (including XGBoost)
-    st.session_state.force_analysis_run = True
-
-# ═══════════════════════════════════════════════════════════════════════
 # HEADER
 # ═══════════════════════════════════════════════════════════════════════
 
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
-st.caption(f"🔄 Last full refresh: {time.strftime('%H:%M:%S', time.localtime(st.session_state.last_full_refresh_time)) if st.session_state.last_full_refresh_time > 0 else 'Never'} | Next in: {max(0, 60 - int(time_since_refresh))}s")
 
 # Check and run AI analysis if needed
 check_and_run_ai_analysis()
@@ -678,7 +612,7 @@ with st.sidebar:
         else:
             st.info(f"⏳ {name} Loading...")
 
-    st.caption("🔄 All data refreshes every 60 seconds via unified refresh system")
+    st.caption("🔄 Auto-refreshing every 60-120 seconds (optimized for performance)")
 
 # ═══════════════════════════════════════════════════════════════════════
 # MAIN CONTENT
@@ -736,51 +670,9 @@ if 'chart_data_cache_time' not in st.session_state:
 
 @st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
 def get_cached_chart_data(symbol, period, interval):
-    """
-    Cached chart data fetcher - reduces API calls
-    Filters to show ONLY today's data from 9:00 AM to 3:40 PM IST
-    """
+    """Cached chart data fetcher - reduces API calls"""
     chart_analyzer = AdvancedChartAnalysis()
-    df = chart_analyzer.fetch_intraday_data(symbol, period=period, interval=interval)
-
-    if df is None or len(df) == 0:
-        return df
-
-    # Filter for today's trading hours only (9:00 AM - 3:40 PM IST)
-    try:
-        from config import IST
-        from datetime import datetime, time as dt_time
-
-        # Ensure index is datetime
-        if not isinstance(df.index, pd.DatetimeIndex):
-            df.index = pd.to_datetime(df.index)
-
-        # Convert to IST if needed
-        if df.index.tz is None:
-            df.index = df.index.tz_localize('UTC').tz_convert(IST)
-        elif df.index.tz != IST:
-            df.index = df.index.tz_convert(IST)
-
-        # Get today's date in IST
-        today = datetime.now(IST).date()
-
-        # Filter for today only
-        df_today = df[df.index.date == today]
-
-        # Filter for trading hours (9:00 AM - 3:40 PM)
-        market_start = dt_time(9, 0)   # 9:00 AM
-        market_end = dt_time(15, 40)   # 3:40 PM
-
-        df_filtered = df_today[
-            (df_today.index.time >= market_start) &
-            (df_today.index.time <= market_end)
-        ]
-
-        return df_filtered if len(df_filtered) > 0 else df  # Fallback to full data if no today data
-
-    except Exception as e:
-        logger.warning(f"Error filtering chart data for trading hours: {e}")
-        return df  # Return unfiltered data on error
+    return chart_analyzer.fetch_intraday_data(symbol, period=period, interval=interval)
 
 @st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
 def calculate_vob_indicators(df_key, sensitivity=5):
@@ -1344,7 +1236,7 @@ Loading current price and entry zones. Please wait...
 
 st.markdown("---")
 
-if 'active_vob_signals' in st.session_state and st.session_state.active_vob_signals:
+if st.session_state.active_vob_signals:
     for signal in st.session_state.active_vob_signals:
         signal_emoji = "🟢" if signal['direction'] == 'CALL' else "🔴"
         direction_label = "BULLISH" if signal['direction'] == 'CALL' else "BEARISH"
@@ -1450,7 +1342,7 @@ col1, col2 = st.columns(2)
 # NIFTY VOB Summary
 with col1:
     st.markdown("**NIFTY VOB**")
-    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+    if st.session_state.vob_data_nifty:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
 
@@ -1495,7 +1387,7 @@ with col1:
 # SENSEX VOB Summary
 with col2:
     st.markdown("**SENSEX VOB**")
-    if 'vob_data_sensex' in st.session_state and st.session_state.vob_data_sensex:
+    if st.session_state.vob_data_sensex:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
 
@@ -1548,7 +1440,7 @@ with col2:
 
             # Prepare NIFTY VOB data
             nifty_vob_summary = {}
-            if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+            if st.session_state.vob_data_nifty:
                 df_nifty = get_cached_chart_data('^NSEI', '1d', '1m')
                 if df_nifty is not None:
                     bullish_blocks = st.session_state.vob_data_nifty.get('bullish_blocks', [])
@@ -1623,7 +1515,7 @@ st.divider()
 # ═══════════════════════════════════════════════════════════════════════
 
 # Display AI analysis results if available
-if 'ai_analysis_results' in st.session_state and st.session_state.ai_analysis_results:
+if st.session_state.ai_analysis_results:
     report = st.session_state.ai_analysis_results
     
     st.markdown("### 🤖 AI Market Analysis")
@@ -1728,7 +1620,7 @@ with col1:
     st.markdown("**NIFTY**")
 
     # VOB Status
-    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
+    if st.session_state.vob_data_nifty:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
         df_nifty = get_cached_chart_data('^NSEI', '1d', '1m')
@@ -1749,7 +1641,7 @@ with col1:
             st.caption(f"**VOB Bear:** {bear_strength['strength_score']}/100 {trend_emoji} {bear_strength['trend']}")
 
     # HTF S/R Status
-    if 'htf_data_nifty' in st.session_state and st.session_state.htf_data_nifty:
+    if st.session_state.htf_data_nifty:
         from indicators.htf_sr_strength_tracker import HTFSRStrengthTracker
         htf_tracker = HTFSRStrengthTracker()
         df_nifty = get_cached_chart_data('^NSEI', '7d', '1m')
@@ -1779,7 +1671,7 @@ with col2:
     st.markdown("**SENSEX**")
 
     # VOB Status
-    if 'vob_data_sensex' in st.session_state and st.session_state.vob_data_sensex:
+    if st.session_state.vob_data_sensex:
         from indicators.vob_strength_tracker import VOBStrengthTracker
         vob_tracker = VOBStrengthTracker()
         df_sensex = get_cached_chart_data('^BSESN', '1d', '1m')
@@ -1800,7 +1692,7 @@ with col2:
             st.caption(f"**VOB Bear:** {bear_strength['strength_score']}/100 {trend_emoji} {bear_strength['trend']}")
 
     # HTF S/R Status
-    if 'htf_data_sensex' in st.session_state and st.session_state.htf_data_sensex:
+    if st.session_state.htf_data_sensex:
         from indicators.htf_sr_strength_tracker import HTFSRStrengthTracker
         htf_tracker = HTFSRStrengthTracker()
         df_sensex = get_cached_chart_data('^BSESN', '7d', '1m')
@@ -1827,7 +1719,7 @@ with col2:
 
 st.divider()
 
-if 'active_htf_sr_signals' in st.session_state and st.session_state.active_htf_sr_signals:
+if st.session_state.active_htf_sr_signals:
     for signal in st.session_state.active_htf_sr_signals:
         signal_emoji = "🟢" if signal['direction'] == 'CALL' else "🔴"
         direction_label = "BULLISH" if signal['direction'] == 'CALL' else "BEARISH"
@@ -2096,302 +1988,7 @@ with tab2:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab3:
-    st.header("📊 Active Signals")
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # ML ENTRY FINDER - Automated Entry Signal Analysis
-    # ═══════════════════════════════════════════════════════════════════════
-
-    st.subheader("🤖 ML Entry Finder")
-    st.caption("AI-powered entry signal detection using comprehensive market analysis")
-
-    try:
-        from ml_entry_finder import MLEntryFinder
-        from comprehensive_chart_integration import ComprehensiveChartIntegrator
-
-        # Create ML Entry Finder
-        ml_finder = MLEntryFinder()
-
-        # Gather comprehensive data
-        integrator = ComprehensiveChartIntegrator()
-        comprehensive_data = integrator.gather_all_tab_data()
-
-        # Extract institutional levels
-        institutional_levels = integrator.extract_institutional_levels(comprehensive_data)
-
-        # Get current price
-        current_price = nifty_data['spot_price']
-
-        # Get chart indicators if available
-        chart_indicators = None
-        if 'chart_indicators' in st.session_state:
-            chart_indicators = st.session_state.chart_indicators
-
-        # Get futures analysis if available
-        futures_analysis = None
-        if 'nifty_screener_data' in st.session_state:
-            screener_data = st.session_state.nifty_screener_data
-            if isinstance(screener_data, dict):
-                futures_analysis = screener_data.get('futures_analysis')
-
-        # Analyze entry opportunity
-        entry_signal = ml_finder.analyze_entry_opportunity(
-            current_price=current_price,
-            support_levels=institutional_levels.get('support', []),
-            resistance_levels=institutional_levels.get('resistance', []),
-            market_sentiment=comprehensive_data.get('market_sentiment', {}),
-            chart_indicators=chart_indicators,
-            futures_analysis=futures_analysis
-        )
-
-        # Detect expiry spike direction
-        option_chain_data = None
-        max_pain = None
-        pcr = 1.0
-        if 'nifty_screener_data' in st.session_state:
-            screener_data = st.session_state.nifty_screener_data
-            if isinstance(screener_data, dict):
-                option_chain_data = screener_data
-                pcr = screener_data.get('oi_pcr_metrics', {}).get('pcr', 1.0)
-                max_pain = screener_data.get('max_pain')
-
-        expiry_spike = ml_finder.detect_expiry_spike_direction(
-            current_price=current_price,
-            option_chain_data=option_chain_data,
-            pcr=pcr,
-            max_pain=max_pain,
-            futures_analysis=futures_analysis
-        )
-
-        # Display entry signal
-        if entry_signal:
-            # Direction and confidence
-            direction = entry_signal['direction']
-            confidence = entry_signal['confidence']
-
-            # Color coding
-            if direction == 'LONG':
-                direction_color = '🟢'
-                direction_emoji = '📈'
-            elif direction == 'SHORT':
-                direction_color = '🔴'
-                direction_emoji = '📉'
-            else:
-                direction_color = '⚪'
-                direction_emoji = '⏸️'
-
-            # ═══════════════════════════════════════════════════════════════
-            # MAIN SIGNAL DISPLAY
-            # ═══════════════════════════════════════════════════════════════
-
-            st.markdown(f"## {direction_emoji} **ML ENTRY DIRECTION: {direction}** {direction_color}")
-            st.markdown(f"### Confidence: **{confidence}%** | Based on 165+ features")
-
-            # Entry zone, stop loss, targets
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric("Current Price", f"₹{current_price:.2f}")
-
-            with col2:
-                entry_zone = entry_signal.get('entry_zone', {})
-                if entry_zone:
-                    st.metric("Entry Zone", f"₹{entry_zone.get('mid', current_price):.2f}")
-                elif entry_signal.get('entry_price'):
-                    st.metric("Entry Price", f"₹{entry_signal['entry_price']:.2f}")
-
-            with col3:
-                if entry_signal.get('stop_loss'):
-                    st.metric("Stop Loss", f"₹{entry_signal['stop_loss']:.2f}")
-
-            with col4:
-                if entry_signal.get('risk_reward'):
-                    st.metric("Risk:Reward", f"1:{entry_signal['risk_reward']:.2f}")
-
-            # Target levels
-            if entry_signal.get('targets'):
-                st.markdown("### 🎯 Target Levels")
-                targets = entry_signal['targets']
-                if isinstance(targets, dict):
-                    target_cols = st.columns(3)
-                    with target_cols[0]:
-                        st.metric("Conservative", f"₹{targets.get('conservative', 0):.2f}")
-                    with target_cols[1]:
-                        st.metric("Moderate", f"₹{targets.get('moderate', 0):.2f}")
-                    with target_cols[2]:
-                        st.metric("Aggressive", f"₹{targets.get('aggressive', 0):.2f}")
-                elif isinstance(targets, list):
-                    target_cols = st.columns(len(targets))
-                    for i, target in enumerate(targets):
-                        with target_cols[i]:
-                            st.metric(f"T{i+1}", f"₹{target:.2f}")
-
-            st.divider()
-
-            # ═══════════════════════════════════════════════════════════════
-            # EXPIRY SPIKE DETECTOR
-            # ═══════════════════════════════════════════════════════════════
-
-            st.markdown("### 🎆 Expiry Spike Direction Detector")
-
-            spike_direction = expiry_spike['spike_direction']
-            spike_confidence = expiry_spike['confidence']
-            spike_target = expiry_spike['target_level']
-
-            # Color coding for spike
-            if spike_direction == 'BULLISH':
-                spike_color = '🟢'
-                spike_emoji = '🚀'
-            elif spike_direction == 'BEARISH':
-                spike_color = '🔴'
-                spike_emoji = '⬇️'
-            else:
-                spike_color = '⚪'
-                spike_emoji = '➡️'
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Spike Direction", f"{spike_emoji} {spike_direction} {spike_color}")
-
-            with col2:
-                st.metric("Spike Confidence", f"{spike_confidence}%")
-
-            with col3:
-                st.metric("Spike Target", f"₹{spike_target:.2f}")
-
-            # Expiry spike reasoning
-            with st.expander("🔍 Expiry Spike Analysis", expanded=False):
-                if expiry_spike.get('reasoning'):
-                    for reason in expiry_spike['reasoning']:
-                        st.write(reason)
-
-            st.divider()
-
-            # ═══════════════════════════════════════════════════════════════
-            # MAJOR SUPPORT/RESISTANCE LEVELS (HIGH STRENGTH)
-            # ═══════════════════════════════════════════════════════════════
-
-            st.markdown("### 💎 MAJOR Support/Resistance Levels (HIGH Strength)")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("**🟢 MAJOR SUPPORT:**")
-                major_supports = entry_signal.get('major_support_levels', [])
-                if major_supports:
-                    for level in major_supports[:5]:  # Show top 5
-                        distance = current_price - level['price']
-                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')})")
-                        st.caption(f"  Distance: {distance:.2f} pts below")
-                else:
-                    st.info("No MAJOR support levels found")
-
-            with col2:
-                st.markdown("**🔴 MAJOR RESISTANCE:**")
-                major_resistances = entry_signal.get('major_resistance_levels', [])
-                if major_resistances:
-                    for level in major_resistances[:5]:  # Show top 5
-                        distance = level['price'] - current_price
-                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')})")
-                        st.caption(f"  Distance: {distance:.2f} pts above")
-                else:
-                    st.info("No MAJOR resistance levels found")
-
-            st.divider()
-
-            # ═══════════════════════════════════════════════════════════════
-            # NEAR SPOT SUPPORT/RESISTANCE LEVELS (Within 50 pts)
-            # ═══════════════════════════════════════════════════════════════
-
-            st.markdown("### 📍 NEAR Spot Support/Resistance (Within 50 Points)")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("**🟢 NEAR SUPPORT:**")
-                near_supports = entry_signal.get('near_support_levels', [])
-                if near_supports:
-                    for level in near_supports[:5]:  # Show top 5
-                        distance = current_price - level['price']
-                        strength = level.get('strength', 'N/A')
-                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')}) - {strength}")
-                        st.caption(f"  Distance: {distance:.2f} pts below")
-                else:
-                    st.info("No NEAR support levels within 50 pts")
-
-            with col2:
-                st.markdown("**🔴 NEAR RESISTANCE:**")
-                near_resistances = entry_signal.get('near_resistance_levels', [])
-                if near_resistances:
-                    for level in near_resistances[:5]:  # Show top 5
-                        distance = level['price'] - current_price
-                        strength = level.get('strength', 'N/A')
-                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')}) - {strength}")
-                        st.caption(f"  Distance: {distance:.2f} pts above")
-                else:
-                    st.info("No NEAR resistance levels within 50 pts")
-
-            st.divider()
-
-            # ═══════════════════════════════════════════════════════════════
-            # DETAILED ANALYSIS BREAKDOWN
-            # ═══════════════════════════════════════════════════════════════
-
-            with st.expander("📊 Complete Signal Analysis Breakdown", expanded=False):
-                # Entry reasoning
-                if entry_signal.get('reasoning'):
-                    st.markdown("**📝 Entry Signal Reasoning:**")
-                    for reason in entry_signal['reasoning']:
-                        st.write(f"• {reason}")
-
-                    st.divider()
-
-                # All support/resistance levels
-                st.markdown("**📊 All Filtered Support/Resistance Levels:**")
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.markdown("**All Support Levels:**")
-                    all_supports = entry_signal.get('all_support_levels', [])
-                    if all_supports:
-                        for level in all_supports[:10]:  # Show top 10
-                            st.write(f"• ₹{level['price']:.2f} ({level.get('type', 'Unknown')}) - {level.get('strength', 'N/A')}")
-                    else:
-                        st.caption("No support levels")
-
-                with col2:
-                    st.markdown("**All Resistance Levels:**")
-                    all_resistances = entry_signal.get('all_resistance_levels', [])
-                    if all_resistances:
-                        for level in all_resistances[:10]:  # Show top 10
-                            st.write(f"• ₹{level['price']:.2f} ({level.get('type', 'Unknown')}) - {level.get('strength', 'N/A')}")
-                    else:
-                        st.caption("No resistance levels")
-
-                st.divider()
-
-                # Market conditions
-                if entry_signal.get('market_conditions'):
-                    st.markdown("**🌍 Market Conditions:**")
-                    conditions = entry_signal['market_conditions']
-                    for key, value in conditions.items():
-                        st.write(f"• {key}: {value}")
-
-        else:
-            st.info("⏳ No clear entry signal detected. Waiting for better setup...")
-
-    except Exception as e:
-        st.warning(f"⚠️ ML Entry Finder unavailable: {e}")
-
-    st.divider()
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # MANUAL SIGNAL SETUPS
-    # ═══════════════════════════════════════════════════════════════════════
-
-    st.subheader("📊 Manual Signal Setups")
+    st.header("📊 Active Signal Setups")
 
     active_setups = st.session_state.signal_manager.get_active_setups()
 
@@ -2786,7 +2383,7 @@ with tab4:
 
 with tab5:
     st.header("🎯 Comprehensive Bias Analysis Pro")
-    st.caption("13 Bias Indicators with Adaptive Weighted Scoring | 🔄 Refreshes every 60 seconds via unified system")
+    st.caption("13 Bias Indicators with Adaptive Weighted Scoring | 🔄 Auto-refreshing every 60 seconds")
 
     # Auto-load cached results if not already in session state
     if not st.session_state.bias_analysis_results:
@@ -2805,22 +2402,8 @@ with tab5:
         )
         symbol_code = bias_symbol.split()[0]
 
-    # AUTO-RUN: Run bias analysis automatically on page load/refresh if not already run
-    # This integrates with the 60-second unified refresh system
-    auto_run_analysis = False
-    if 'bias_analysis_results' not in st.session_state or st.session_state.bias_analysis_results is None:
-        auto_run_analysis = True
-    elif st.session_state.get('force_analysis_run', False):
-        # Re-run when unified refresh triggers (every 60 seconds)
-        auto_run_analysis = True
-        st.session_state.force_analysis_run = False  # Reset flag
-
     with col2:
-        manual_trigger = st.button("🔍 Re-Analyze Bias", type="primary", use_container_width=True,
-                                   help="Click to manually re-run bias analysis")
-
-        # Run analysis if auto-triggered OR manually clicked
-        if auto_run_analysis or manual_trigger:
+        if st.button("🔍 Analyze All Bias", type="primary", use_container_width=True):
             with st.spinner("Analyzing bias indicators..."):
                 try:
                     bias_analyzer = get_bias_analyzer()
@@ -2830,15 +2413,14 @@ with tab5:
                     cache_manager = get_cache_manager()
                     cache_manager.set('bias_analysis', results)
                     if results['success']:
-                        if manual_trigger:  # Only show success message for manual clicks
-                            st.success("✅ Bias analysis completed!")
+                        st.success("✅ Bias analysis completed!")
                     else:
                         st.error(f"❌ Analysis failed: {results.get('error')}")
                 except Exception as e:
                     st.error(f"❌ Analysis failed: {e}")
 
     with col3:
-        if 'bias_analysis_results' in st.session_state and st.session_state.bias_analysis_results:
+        if st.session_state.bias_analysis_results:
             if st.button("🗑️ Clear Analysis", use_container_width=True):
                 st.session_state.bias_analysis_results = None
                 st.rerun()
@@ -3177,10 +2759,9 @@ with tab6:
 with tab7:
     st.header("📈 Advanced Chart Analysis")
     st.caption("TradingView-style Chart with Advanced Indicators: Volume Bars, Volume Order Blocks, HTF Support/Resistance (3min, 5min, 10min, 15min levels), Volume Footprint (1D timeframe, 10 bins, Dynamic POC), Ultimate RSI, OM Indicator (Order Flow & Momentum), Advanced Price Action (BOS, CHOCH, Fibonacci, Geometric Patterns)")
-    st.info("🔄 Chart auto-refreshes every 60 seconds via unified refresh system. Use 'Manual Refresh' button for immediate update.")
 
     # Chart controls
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
 
     with col1:
         chart_symbol = st.selectbox(
@@ -3207,7 +2788,16 @@ with tab7:
         )
 
     with col4:
-        if st.button("🔄 Manual Refresh", type="primary", use_container_width=True, key="manual_refresh_chart"):
+        chart_auto_refresh = st.selectbox(
+            "Auto Refresh",
+            ["Off", "30s", "60s", "2m", "5m"],
+            index=2,
+            key="chart_auto_refresh",
+            help="Automatically refresh chart at selected interval"
+        )
+
+    with col5:
+        if st.button("🔄 Refresh", type="primary", use_container_width=True, key="manual_refresh_chart"):
             st.session_state.chart_needs_refresh = True
 
     st.divider()
@@ -3228,12 +2818,29 @@ with tab7:
         st.session_state.chart_needs_refresh = True
         st.session_state.last_chart_params = current_params
 
-    # Load chart data on first load or when refresh is needed
-    # Note: Chart auto-refreshes every 60 seconds via unified refresh system
+    # Handle auto-refresh timing
+    should_auto_refresh = False
+    if chart_auto_refresh != "Off" and st.session_state.last_chart_update is not None:
+        # Convert refresh interval to seconds
+        refresh_seconds = {
+            "30s": 30,
+            "60s": 60,
+            "2m": 120,
+            "5m": 300
+        }.get(chart_auto_refresh, 60)
+
+        # Check if enough time has passed
+        from datetime import timedelta
+        time_since_update = (get_current_time_ist() - st.session_state.last_chart_update).total_seconds()
+        if time_since_update >= refresh_seconds:
+            should_auto_refresh = True
+            st.session_state.chart_needs_refresh = True
+
+    # Auto-load chart data on first load or when refresh is needed
     if st.session_state.chart_needs_refresh:
         with st.spinner("Loading chart data and calculating indicators..."):
             try:
-                # Fetch data using cached function
+                # Fetch data using cached function (60s cache)
                 df = get_cached_chart_data(symbol_code, chart_period, chart_interval)
 
                 if df is not None and len(df) > 0:
@@ -3249,6 +2856,25 @@ with tab7:
                 st.session_state.chart_data = None
 
         st.session_state.chart_needs_refresh = False
+
+    # Show auto-refresh countdown
+    if chart_auto_refresh != "Off" and st.session_state.chart_data is not None and st.session_state.last_chart_update is not None:
+        refresh_seconds = {
+            "30s": 30,
+            "60s": 60,
+            "2m": 120,
+            "5m": 300
+        }.get(chart_auto_refresh, 60)
+
+        time_since_update = (get_current_time_ist() - st.session_state.last_chart_update).total_seconds()
+        time_until_refresh = max(0, refresh_seconds - time_since_update)
+
+        if time_until_refresh <= 0:
+            # Time for refresh
+            st.session_state.chart_needs_refresh = True
+            st.rerun()
+        else:
+            st.info(f"⏱️ Next auto-refresh in {int(time_until_refresh)} seconds (auto-refresh enabled)")
 
     st.divider()
 
@@ -3800,35 +3426,6 @@ with tab7:
                     deltaflow_params=deltaflow_params
                 )
 
-                # ========================================
-                # COMPREHENSIVE TAB INTEGRATION
-                # Add data from ALL tabs to chart
-                # ========================================
-                try:
-                    from comprehensive_chart_integration import (
-                        ComprehensiveChartIntegrator,
-                        add_institutional_levels_to_chart,
-                        display_comprehensive_chart_info
-                    )
-
-                    # Create integrator and gather all tab data
-                    integrator = ComprehensiveChartIntegrator()
-                    comprehensive_params = integrator.create_comprehensive_chart_params()
-
-                    # Add institutional levels (OI walls, GEX walls, HTF S/R, VOB) to chart
-                    fig = add_institutional_levels_to_chart(
-                        fig,
-                        comprehensive_params['institutional_levels'],
-                        row=1,
-                        col=1
-                    )
-
-                    # Display comprehensive info in sidebar
-                    display_comprehensive_chart_info(comprehensive_params)
-
-                except Exception as e:
-                    st.warning(f"⚠️ Could not integrate comprehensive data: {e}")
-
                 # Display chart
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -3951,9 +3548,6 @@ with tab7:
                         # Detect regime
                         regime_detector = MarketRegimeDetector()
                         regime_result = regime_detector.detect_regime(df_stats, regime_indicator_data)
-
-                        # Store in session state for ML Entry Finder
-                        st.session_state.market_regime_result = regime_result
 
                         # Display regime info
                         col1, col2, col3 = st.columns(3)
@@ -4938,7 +4532,7 @@ with tab7:
         1. Select market (NIFTY, SENSEX, or DOW)
         2. Choose period and interval (default: 1 day, 1 minute)
         3. Chart loads automatically - no need to click any button!
-        4. Chart auto-refreshes every 60s via unified refresh system. Use Manual Refresh button for immediate update.
+        4. Set auto-refresh interval (default: 60s) or click Refresh for manual update
         5. Toggle indicators on/off as needed
         6. Analyze chart and trading signals
         7. Use signals to inform your trading decisions

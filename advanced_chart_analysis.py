@@ -295,49 +295,6 @@ class AdvancedChartAnalysis:
                 ]
             htf_levels = self.htf_sr_indicator.calculate_multi_timeframe(df, levels_config)
 
-            # CRITICAL FIX: Store HTF S/R levels in session state for signal generation
-            # This makes HTF levels available to signal_display_simple.py and overall_market_sentiment.py
-            try:
-                import streamlit as st
-                # Store raw HTF levels
-                st.session_state.htf_sr_levels = htf_levels
-
-                # Also extract nearest support/resistance for current price
-                current_price = df['Close'].iloc[-1]
-
-                # Collect all support and resistance levels from all timeframes
-                all_supports = []
-                all_resistances = []
-
-                for level in htf_levels:
-                    if level.get('pivot_low') and level['pivot_low'] is not None:
-                        if level['pivot_low'] < current_price:
-                            all_supports.append({
-                                'price': level['pivot_low'],
-                                'timeframe': level.get('timeframe', ''),
-                                'type': 'Support'
-                            })
-                    if level.get('pivot_high') and level['pivot_high'] is not None:
-                        if level['pivot_high'] > current_price:
-                            all_resistances.append({
-                                'price': level['pivot_high'],
-                                'timeframe': level.get('timeframe', ''),
-                                'type': 'Resistance'
-                            })
-
-                # Find nearest levels
-                if all_supports:
-                    nearest_support = max(all_supports, key=lambda x: x['price'])
-                    st.session_state.htf_nearest_support = nearest_support
-
-                if all_resistances:
-                    nearest_resistance = min(all_resistances, key=lambda x: x['price'])
-                    st.session_state.htf_nearest_resistance = nearest_resistance
-
-            except Exception as e:
-                # Silent fail if not in Streamlit context
-                pass
-
         # HTF Volume Footprint
         footprint_data = None
         if show_footprint and htf_footprint:

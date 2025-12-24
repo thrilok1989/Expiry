@@ -906,50 +906,46 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
     if 'htf_sr_levels' in st.session_state and st.session_state.htf_sr_levels:
         htf_levels = st.session_state.htf_sr_levels
 
-        # htf_levels is a list of dicts with 'pivot_low' and 'pivot_high' keys
-        if isinstance(htf_levels, list):
-            for level_data in htf_levels:
-                if isinstance(level_data, dict):
-                    # Extract pivot_low as support
-                    pivot_low = level_data.get('pivot_low')
-                    if pivot_low and isinstance(pivot_low, (int, float)) and pivot_low < current_price:
-                        all_support_levels.append({
-                            'price': pivot_low,
-                            'type': f"HTF Support ({level_data.get('timeframe', '')})",
-                            'lower': pivot_low - 10,
-                            'upper': pivot_low + 10,
-                            'distance': current_price - pivot_low
-                        })
-
-                    # Extract pivot_high as resistance
-                    pivot_high = level_data.get('pivot_high')
-                    if pivot_high and isinstance(pivot_high, (int, float)) and pivot_high > current_price:
-                        all_resistance_levels.append({
-                            'price': pivot_high,
-                            'type': f"HTF Resistance ({level_data.get('timeframe', '')})",
-                            'lower': pivot_high - 10,
-                            'upper': pivot_high + 10,
-                            'distance': pivot_high - current_price
-                        })
-        # Fallback: if htf_levels is a dict with 'support'/'resistance' keys (old format)
-        elif isinstance(htf_levels, dict):
-            for level in htf_levels.get('support', []):
-                if isinstance(level, (int, float)) and level < current_price:
+        # HTF Support levels
+        for level in htf_levels.get('support', []):
+            if isinstance(level, (int, float)) and level < current_price:
+                all_support_levels.append({
+                    'price': level,
+                    'type': 'HTF Support',
+                    'lower': level - 10,
+                    'upper': level + 10,
+                    'distance': current_price - level
+                })
+            elif isinstance(level, dict):
+                level_price = level.get('price', 0)
+                if level_price < current_price:
                     all_support_levels.append({
-                        'price': level,
+                        'price': level_price,
                         'type': 'HTF Support',
-                        'lower': level - 10,
-                        'upper': level + 10,
-                        'distance': current_price - level
+                        'lower': level_price - 10,
+                        'upper': level_price + 10,
+                        'distance': current_price - level_price
                     })
-            for level in htf_levels.get('resistance', []):
-                if isinstance(level, (int, float)) and level > current_price:
+
+        # HTF Resistance levels
+        for level in htf_levels.get('resistance', []):
+            if isinstance(level, (int, float)) and level > current_price:
+                all_resistance_levels.append({
+                    'price': level,
+                    'type': 'HTF Resistance',
+                    'lower': level - 10,
+                    'upper': level + 10,
+                    'distance': level - current_price
+                })
+            elif isinstance(level, dict):
+                level_price = level.get('price', 0)
+                if level_price > current_price:
                     all_resistance_levels.append({
-                        'price': level,
+                        'price': level_price,
                         'type': 'HTF Resistance',
-                        'lower': level - 10,
-                        'upper': level + 10,
-                        'distance': level - current_price
+                        'lower': level_price - 10,
+                        'upper': level_price + 10,
+                        'distance': level_price - current_price
                     })
 
     # SOURCE 3: DEPTH-BASED S/R (from option screener)
@@ -1513,9 +1509,9 @@ Loading current price and entry zones. Please wait...
             generate_trading_signal,
             display_signal_card,
             display_signal_history,
-            display_telegram_stats
+            display_telegram_stats,
+            display_final_assessment
         )
-        from signal_display_simple import display_simple_assessment
 
         # Get all required data for signal generation
         if 'bias_analysis_results' in st.session_state:
@@ -1561,88 +1557,23 @@ Loading current price and entry zones. Please wait...
         # Calculate sentiment score
         sentiment_score = result.get('overall_score', 0.0)
 
-        # ═══════════════════════════════════════════════════════════════════
-        # ENRICH nifty_screener_data with VOB, HTF, and FUTURES DATA for XGBoost
-        # ═══════════════════════════════════════════════════════════════════
-        # Ensure nifty_screener_data is a dict (not None)
-        if nifty_screener_data is None:
-            nifty_screener_data = {}
-        elif not isinstance(nifty_screener_data, dict):
-            # If it's not a dict, convert to empty dict for safety
-            nifty_screener_data = {}
-
-        # Add VOB signals from session state
-        if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
-            vob_data = st.session_state.vob_data_nifty
-            # Ensure vob_data is a dict before accessing
-            if isinstance(vob_data, dict):
-                vob_signals = []
-
-                # Process bullish VOB blocks as support
-                bullish_blocks = vob_data.get('bullish_blocks', [])
-                if isinstance(bullish_blocks, list):
-                    for block in bullish_blocks:
-                        if isinstance(block, dict):
-                            block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
-                            vob_signals.append({
-                                'price': block_mid,
-                                'type': 'VOB Support',
-                                'strength': block.get('strength', 'Medium'),
-                                'lower': block.get('lower', block_mid),
-                                'upper': block.get('upper', block_mid)
-                            })
-
-                # Process bearish VOB blocks as resistance
-                bearish_blocks = vob_data.get('bearish_blocks', [])
-                if isinstance(bearish_blocks, list):
-                    for block in bearish_blocks:
-                        if isinstance(block, dict):
-                            block_mid = (block.get('upper', 0) + block.get('lower', 0)) / 2
-                            vob_signals.append({
-                                'price': block_mid,
-                                'type': 'VOB Resistance',
-                                'strength': block.get('strength', 'Medium'),
-                                'lower': block.get('lower', block_mid),
-                                'upper': block.get('upper', block_mid)
-                            })
-
-                # Only add if we have signals
-                if vob_signals:
-                    nifty_screener_data['vob_signals'] = vob_signals
-
-        # Add HTF S/R levels from session state
-        if 'htf_sr_levels' in st.session_state and st.session_state.htf_sr_levels:
-            htf_levels = st.session_state.htf_sr_levels
-            # Ensure it's a dict before adding
-            if isinstance(htf_levels, dict):
-                nifty_screener_data['htf_sr_levels'] = htf_levels
-
-        # Add NIFTY Futures analysis (CRITICAL for institutional positioning)
-        # TODO: This requires fetching futures data from DhanHQ or similar source
-        # For now, we'll add a placeholder - this needs to be implemented in enhanced_market_data.py
-        # futures_analysis = analyze_futures_bias(spot_price=current_price, ...)
-        # nifty_screener_data['futures_analysis'] = futures_analysis
-
-        # ADD HTF S/R DATA TO nifty_screener_data for comprehensive S/R analysis
-        if bias_results and isinstance(bias_results, dict):
-            # Add nearest support/resistance from bias analysis (HTF S/R)
-            if 'nearest_support' in bias_results:
-                nifty_screener_data['nearest_support'] = bias_results['nearest_support']
-            if 'nearest_resistance' in bias_results:
-                nifty_screener_data['nearest_resistance'] = bias_results['nearest_resistance']
-
-        # Display SIMPLIFIED ASSESSMENT - Only essentials
-        # Always display (even if dict is empty) to show user the signal
-        display_simple_assessment(
-            nifty_screener_data=nifty_screener_data if nifty_screener_data else {},
-            enhanced_market_data=enhanced_market_data,
-            ml_regime_result=ml_regime_result,
-            current_price=current_price if current_price > 0 else 24500,
-            atm_strike=atm_strike if atm_strike else 24500,
-            option_chain=option_chain,
-            money_flow_signals=money_flow_signals,
-            deltaflow_signals=deltaflow_signals
-        )
+        # Display FINAL ASSESSMENT first - Pass ALL analysis data
+        if nifty_screener_data or enhanced_market_data:
+            display_final_assessment(
+                nifty_screener_data=nifty_screener_data,
+                enhanced_market_data=enhanced_market_data,
+                ml_regime_result=ml_regime_result,
+                liquidity_result=liquidity_result,
+                current_price=current_price if current_price > 0 else 24500,
+                atm_strike=atm_strike if atm_strike else 24500,
+                option_chain=option_chain,  # Pass option chain for real premiums
+                money_flow_signals=money_flow_signals,  # Money Flow Profile (Tab 7)
+                deltaflow_signals=deltaflow_signals,  # DeltaFlow Profile (Tab 7)
+                cvd_result=cvd_result,  # CVD Analysis (Tab 4)
+                volatility_result=volatility_result,  # Volatility Regime (Tab 2)
+                oi_trap_result=oi_trap_result,  # OI Trap (Tab 3)
+                participant_result=participant_result  # Participant Analysis (Tab 5)
+            )
 
         # Generate signal if we have data
         if df is not None and len(df) > 10:
