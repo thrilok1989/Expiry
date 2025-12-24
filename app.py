@@ -660,6 +660,26 @@ if not nifty_data or not nifty_data.get('success'):
     # Note: We don't stop() here - let the app continue and show what it can
 
 # ═══════════════════════════════════════════════════════════════════════
+# UPDATE BROWSER TAB TITLE WITH SPOT PRICE
+# ═══════════════════════════════════════════════════════════════════════
+# Dynamically update browser tab title to show NIFTY spot price for easy monitoring
+if nifty_data and nifty_data.get('success') and nifty_data.get('spot_price'):
+    spot_price = nifty_data['spot_price']
+    # Use JavaScript to update the browser tab title
+    st.markdown(f"""
+    <script>
+        document.title = "NIFTY ₹{spot_price:,.2f} | Trader";
+    </script>
+    """, unsafe_allow_html=True)
+else:
+    # Fallback title when spot price is not available
+    st.markdown("""
+    <script>
+        document.title = "NIFTY/SENSEX Trader";
+    </script>
+    """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════
 # CACHED CHART DATA FETCHER (Performance Optimization)
 # ═══════════════════════════════════════════════════════════════════════
 # Cache chart data for 60 seconds to avoid repeated API calls
