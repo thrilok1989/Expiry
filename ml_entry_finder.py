@@ -190,7 +190,14 @@ class MLEntryFinder:
             'risk_reward': risk_reward,
             'reasoning': reasoning,
             'nearest_support': nearest_support,
-            'nearest_resistance': nearest_resistance
+            'nearest_resistance': nearest_resistance,
+            # All filtered MAJOR and NEAR levels for display
+            'all_support_levels': sorted(filtered_supports, key=lambda x: x['price'], reverse=True),
+            'all_resistance_levels': sorted(filtered_resistances, key=lambda x: x['price']),
+            'major_support_levels': sorted(major_support, key=lambda x: x['price'], reverse=True),
+            'major_resistance_levels': sorted(major_resistance, key=lambda x: x['price']),
+            'near_support_levels': sorted(nearest_support_candidates, key=lambda x: x['price'], reverse=True),
+            'near_resistance_levels': sorted(nearest_resistance_candidates, key=lambda x: x['price'])
         }
 
     def _score_levels(
@@ -626,6 +633,125 @@ class MLEntryFinder:
             reasons.append(f"- High VIX ({vix:.1f}) = elevated risk")
 
         return "\n".join(reasons)
+
+    def detect_expiry_spike_direction(
+        self,
+        current_price: float,
+        option_chain_data: Optional[Dict] = None,
+        pcr: float = 1.0,
+        max_pain: Optional[float] = None,
+        futures_analysis: Optional[Dict] = None
+    ) -> Dict:
+        """
+        Detect expiry spike direction based on option chain dynamics
+
+        Args:
+            current_price: Current spot price
+            option_chain_data: Option chain data with OI, IV, Greeks
+            pcr: Put-Call Ratio
+            max_pain: Max pain level
+            futures_analysis: Futures premium/discount analysis
+
+        Returns:
+            Dict with:
+            - spike_direction: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+            - confidence: 0-100%
+            - target_level: Expected spike target level
+            - reasoning: Why this direction
+        """
+
+        spike_score = 0  # Positive = bullish, Negative = bearish
+        confidence = 50  # Start at 50%
+        reasoning = []
+
+        # FACTOR 1: PCR Analysis (30% weight)
+        if pcr < 0.7:
+            spike_score += 30
+            confidence += 15
+            reasoning.append(f"✓ Low PCR ({pcr:.2f}) indicates bullish sentiment")
+        elif pcr > 1.3:
+            spike_score -= 30
+            confidence += 15
+            reasoning.append(f"✓ High PCR ({pcr:.2f}) indicates bearish sentiment")
+        else:
+            reasoning.append(f"• Neutral PCR ({pcr:.2f})")
+
+        # FACTOR 2: Max Pain Distance (25% weight)
+        if max_pain:
+            max_pain_distance = current_price - max_pain
+            max_pain_pct = (max_pain_distance / current_price) * 100
+
+            if max_pain_distance > 50:  # Above max pain
+                spike_score -= 25
+                confidence += 10
+                reasoning.append(f"✓ Price {max_pain_distance:.0f}pts above Max Pain ({max_pain:.0f}) - bearish pull")
+            elif max_pain_distance < -50:  # Below max pain
+                spike_score += 25
+                confidence += 10
+                reasoning.append(f"✓ Price {abs(max_pain_distance):.0f}pts below Max Pain ({max_pain:.0f}) - bullish pull")
+            else:
+                reasoning.append(f"• Price near Max Pain ({max_pain:.0f})")
+
+        # FACTOR 3: Futures Premium/Discount (25% weight)
+        if futures_analysis:
+            futures_bias = futures_analysis.get('combined_bias', 'NEUTRAL')
+            premium_pct = futures_analysis.get('premium_pct', 0)
+
+            if 'BULLISH' in futures_bias:
+                spike_score += 25
+                confidence += 10
+                reasoning.append(f"✓ Futures BULLISH bias ({premium_pct*100:.2f}% premium)")
+            elif 'BEARISH' in futures_bias:
+                spike_score -= 25
+                confidence += 10
+                reasoning.append(f"✓ Futures BEARISH bias ({premium_pct*100:.2f}% discount)")
+            else:
+                reasoning.append(f"• Futures neutral ({premium_pct*100:.2f}%)")
+
+        # FACTOR 4: Option Chain Imbalance (20% weight)
+        if option_chain_data:
+            # Check for OI imbalance
+            oi_metrics = option_chain_data.get('oi_pcr_metrics', {})
+            max_ce_oi = oi_metrics.get('max_ce_oi', 0)
+            max_pe_oi = oi_metrics.get('max_pe_oi', 0)
+
+            if max_pe_oi > 0 and max_ce_oi > 0:
+                oi_imbalance = (max_pe_oi - max_ce_oi) / max(max_pe_oi, max_ce_oi)
+
+                if oi_imbalance > 0.3:  # 30% more PUT OI
+                    spike_score += 20
+                    confidence += 10
+                    reasoning.append(f"✓ Strong PUT OI buildup - bullish support")
+                elif oi_imbalance < -0.3:  # 30% more CALL OI
+                    spike_score -= 20
+                    confidence += 10
+                    reasoning.append(f"✓ Strong CALL OI buildup - bearish resistance")
+
+        # Determine spike direction
+        if spike_score > 30:
+            spike_direction = 'BULLISH'
+            target_level = current_price + 100  # Conservative spike target
+            confidence = min(confidence + 10, 95)
+        elif spike_score < -30:
+            spike_direction = 'BEARISH'
+            target_level = current_price - 100  # Conservative spike target
+            confidence = min(confidence + 10, 95)
+        else:
+            spike_direction = 'NEUTRAL'
+            target_level = current_price
+            confidence = max(confidence - 10, 30)
+            reasoning.append("• No clear expiry spike direction detected")
+
+        # Cap confidence
+        confidence = min(max(confidence, 0), 100)
+
+        return {
+            'spike_direction': spike_direction,
+            'confidence': int(confidence),
+            'target_level': round(target_level, 2),
+            'spike_score': spike_score,
+            'reasoning': reasoning
+        }
 
 
 # ==========================================

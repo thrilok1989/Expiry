@@ -2144,6 +2144,25 @@ with tab3:
             futures_analysis=futures_analysis
         )
 
+        # Detect expiry spike direction
+        option_chain_data = None
+        max_pain = None
+        pcr = 1.0
+        if 'nifty_screener_data' in st.session_state:
+            screener_data = st.session_state.nifty_screener_data
+            if isinstance(screener_data, dict):
+                option_chain_data = screener_data
+                pcr = screener_data.get('oi_pcr_metrics', {}).get('pcr', 1.0)
+                max_pain = screener_data.get('max_pain')
+
+        expiry_spike = ml_finder.detect_expiry_spike_direction(
+            current_price=current_price,
+            option_chain_data=option_chain_data,
+            pcr=pcr,
+            max_pain=max_pain,
+            futures_analysis=futures_analysis
+        )
+
         # Display entry signal
         if entry_signal:
             # Direction and confidence
@@ -2153,66 +2172,209 @@ with tab3:
             # Color coding
             if direction == 'LONG':
                 direction_color = '🟢'
-                bg_color = '#1e3a2e'
+                direction_emoji = '📈'
             elif direction == 'SHORT':
                 direction_color = '🔴'
-                bg_color = '#3a1e1e'
+                direction_emoji = '📉'
             else:
                 direction_color = '⚪'
-                bg_color = '#2e2e2e'
+                direction_emoji = '⏸️'
 
-            # Main signal display
-            col1, col2, col3 = st.columns([2, 1, 1])
+            # ═══════════════════════════════════════════════════════════════
+            # MAIN SIGNAL DISPLAY
+            # ═══════════════════════════════════════════════════════════════
+
+            st.markdown(f"## {direction_emoji} **ML ENTRY DIRECTION: {direction}** {direction_color}")
+            st.markdown(f"### Confidence: **{confidence}%** | Based on 165+ features")
+
+            # Entry zone, stop loss, targets
+            col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                st.markdown(f"### {direction_color} **{direction}** Signal")
-                st.caption(f"Confidence: {confidence}%")
+                st.metric("Current Price", f"₹{current_price:.2f}")
 
             with col2:
-                if entry_signal.get('entry_price'):
+                entry_zone = entry_signal.get('entry_zone', {})
+                if entry_zone:
+                    st.metric("Entry Zone", f"₹{entry_zone.get('mid', current_price):.2f}")
+                elif entry_signal.get('entry_price'):
                     st.metric("Entry Price", f"₹{entry_signal['entry_price']:.2f}")
 
             with col3:
                 if entry_signal.get('stop_loss'):
                     st.metric("Stop Loss", f"₹{entry_signal['stop_loss']:.2f}")
 
+            with col4:
+                if entry_signal.get('risk_reward'):
+                    st.metric("Risk:Reward", f"1:{entry_signal['risk_reward']:.2f}")
+
             # Target levels
             if entry_signal.get('targets'):
-                st.markdown("**🎯 Targets:**")
-                target_cols = st.columns(len(entry_signal['targets']))
-                for i, target in enumerate(entry_signal['targets']):
-                    with target_cols[i]:
-                        st.metric(f"T{i+1}", f"₹{target:.2f}")
+                st.markdown("### 🎯 Target Levels")
+                targets = entry_signal['targets']
+                if isinstance(targets, dict):
+                    target_cols = st.columns(3)
+                    with target_cols[0]:
+                        st.metric("Conservative", f"₹{targets.get('conservative', 0):.2f}")
+                    with target_cols[1]:
+                        st.metric("Moderate", f"₹{targets.get('moderate', 0):.2f}")
+                    with target_cols[2]:
+                        st.metric("Aggressive", f"₹{targets.get('aggressive', 0):.2f}")
+                elif isinstance(targets, list):
+                    target_cols = st.columns(len(targets))
+                    for i, target in enumerate(targets):
+                        with target_cols[i]:
+                            st.metric(f"T{i+1}", f"₹{target:.2f}")
 
-            # Analysis breakdown
-            with st.expander("📊 Signal Analysis Breakdown", expanded=False):
+            st.divider()
+
+            # ═══════════════════════════════════════════════════════════════
+            # EXPIRY SPIKE DETECTOR
+            # ═══════════════════════════════════════════════════════════════
+
+            st.markdown("### 🎆 Expiry Spike Direction Detector")
+
+            spike_direction = expiry_spike['spike_direction']
+            spike_confidence = expiry_spike['confidence']
+            spike_target = expiry_spike['target_level']
+
+            # Color coding for spike
+            if spike_direction == 'BULLISH':
+                spike_color = '🟢'
+                spike_emoji = '🚀'
+            elif spike_direction == 'BEARISH':
+                spike_color = '🔴'
+                spike_emoji = '⬇️'
+            else:
+                spike_color = '⚪'
+                spike_emoji = '➡️'
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("Spike Direction", f"{spike_emoji} {spike_direction} {spike_color}")
+
+            with col2:
+                st.metric("Spike Confidence", f"{spike_confidence}%")
+
+            with col3:
+                st.metric("Spike Target", f"₹{spike_target:.2f}")
+
+            # Expiry spike reasoning
+            with st.expander("🔍 Expiry Spike Analysis", expanded=False):
+                if expiry_spike.get('reasoning'):
+                    for reason in expiry_spike['reasoning']:
+                        st.write(reason)
+
+            st.divider()
+
+            # ═══════════════════════════════════════════════════════════════
+            # MAJOR SUPPORT/RESISTANCE LEVELS (HIGH STRENGTH)
+            # ═══════════════════════════════════════════════════════════════
+
+            st.markdown("### 💎 MAJOR Support/Resistance Levels (HIGH Strength)")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**🟢 MAJOR SUPPORT:**")
+                major_supports = entry_signal.get('major_support_levels', [])
+                if major_supports:
+                    for level in major_supports[:5]:  # Show top 5
+                        distance = current_price - level['price']
+                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')})")
+                        st.caption(f"  Distance: {distance:.2f} pts below")
+                else:
+                    st.info("No MAJOR support levels found")
+
+            with col2:
+                st.markdown("**🔴 MAJOR RESISTANCE:**")
+                major_resistances = entry_signal.get('major_resistance_levels', [])
+                if major_resistances:
+                    for level in major_resistances[:5]:  # Show top 5
+                        distance = level['price'] - current_price
+                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')})")
+                        st.caption(f"  Distance: {distance:.2f} pts above")
+                else:
+                    st.info("No MAJOR resistance levels found")
+
+            st.divider()
+
+            # ═══════════════════════════════════════════════════════════════
+            # NEAR SPOT SUPPORT/RESISTANCE LEVELS (Within 50 pts)
+            # ═══════════════════════════════════════════════════════════════
+
+            st.markdown("### 📍 NEAR Spot Support/Resistance (Within 50 Points)")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**🟢 NEAR SUPPORT:**")
+                near_supports = entry_signal.get('near_support_levels', [])
+                if near_supports:
+                    for level in near_supports[:5]:  # Show top 5
+                        distance = current_price - level['price']
+                        strength = level.get('strength', 'N/A')
+                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')}) - {strength}")
+                        st.caption(f"  Distance: {distance:.2f} pts below")
+                else:
+                    st.info("No NEAR support levels within 50 pts")
+
+            with col2:
+                st.markdown("**🔴 NEAR RESISTANCE:**")
+                near_resistances = entry_signal.get('near_resistance_levels', [])
+                if near_resistances:
+                    for level in near_resistances[:5]:  # Show top 5
+                        distance = level['price'] - current_price
+                        strength = level.get('strength', 'N/A')
+                        st.write(f"• **₹{level['price']:.2f}** ({level.get('type', 'Unknown')}) - {strength}")
+                        st.caption(f"  Distance: {distance:.2f} pts above")
+                else:
+                    st.info("No NEAR resistance levels within 50 pts")
+
+            st.divider()
+
+            # ═══════════════════════════════════════════════════════════════
+            # DETAILED ANALYSIS BREAKDOWN
+            # ═══════════════════════════════════════════════════════════════
+
+            with st.expander("📊 Complete Signal Analysis Breakdown", expanded=False):
+                # Entry reasoning
                 if entry_signal.get('reasoning'):
-                    st.markdown("**Reasoning:**")
+                    st.markdown("**📝 Entry Signal Reasoning:**")
                     for reason in entry_signal['reasoning']:
                         st.write(f"• {reason}")
 
-                # Support/Resistance levels
+                    st.divider()
+
+                # All support/resistance levels
+                st.markdown("**📊 All Filtered Support/Resistance Levels:**")
+
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    st.markdown("**Support Levels:**")
-                    if entry_signal.get('nearest_support'):
-                        support = entry_signal['nearest_support']
-                        st.write(f"• {support['price']:.2f} ({support.get('type', 'Unknown')}) - {support.get('strength', 'N/A')} strength")
-                        if support.get('distance'):
-                            st.caption(f"  Distance: {support['distance']:.2f} pts")
+                    st.markdown("**All Support Levels:**")
+                    all_supports = entry_signal.get('all_support_levels', [])
+                    if all_supports:
+                        for level in all_supports[:10]:  # Show top 10
+                            st.write(f"• ₹{level['price']:.2f} ({level.get('type', 'Unknown')}) - {level.get('strength', 'N/A')}")
+                    else:
+                        st.caption("No support levels")
 
                 with col2:
-                    st.markdown("**Resistance Levels:**")
-                    if entry_signal.get('nearest_resistance'):
-                        resistance = entry_signal['nearest_resistance']
-                        st.write(f"• {resistance['price']:.2f} ({resistance.get('type', 'Unknown')}) - {resistance.get('strength', 'N/A')} strength")
-                        if resistance.get('distance'):
-                            st.caption(f"  Distance: {resistance['distance']:.2f} pts")
+                    st.markdown("**All Resistance Levels:**")
+                    all_resistances = entry_signal.get('all_resistance_levels', [])
+                    if all_resistances:
+                        for level in all_resistances[:10]:  # Show top 10
+                            st.write(f"• ₹{level['price']:.2f} ({level.get('type', 'Unknown')}) - {level.get('strength', 'N/A')}")
+                    else:
+                        st.caption("No resistance levels")
+
+                st.divider()
 
                 # Market conditions
                 if entry_signal.get('market_conditions'):
-                    st.markdown("**Market Conditions:**")
+                    st.markdown("**🌍 Market Conditions:**")
                     conditions = entry_signal['market_conditions']
                     for key, value in conditions.items():
                         st.write(f"• {key}: {value}")
@@ -3789,6 +3951,9 @@ with tab7:
                         # Detect regime
                         regime_detector = MarketRegimeDetector()
                         regime_result = regime_detector.detect_regime(df_stats, regime_indicator_data)
+
+                        # Store in session state for ML Entry Finder
+                        st.session_state.market_regime_result = regime_result
 
                         # Display regime info
                         col1, col2, col3 = st.columns(3)

@@ -125,6 +125,10 @@ class ComprehensiveChartIntegrator:
             else:
                 comprehensive_data['vix'] = 15.0  # Fallback
 
+            # Gamma Squeeze (HIGH PRIORITY - NEW!)
+            if 'gamma_squeeze' in enhanced:
+                comprehensive_data['gamma_squeeze'] = enhanced['gamma_squeeze']
+
             # Sector Rotation
             if 'sector_rotation' in enhanced:
                 comprehensive_data['sector_rotation'] = enhanced['sector_rotation']
@@ -136,6 +140,14 @@ class ComprehensiveChartIntegrator:
             # Intermarket
             if 'intermarket' in enhanced:
                 comprehensive_data['intermarket'] = enhanced['intermarket']
+
+        # ==========================================
+        # TAB 7: Market Regime (HIGH PRIORITY - NEW!)
+        # ==========================================
+        if 'market_regime_result' in st.session_state:
+            comprehensive_data['market_regime'] = st.session_state.market_regime_result
+        elif 'ml_regime_result' in st.session_state:
+            comprehensive_data['market_regime'] = st.session_state.ml_regime_result
 
         # ==========================================
         # TAB 10: Master AI Analysis (XGBoost ML)
