@@ -906,46 +906,50 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
     if 'htf_sr_levels' in st.session_state and st.session_state.htf_sr_levels:
         htf_levels = st.session_state.htf_sr_levels
 
-        # HTF Support levels
-        for level in htf_levels.get('support', []):
-            if isinstance(level, (int, float)) and level < current_price:
-                all_support_levels.append({
-                    'price': level,
-                    'type': 'HTF Support',
-                    'lower': level - 10,
-                    'upper': level + 10,
-                    'distance': current_price - level
-                })
-            elif isinstance(level, dict):
-                level_price = level.get('price', 0)
-                if level_price < current_price:
-                    all_support_levels.append({
-                        'price': level_price,
-                        'type': 'HTF Support',
-                        'lower': level_price - 10,
-                        'upper': level_price + 10,
-                        'distance': current_price - level_price
-                    })
+        # htf_levels is a list of dicts with 'pivot_low' and 'pivot_high' keys
+        if isinstance(htf_levels, list):
+            for level_data in htf_levels:
+                if isinstance(level_data, dict):
+                    # Extract pivot_low as support
+                    pivot_low = level_data.get('pivot_low')
+                    if pivot_low and isinstance(pivot_low, (int, float)) and pivot_low < current_price:
+                        all_support_levels.append({
+                            'price': pivot_low,
+                            'type': f"HTF Support ({level_data.get('timeframe', '')})",
+                            'lower': pivot_low - 10,
+                            'upper': pivot_low + 10,
+                            'distance': current_price - pivot_low
+                        })
 
-        # HTF Resistance levels
-        for level in htf_levels.get('resistance', []):
-            if isinstance(level, (int, float)) and level > current_price:
-                all_resistance_levels.append({
-                    'price': level,
-                    'type': 'HTF Resistance',
-                    'lower': level - 10,
-                    'upper': level + 10,
-                    'distance': level - current_price
-                })
-            elif isinstance(level, dict):
-                level_price = level.get('price', 0)
-                if level_price > current_price:
+                    # Extract pivot_high as resistance
+                    pivot_high = level_data.get('pivot_high')
+                    if pivot_high and isinstance(pivot_high, (int, float)) and pivot_high > current_price:
+                        all_resistance_levels.append({
+                            'price': pivot_high,
+                            'type': f"HTF Resistance ({level_data.get('timeframe', '')})",
+                            'lower': pivot_high - 10,
+                            'upper': pivot_high + 10,
+                            'distance': pivot_high - current_price
+                        })
+        # Fallback: if htf_levels is a dict with 'support'/'resistance' keys (old format)
+        elif isinstance(htf_levels, dict):
+            for level in htf_levels.get('support', []):
+                if isinstance(level, (int, float)) and level < current_price:
+                    all_support_levels.append({
+                        'price': level,
+                        'type': 'HTF Support',
+                        'lower': level - 10,
+                        'upper': level + 10,
+                        'distance': current_price - level
+                    })
+            for level in htf_levels.get('resistance', []):
+                if isinstance(level, (int, float)) and level > current_price:
                     all_resistance_levels.append({
-                        'price': level_price,
+                        'price': level,
                         'type': 'HTF Resistance',
-                        'lower': level_price - 10,
-                        'upper': level_price + 10,
-                        'distance': level_price - current_price
+                        'lower': level - 10,
+                        'upper': level + 10,
+                        'distance': level - current_price
                     })
 
     # SOURCE 3: DEPTH-BASED S/R (from option screener)
