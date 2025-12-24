@@ -2984,7 +2984,7 @@ def bs_theta(S,K,r,sigma,tau,option_type="call"):
 # -----------------------
 # 🔥 NEW: ORDERBOOK PRESSURE FUNCTIONS
 # -----------------------
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=60)
 def get_nifty_orderbook_depth():
     """
     Best-effort depth fetch from Dhan API
@@ -4683,7 +4683,7 @@ def rank_support_resistance_seller(pcr_df):
 # -----------------------
 # DHAN API
 # -----------------------
-@st.cache_data(ttl=30)  # Increased cache to 30 seconds to reduce API calls
+@st.cache_data(ttl=60)  # 60 seconds (1 minute) to reduce API calls
 def get_nifty_spot_price():
     """Fetch NIFTY spot price with retry logic and rate limiting"""
     max_retries = 3
@@ -4735,7 +4735,7 @@ def get_nifty_spot_price():
 
     return 0.0
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_expiry_list():
     try:
         url = f"{DHAN_BASE_URL}/v2/optionchain/expirylist"
@@ -4756,7 +4756,7 @@ def get_expiry_list():
         st.warning(f"Expiry list failed: {e}")
         return []
 
-@st.cache_data(ttl=30)  # Increased cache to 30 seconds to reduce API calls
+@st.cache_data(ttl=60)  # 60 seconds (1 minute) to reduce API calls
 def fetch_dhan_option_chain(expiry_date):
     """Fetch option chain with retry logic and rate limiting"""
     max_retries = 3

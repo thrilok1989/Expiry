@@ -387,7 +387,7 @@ def initialize_session_state():
 initialize_session_state()
 
 # Helper functions
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_expiry_list(access_token, client_id):
     """Get available expiry dates"""
     headers = {
