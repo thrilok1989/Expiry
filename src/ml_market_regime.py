@@ -230,9 +230,15 @@ class MLMarketRegimeDetector:
         """Engineer ML features from price data"""
         features = {}
 
+        # Handle both uppercase and lowercase column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        high_col = 'High' if 'High' in df.columns else 'high'
+        low_col = 'Low' if 'Low' in df.columns else 'low'
+        volume_col = 'Volume' if 'Volume' in df.columns else 'volume' if 'volume' in df.columns else None
+
         # Price momentum features
-        returns_5 = df['close'].pct_change(5).iloc[-1] * 100
-        returns_20 = df['close'].pct_change(20).iloc[-1] * 100
+        returns_5 = df[close_col].pct_change(5).iloc[-1] * 100
+        returns_20 = df[close_col].pct_change(20).iloc[-1] * 100
         features['momentum_5'] = returns_5
         features['momentum_20'] = returns_20
 
@@ -240,7 +246,7 @@ class MLMarketRegimeDetector:
         recent = df.tail(20)
         x = np.arange(len(recent))
         if len(x) >= 2:
-            slope = np.polyfit(x, recent['close'].values, 1)[0]
+            slope = np.polyfit(x, recent[close_col].values, 1)[0]
             features['trend_slope'] = slope
         else:
             features['trend_slope'] = 0
@@ -254,16 +260,16 @@ class MLMarketRegimeDetector:
             features['atr_ratio'] = 1
 
         # Volume features
-        if 'volume' in df.columns:
-            vol_current = df['volume'].iloc[-1]
-            vol_ma = df['volume'].tail(20).mean()
+        if volume_col:
+            vol_current = df[volume_col].iloc[-1]
+            vol_ma = df[volume_col].tail(20).mean()
             features['volume_ratio'] = vol_current / vol_ma if vol_ma > 0 else 1
         else:
             features['volume_ratio'] = 1
 
         # Range features
-        recent_range = (recent['high'] - recent['low']).mean()
-        close_position = (recent['close'].iloc[-1] - recent['low'].min()) / (recent['high'].max() - recent['low'].min()) if (recent['high'].max() - recent['low'].min()) > 0 else 0.5
+        recent_range = (recent[high_col] - recent[low_col]).mean()
+        close_position = (recent[close_col].iloc[-1] - recent[low_col].min()) / (recent[high_col].max() - recent[low_col].min()) if (recent[high_col].max() - recent[low_col].min()) > 0 else 0.5
         features['range_position'] = close_position
 
         # RSI
@@ -831,14 +837,19 @@ class MLMarketRegimeDetector:
         chart_indicators: Optional[Dict]
     ) -> Dict:
         """Calculate major and near support/resistance levels"""
-        current_price = df['close'].iloc[-1]
+        # Handle both uppercase and lowercase column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        high_col = 'High' if 'High' in df.columns else 'high'
+        low_col = 'Low' if 'Low' in df.columns else 'low'
+
+        current_price = df[close_col].iloc[-1]
 
         supports = []
         resistances = []
 
         # 1. From price action (swing highs/lows)
-        highs = df['high'].rolling(window=10).max()
-        lows = df['low'].rolling(window=10).min()
+        highs = df[high_col].rolling(window=10).max()
+        lows = df[low_col].rolling(window=10).min()
 
         # Recent swing levels
         for i in range(-50, -1):
@@ -880,7 +891,7 @@ class MLMarketRegimeDetector:
         resistances = sorted([r for r in resistances if r > current_price])[:5]
 
         # Classify major vs near
-        atr = df['high'] - df['low']
+        atr = df[high_col] - df[low_col]
         avg_atr = atr.tail(14).mean()
 
         near_supports = [s for s in supports if (current_price - s) < avg_atr * 2]
