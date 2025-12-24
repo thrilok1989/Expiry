@@ -2119,6 +2119,79 @@ with tab3:
         # Extract institutional levels
         institutional_levels = integrator.extract_institutional_levels(comprehensive_data)
 
+        # DEBUG: Show data source status
+        with st.expander("🔍 Debug: Data Sources Status", expanded=False):
+            st.markdown("**Session State Check:**")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Check nifty_screener_data
+                if 'nifty_screener_data' in st.session_state:
+                    screener = st.session_state.nifty_screener_data
+                    st.write("✅ NIFTY Screener Data exists")
+
+                    if isinstance(screener, dict):
+                        if 'oi_pcr_metrics' in screener:
+                            oi = screener['oi_pcr_metrics']
+                            st.write(f"  ✅ OI Walls: PUT={oi.get('max_pe_strike')}, CALL={oi.get('max_ce_strike')}")
+                        else:
+                            st.write("  ❌ OI metrics missing")
+
+                        if 'gamma_exposure' in screener and 'gamma_walls' in screener.get('gamma_exposure', {}):
+                            walls = screener['gamma_exposure']['gamma_walls']
+                            st.write(f"  ✅ GEX Walls: {len(walls)} walls found")
+                        else:
+                            st.write("  ❌ GEX data missing")
+
+                        if 'vob_signals' in screener:
+                            vob = screener['vob_signals']
+                            st.write(f"  ✅ VOB: {len(vob) if vob else 0} signals")
+                        else:
+                            st.write("  ❌ VOB missing")
+                    else:
+                        st.write("  ⚠️ Wrong data type")
+                else:
+                    st.write("❌ NIFTY Screener Data NOT in session state")
+                    st.caption("👉 Visit Tab 8 (NIFTY Option Screener) first!")
+
+            with col2:
+                # Check HTF S/R
+                if 'htf_nearest_support' in st.session_state:
+                    htf_sup = st.session_state.htf_nearest_support
+                    if isinstance(htf_sup, dict):
+                        st.write(f"✅ HTF Support: ₹{htf_sup.get('price')} ({htf_sup.get('timeframe')})")
+                    else:
+                        st.write("✅ HTF Support exists")
+                else:
+                    st.write("❌ HTF Support missing")
+                    st.caption("👉 Visit Tab 7 (Advanced Chart) first!")
+
+                if 'htf_nearest_resistance' in st.session_state:
+                    htf_res = st.session_state.htf_nearest_resistance
+                    if isinstance(htf_res, dict):
+                        st.write(f"✅ HTF Resistance: ₹{htf_res.get('price')} ({htf_res.get('timeframe')})")
+                    else:
+                        st.write("✅ HTF Resistance exists")
+                else:
+                    st.write("❌ HTF Resistance missing")
+
+                # Check current price
+                if 'nifty_spot_price' in st.session_state:
+                    st.write(f"✅ Current Price: ₹{st.session_state.nifty_spot_price}")
+                else:
+                    st.write("❌ Current Price missing")
+
+            st.divider()
+            st.markdown("**Extracted Levels:**")
+            st.write(f"Support levels found: {len(institutional_levels.get('support', []))}")
+            st.write(f"Resistance levels found: {len(institutional_levels.get('resistance', []))}")
+
+            if institutional_levels.get('support'):
+                st.write("Support details:", institutional_levels['support'])
+            if institutional_levels.get('resistance'):
+                st.write("Resistance details:", institutional_levels['resistance'])
+
         # Get current price
         current_price = nifty_data['spot_price']
 
