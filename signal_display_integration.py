@@ -14,8 +14,6 @@ import logging
 from src.enhanced_signal_generator import EnhancedSignalGenerator, TradingSignal
 from src.xgboost_ml_analyzer import XGBoostMLAnalyzer
 from src.telegram_signal_manager import TelegramSignalManager
-from src.collapsible_signal_ui import display_collapsible_trading_signal
-from src.sr_integration import get_sr_data_for_signal_display, display_sr_trend_summary
 
 logger = logging.getLogger(__name__)
 
@@ -560,6 +558,9 @@ def display_final_assessment(
 
     # Extract features for S/R tracker
     try:
+        # Lazy import to avoid circular dependencies
+        from src.sr_integration import get_sr_data_for_signal_display, display_sr_trend_summary
+
         features_for_sr = {
             'price_change_1': 0,
             'price_change_5': 0,
