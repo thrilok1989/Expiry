@@ -4,6 +4,37 @@
 
 ---
 
+## 📑 TAB REFERENCE GUIDE
+
+**Where Data Comes From:**
+
+```
+Tab 1: 🌟 Overall Market Sentiment
+Tab 2: 🎯 Trade Setup
+Tab 3: 📊 Active Signals (ML Entry Finder displayed here)
+Tab 4: 📈 Positions
+Tab 5: 🎲 Bias Analysis Pro
+Tab 6: 🔍 Option Chain Analysis
+Tab 7: 📉 Advanced Chart Analysis
+       └─ HTF S/R (Multi-timeframe pivots)
+Tab 8: 🎯 NIFTY Option Screener v7.0 ⭐ PRIMARY DATA SOURCE
+       ├─ OI Walls (Max PUT/CALL OI)
+       ├─ GEX Walls (Gamma Exposure)
+       ├─ OI PCR (Put-Call Ratio)
+       ├─ Max Pain
+       ├─ Depth Analysis
+       ├─ VOB (Volume Order Blocks)
+       └─ NIFTY Futures Analysis
+Tab 9: 🌐 Enhanced Market Data
+Tab 10: 🤖 MASTER AI ANALYSIS
+Tab 11: 🔬 Advanced Analytics
+Tab 12: 📜 Signal History & Performance
+```
+
+**IMPORTANT**: All option chain data (OI, GEX, depth, PCR, expiry data) is in **Tab 8: NIFTY Option Screener v7.0**, NOT Tab 6.
+
+---
+
 ## 🔍 STEP 1: DATA COLLECTION FROM 5 INSTITUTIONAL SOURCES
 
 The system collects S/R levels from multiple sources in **PRIORITY ORDER**:
@@ -337,22 +368,20 @@ Resistance at ₹24,550: "Distance: 50 pts above"
 
 ### **Data Collection**
 ```
-Tab 6: Option Chain
+Tab 8: NIFTY Option Screener v7.0
 → Max PUT OI: ₹24,450 (10,000 OI)
 → Max CALL OI: ₹24,550 (12,000 OI)
-
-Tab 8: NIFTY Screener
 → GEX Wall: ₹24,400 (high gamma)
 → GEX Wall: ₹24,600 (high gamma)
+→ OI PCR: 1.15
+→ Max Pain: ₹24,500
+→ Depth Analysis: Available
+→ VOB: Major ₹24,430 (3x volume), Minor ₹24,350
 
-Tab 7: HTF S/R
-→ 15min pivot low: ₹24,420
-→ 15min pivot high: ₹24,580
-→ 5min pivot low: ₹24,470
-
-Tab 8: VOB
-→ Major VOB: ₹24,430 (3x volume)
-→ Minor VOB: ₹24,350 (1.5x volume)
+Tab 7: Advanced Chart Analysis
+→ HTF 15min pivot low: ₹24,420
+→ HTF 15min pivot high: ₹24,580
+→ HTF 5min pivot low: ₹24,470
 ```
 
 ### **Strength Assignment**
