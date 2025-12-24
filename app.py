@@ -1856,13 +1856,12 @@ st.divider()
 # ═══════════════════════════════════════════════════════════════════════
 
 # Native tabs - work seamlessly on mobile and desktop, no multiple clicks needed
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "🌟 Overall Market Sentiment",
     "🎯 Trade Setup",
     "📊 Active Signals",
     "📈 Positions",
     "🎲 Bias Analysis Pro",
-    "🔍 Option Chain Analysis",
     "📉 Advanced Chart Analysis",
     "🎯 NIFTY Option Screener v7.0",
     "🌐 Enhanced Market Data",
@@ -2753,27 +2752,10 @@ with tab5:
         """)
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 6: OPTION CHAIN ANALYSIS (Nifty Option Screener v7.0)
+# TAB 6: ADVANCED CHART ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab6:
-    st.header("🔍 Option Chain Analysis")
-    st.info("📌 The NIFTY Option Screener v7.0 has been moved to **Tab 8** for better organization.")
-    st.markdown("""
-    ### Available in Tab 8:
-    - 🎯 NIFTY Option Screener v7.0
-    - 100% SELLER'S PERSPECTIVE
-    - ATM BIAS ANALYZER
-    - MOMENT DETECTOR
-    - EXPIRY SPIKE DETECTOR
-    - ENHANCED OI/PCR ANALYTICS
-    """)
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 7: ADVANCED CHART ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════
-
-with tab7:
     st.header("📈 Advanced Chart Analysis")
     st.caption("TradingView-style Chart with Advanced Indicators: Volume Bars, Volume Order Blocks, HTF Support/Resistance (3min, 5min, 10min, 15min levels), Volume Footprint (1D timeframe, 10 bins, Dynamic POC), Ultimate RSI, OM Indicator (Order Flow & Momentum), Advanced Price Action (BOS, CHOCH, Fibonacci, Geometric Patterns)")
 
@@ -4558,10 +4540,10 @@ with tab7:
         """)
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 8: NIFTY OPTION SCREENER V7.0
+# TAB 7: NIFTY OPTION SCREENER V7.0
 # ═══════════════════════════════════════════════════════════════════════
 
-with tab8:
+with tab7:
     st.header("🎯 NIFTY Option Screener v7.0")
     st.caption("100% SELLER'S PERSPECTIVE + ATM BIAS ANALYZER + MOMENT DETECTOR + EXPIRY SPIKE DETECTOR + ENHANCED OI/PCR ANALYTICS")
 
@@ -4577,10 +4559,10 @@ with tab8:
         st.exception(e)
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 9: ENHANCED MARKET DATA
+# TAB 8: ENHANCED MARKET DATA
 # ═══════════════════════════════════════════════════════════════════════
 
-with tab9:
+with tab8:
     st.header("🌐 Enhanced Market Data Analysis")
     st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
@@ -4657,10 +4639,10 @@ with tab9:
         """)
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 10: MASTER AI ANALYSIS
+# TAB 9: MASTER AI ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════
 
-with tab10:
+with tab9:
     # Add button to open in new tab
     st.markdown("""
     <div style="background-color: #1f77b4; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
@@ -4769,10 +4751,10 @@ with tab10:
             """)
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 11: ADVANCED ANALYTICS
+# TAB 10: ADVANCED ANALYTICS
 # ═══════════════════════════════════════════════════════════════════════
 
-with tab11:
+with tab10:
     # Add button to open in new tab
     st.markdown("""
     <div style="background-color: #9c27b0; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
@@ -4848,10 +4830,10 @@ with tab11:
         st.code(traceback.format_exc())
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 12: SIGNAL HISTORY & PERFORMANCE
+# TAB 11: SIGNAL HISTORY & PERFORMANCE
 # ═══════════════════════════════════════════════════════════════════════
 
-with tab12:
+with tab11:
     try:
         from signal_tracker import display_signal_history_tab, update_active_signals
 
