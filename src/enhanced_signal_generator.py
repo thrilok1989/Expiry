@@ -9,11 +9,6 @@ Generates 5 types of trading signals:
 5. Bias Change Signal (sentiment shift)
 
 Integrates all 146 XGBoost features for maximum accuracy.
-
-PHASE 4 ENHANCEMENT:
-- Stop-loss based on actual support/resistance levels (not percentage)
-- Dynamic tracking of support/resistance changes
-- Auto-generate exit signals when scenario changes
 """
 
 import pandas as pd
@@ -22,16 +17,6 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-
-try:
-    from src.dynamic_stoploss_tracker import (
-        DynamicStopLossTracker,
-        get_nearest_support_resistance
-    )
-    DYNAMIC_SL_AVAILABLE = True
-except ImportError:
-    DYNAMIC_SL_AVAILABLE = False
-    logging.warning("Dynamic stop-loss tracker not available")
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +33,6 @@ class TradingSignal:
     entry_range_low: Optional[float] = None  # Entry zone low
     entry_range_high: Optional[float] = None  # Entry zone high
     stop_loss: Optional[float] = None  # SL price
-    stop_loss_reason: Optional[str] = None  # Why this SL level (e.g., "Below VOB Support 23450")
     target_1: Optional[float] = None  # First target
     target_2: Optional[float] = None  # Second target
     target_3: Optional[float] = None  # Third target
@@ -62,19 +46,10 @@ class TradingSignal:
     reason: str = ""  # Why this signal was generated
     market_regime: str = ""  # Current market regime
     timestamp: datetime = None  # Signal generation time
-    # PHASE 4: Support/Resistance tracking
-    support_level: Optional[float] = None  # Support level used for SL
-    support_type: Optional[str] = None  # Type of support (VOB/HTF)
-    resistance_level: Optional[float] = None  # Resistance level
-    resistance_type: Optional[str] = None  # Type of resistance (VOB/HTF)
-    signal_id: Optional[str] = None  # Unique signal ID for tracking
 
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now()
-        if self.signal_id is None:
-            # Generate unique signal ID
-            self.signal_id = f"{self.direction}_{int(self.timestamp.timestamp())}"
 
 
 class EnhancedSignalGenerator:
@@ -104,21 +79,13 @@ class EnhancedSignalGenerator:
         self.last_direction = "NEUTRAL"
         self.last_bias = "NEUTRAL"
 
-        # Initialize dynamic stop-loss tracker
-        if DYNAMIC_SL_AVAILABLE:
-            self.sl_tracker = DynamicStopLossTracker(change_threshold_pct=0.5)
-        else:
-            self.sl_tracker = None
-
     def generate_signal(
         self,
         xgboost_result: any,
         features_df: pd.DataFrame,
         current_price: float,
         option_chain: Optional[Dict] = None,
-        atm_strike: Optional[float] = None,
-        vob_data: Optional[Dict] = None,
-        htf_sr_data: Optional[Dict] = None
+        atm_strike: Optional[float] = None
     ) -> TradingSignal:
         """
         Generate trading signal from XGBoost prediction and features
@@ -129,8 +96,6 @@ class EnhancedSignalGenerator:
             current_price: Current spot price
             option_chain: Option chain data for premium calculation
             atm_strike: ATM strike price
-            vob_data: Volume Order Block data (for S/R levels)
-            htf_sr_data: Higher Timeframe Support/Resistance data
 
         Returns:
             TradingSignal with complete details
@@ -138,37 +103,6 @@ class EnhancedSignalGenerator:
         try:
             # Extract feature values
             features = features_df.iloc[0].to_dict() if len(features_df) > 0 else {}
-
-            # PHASE 4: Check for exit signals from support/resistance changes FIRST
-            if self.sl_tracker and self.last_signal and self.last_signal.signal_type == "ENTRY":
-                # Get current support/resistance levels
-                nearest_support, nearest_resistance = None, None
-                if DYNAMIC_SL_AVAILABLE:
-                    nearest_support, nearest_resistance = get_nearest_support_resistance(
-                        vob_data, htf_sr_data, current_price
-                    )
-
-                # Check if scenario changed (S/R levels shifted)
-                if nearest_support and nearest_resistance and hasattr(self.last_signal, 'signal_id'):
-                    exit_result = self.sl_tracker.check_for_exit_signal(
-                        self.last_signal.signal_id,
-                        nearest_support,
-                        nearest_resistance,
-                        current_price
-                    )
-
-                    if exit_result.should_exit and exit_result.scenario_changed:
-                        # Generate exit signal due to scenario change
-                        logger.warning(f"Scenario changed! {exit_result.reason}")
-                        return self._generate_exit_signal(
-                            self.last_direction,
-                            exit_result.confidence,
-                            0,  # confluence not relevant for exit
-                            0,  # total_indicators not relevant
-                            current_price,
-                            features,
-                            exit_reason=exit_result.reason
-                        )
 
             # 1. Analyze XGBoost prediction
             xgb_prediction = xgboost_result.prediction
@@ -207,9 +141,7 @@ class EnhancedSignalGenerator:
                     current_price,
                     features,
                     option_chain,
-                    atm_strike,
-                    vob_data,
-                    htf_sr_data
+                    atm_strike
                 )
             elif signal_type == "EXIT":
                 return self._generate_exit_signal(
@@ -446,9 +378,7 @@ class EnhancedSignalGenerator:
         current_price: float,
         features: Dict,
         option_chain: Optional[Dict],
-        atm_strike: Optional[float],
-        vob_data: Optional[Dict] = None,
-        htf_sr_data: Optional[Dict] = None
+        atm_strike: Optional[float]
     ) -> TradingSignal:
         """Generate ENTRY signal with CALL/PUT details"""
 
@@ -471,17 +401,8 @@ class EnhancedSignalGenerator:
             current_price
         )
 
-        # PHASE 4: Get nearest support/resistance levels
-        nearest_support, nearest_resistance = None, None
-        if DYNAMIC_SL_AVAILABLE and vob_data and htf_sr_data:
-            nearest_support, nearest_resistance = get_nearest_support_resistance(
-                vob_data, htf_sr_data, current_price
-            )
-
-        # Calculate stop loss (support/resistance-based if available, else percentage-based)
-        stop_loss, stop_loss_reason = self._calculate_stop_loss(
-            entry_price, direction, features, nearest_support, nearest_resistance, current_price
-        )
+        # Calculate stop loss
+        stop_loss = self._calculate_stop_loss(entry_price, direction, features)
 
         # Calculate targets
         target_1, target_2, target_3 = self._calculate_targets(entry_price, direction, features)
@@ -513,7 +434,6 @@ class EnhancedSignalGenerator:
             entry_range_low=entry_low,
             entry_range_high=entry_high,
             stop_loss=stop_loss,
-            stop_loss_reason=stop_loss_reason,
             target_1=target_1,
             target_2=target_2,
             target_3=target_3,
@@ -525,22 +445,8 @@ class EnhancedSignalGenerator:
             expected_return=0.0,  # Will be calculated
             risk_reward_ratio=rr_ratio,
             reason=reason,
-            market_regime=market_regime,
-            # PHASE 4: Support/Resistance tracking
-            support_level=nearest_support.get('price') if nearest_support else None,
-            support_type=nearest_support.get('type') if nearest_support else None,
-            resistance_level=nearest_resistance.get('price') if nearest_resistance else None,
-            resistance_type=nearest_resistance.get('type') if nearest_resistance else None
+            market_regime=market_regime
         )
-
-        # PHASE 4: Store support/resistance levels in tracker for monitoring
-        if self.sl_tracker and nearest_support and nearest_resistance:
-            self.sl_tracker.store_signal_levels(
-                signal.signal_id,
-                direction,
-                nearest_support,
-                nearest_resistance
-            )
 
         # Update state
         self.last_signal = signal
@@ -584,30 +490,15 @@ class EnhancedSignalGenerator:
         self,
         entry_price: float,
         direction: str,
-        features: Dict,
-        nearest_support: Optional[Dict] = None,
-        nearest_resistance: Optional[Dict] = None,
-        current_price: float = 0
-    ) -> Tuple[float, str]:
+        features: Dict
+    ) -> float:
         """
-        Calculate stop loss based on support/resistance levels (PHASE 4)
-        Falls back to ATR/volatility-based if S/R not available
+        Calculate stop loss based on ATR and volatility
 
         Returns:
-            (stop_loss_price, stop_loss_reason) tuple
+            Stop loss price
         """
-        # PHASE 4: Use support/resistance-based stop-loss if available
-        if self.sl_tracker and nearest_support and nearest_resistance and current_price > 0:
-            stop_loss, reason = self.sl_tracker.calculate_sr_based_stoploss(
-                direction,
-                nearest_support,
-                nearest_resistance,
-                current_price,
-                buffer_points=20.0
-            )
-            return stop_loss, reason
-
-        # Fallback: Use ATR for dynamic stop loss (percentage-based)
+        # Use ATR for dynamic stop loss
         atr_pct = features.get('atr_pct', 1.5)
 
         # Adjust SL based on volatility regime
@@ -621,9 +512,8 @@ class EnhancedSignalGenerator:
             sl_pct = 0.20
 
         stop_loss = entry_price * (1 - sl_pct)
-        reason = f"Percentage-based ({sl_pct*100:.0f}% of entry, VIX={vix_level:.1f})"
 
-        return round(stop_loss, 2), reason
+        return round(stop_loss, 2)
 
     def _calculate_targets(
         self,
@@ -658,16 +548,11 @@ class EnhancedSignalGenerator:
         confluence: int,
         total_indicators: int,
         current_price: float,
-        features: Dict,
-        exit_reason: Optional[str] = None
+        features: Dict
     ) -> TradingSignal:
         """Generate EXIT signal"""
 
-        # Use provided exit reason or generate default
-        if exit_reason:
-            reason = f"⚠️ SCENARIO CHANGED - {exit_reason}"
-        else:
-            reason = f"Exit conditions met: Confidence dropped to {confidence:.1f}%, Confluence {confluence}/{total_indicators}"
+        reason = f"Exit conditions met: Confidence dropped to {confidence:.1f}%, Confluence {confluence}/{total_indicators}"
 
         signal = TradingSignal(
             signal_type="EXIT",
@@ -679,10 +564,6 @@ class EnhancedSignalGenerator:
             reason=reason,
             market_regime=self._get_market_regime_description(features)
         )
-
-        # PHASE 4: Close signal in tracker
-        if self.sl_tracker and self.last_signal and hasattr(self.last_signal, 'signal_id'):
-            self.sl_tracker.close_signal(self.last_signal.signal_id)
 
         # Clear position state
         self.last_signal = signal
