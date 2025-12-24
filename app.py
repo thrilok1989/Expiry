@@ -42,11 +42,20 @@ from ai_tab_integration import render_master_ai_analysis_tab, render_advanced_an
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════
+# GET SPOT PRICE FOR BROWSER TAB TITLE
+# ═══════════════════════════════════════════════════════════════════════
+# Get spot price from session state or cache for dynamic page title
+page_title = "NIFTY/SENSEX Trader"
+if 'last_spot_price' in st.session_state and st.session_state.last_spot_price:
+    spot = st.session_state.last_spot_price
+    page_title = f"NIFTY ₹{spot:,.2f} | Trader"
+
+# ═══════════════════════════════════════════════════════════════════════
 # PAGE CONFIG & PERFORMANCE OPTIMIZATION
 # ═══════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="NIFTY/SENSEX Trader",
+    page_title=page_title,
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -659,25 +668,13 @@ if not nifty_data or not nifty_data.get('success'):
     }
     # Note: We don't stop() here - let the app continue and show what it can
 
-# ═══════════════════════════════════════════════════════════════════════
-# UPDATE BROWSER TAB TITLE WITH SPOT PRICE
-# ═══════════════════════════════════════════════════════════════════════
-# Dynamically update browser tab title to show NIFTY spot price for easy monitoring
+# Store spot price in session state for browser tab title (used at top of script)
 if nifty_data and nifty_data.get('success') and nifty_data.get('spot_price'):
-    spot_price = nifty_data['spot_price']
-    # Use JavaScript to update the browser tab title
-    st.markdown(f"""
-    <script>
-        document.title = "NIFTY ₹{spot_price:,.2f} | Trader";
-    </script>
-    """, unsafe_allow_html=True)
+    st.session_state.last_spot_price = nifty_data['spot_price']
 else:
-    # Fallback title when spot price is not available
-    st.markdown("""
-    <script>
-        document.title = "NIFTY/SENSEX Trader";
-    </script>
-    """, unsafe_allow_html=True)
+    # Clear spot price if data fetch failed
+    if 'last_spot_price' in st.session_state:
+        del st.session_state.last_spot_price
 
 # ═══════════════════════════════════════════════════════════════════════
 # CACHED CHART DATA FETCHER (Performance Optimization)
