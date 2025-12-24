@@ -129,6 +129,10 @@ VOB_TOUCH_TOLERANCE = 5  # Points
 
 # Auto-refresh interval: 1 minute (60 seconds)
 AUTO_REFRESH_INTERVAL = 60  # seconds (1 minute - optimized for fast clicks)
+
+# Spot price refresh interval: 10 seconds for real-time updates
+SPOT_PRICE_REFRESH_INTERVAL = 10  # seconds (10 seconds for spot price only)
+
 DEMO_MODE = False
 
 APP_TITLE = "🎯 NIFTY/SENSEX Manual Trader"
