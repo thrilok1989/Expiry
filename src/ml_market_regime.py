@@ -277,7 +277,7 @@ class MLMarketRegimeDetector:
             features['rsi'] = df['rsi'].iloc[-1]
         else:
             # Calculate simple RSI
-            delta = df['close'].diff()
+            delta = df[close_col].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss if (loss != 0).all() else pd.Series([1]*len(gain))
@@ -294,9 +294,14 @@ class MLMarketRegimeDetector:
         if len(df) < period + 1:
             return 25  # Neutral
 
-        high = df['high']
-        low = df['low']
-        close = df['close']
+        # Handle both uppercase and lowercase column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        high_col = 'High' if 'High' in df.columns else 'high'
+        low_col = 'Low' if 'Low' in df.columns else 'low'
+
+        high = df[high_col]
+        low = df[low_col]
+        close = df[close_col]
 
         # True Range
         tr1 = high - low
@@ -404,7 +409,9 @@ class MLMarketRegimeDetector:
         strength += min(momentum * 5, 25)
 
         # Consistency contribution
-        recent_returns = df['close'].pct_change().tail(10)
+        # Handle both uppercase and lowercase column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+        recent_returns = df[close_col].pct_change().tail(10)
         consistency = (recent_returns > 0).sum() / len(recent_returns) * 25
         strength += consistency if features.get('momentum_5', 0) > 0 else (25 - consistency)
 
