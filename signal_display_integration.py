@@ -14,6 +14,8 @@ import logging
 from src.enhanced_signal_generator import EnhancedSignalGenerator, TradingSignal
 from src.xgboost_ml_analyzer import XGBoostMLAnalyzer
 from src.telegram_signal_manager import TelegramSignalManager
+from src.collapsible_signal_ui import display_collapsible_trading_signal
+from src.sr_integration import get_sr_data_for_signal_display, display_sr_trend_summary
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +553,65 @@ def display_final_assessment(
                 st.error(f"**🕒 Session Intelligence (Time Context):**\n\nSession: {session}  \nTime: {current_time.strftime('%I:%M %p IST')}  \n💡 {session_advice}")
             else:
                 st.info(f"**🕒 Session Intelligence (Time Context):**\n\nSession: {session}  \nTime: {current_time.strftime('%I:%M %p IST')}  \n💡 {session_advice}")
+
+    # --- NEW: S/R Strength Trends (ML-based Analysis) ---
+    st.markdown("---")
+    st.markdown("### 🔍 S/R Strength Trends (ML Analysis)")
+
+    # Extract features for S/R tracker
+    try:
+        features_for_sr = {
+            'price_change_1': 0,
+            'price_change_5': 0,
+            'price_change_20': 0,
+            'volume_concentration': 0,
+            'volume_buy_sell_ratio': 1.0,
+            'volume_imbalance': 0,
+            'delta_absorption': 0,
+            'institutional_sweep': 0,
+            'delta_spike': 0,
+            'cvd_bias': 0,
+            'orderflow_strength': 0,
+            'gamma_squeeze_probability': 0,
+            'gamma_cluster_concentration': 0,
+            'gamma_flip': 0,
+            'market_depth_order_imbalance': 0,
+            'market_depth_spread': 0,
+            'market_depth_pressure': 0,
+            'oi_buildup_pattern': 0,
+            'oi_acceleration': 0,
+            'atm_oi_bias': 0,
+            'trend_strength': 0,
+            'regime_confidence': 50,
+            'volatility_state': 0,
+            'institutional_confidence': 50,
+            'retail_confidence': 50,
+            'smart_money': 0,
+            'liquidity_gravity_strength': 0,
+            'liquidity_hvn_count': 0,
+            'liquidity_sentiment': 0,
+            'is_expiry_week': 1 if days_to_expiry <= 7 else 0,
+            'expiry_spike_detected': 0,
+            'htf_nearest_support_distance_pct': abs(current_price - support_level) / current_price * 100 if current_price > 0 else 10,
+            'htf_nearest_resistance_distance_pct': abs(resistance_level - current_price) / current_price * 100 if current_price > 0 else 10,
+            'vob_major_support_distance_pct': abs(current_price - support_level) / current_price * 100 if current_price > 0 else 10,
+            'vob_major_resistance_distance_pct': abs(resistance_level - current_price) / current_price * 100 if current_price > 0 else 10,
+        }
+
+        # Get S/R trend data
+        sr_trends, sr_transitions = get_sr_data_for_signal_display(
+            features_for_sr,
+            support_level,
+            resistance_level,
+            current_price
+        )
+
+        # Display S/R trend summary
+        display_sr_trend_summary(support_level, resistance_level)
+
+    except Exception as e:
+        logger.error(f"Error displaying S/R trends: {e}", exc_info=True)
+        st.info("S/R trend analysis initializing... (needs historical data)")
 
     # --- Comprehensive Liquidity & Support/Resistance Levels ---
     st.markdown("### 📊 Comprehensive Liquidity Analysis")
