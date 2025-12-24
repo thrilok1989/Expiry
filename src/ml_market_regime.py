@@ -26,6 +26,8 @@ class MLMarketRegimeResult:
     optimal_timeframe: str  # "Scalp", "Intraday", "Swing", "Position"
     feature_importance: Dict[str, float]
     signals: List[str]
+    support_resistance: Dict = None  # Support/Resistance levels (major and near)
+    entry_exit_signals: Dict = None  # Entry/Exit signals with levels
 
 
 @dataclass
@@ -71,16 +73,29 @@ class MLMarketRegimeDetector:
         df: pd.DataFrame,
         cvd_result: Optional[any] = None,
         volatility_result: Optional[any] = None,
-        oi_trap_result: Optional[any] = None
+        oi_trap_result: Optional[any] = None,
+        option_chain_data: Optional[Dict] = None,
+        sector_rotation_data: Optional[Dict] = None,
+        bias_analysis_data: Optional[Dict] = None,
+        india_vix_data: Optional[Dict] = None,
+        gamma_squeeze_data: Optional[Dict] = None,
+        advanced_chart_indicators: Optional[Dict] = None
     ) -> MLMarketRegimeResult:
         """
         Detect market regime using ML-style feature engineering
+        Now uses ALL available data sources for comprehensive analysis
 
         Args:
             df: OHLCV dataframe with indicators
             cvd_result: CVD analysis result
             volatility_result: Volatility regime result
             oi_trap_result: OI trap detection result
+            option_chain_data: Option chain analysis data (PCR, max pain, OI, gamma)
+            sector_rotation_data: Sector rotation analysis (breadth, rotation bias)
+            bias_analysis_data: Bias analysis from all 8 indicators
+            india_vix_data: India VIX sentiment data
+            gamma_squeeze_data: Gamma squeeze risk analysis
+            advanced_chart_indicators: All indicators from Advanced Chart Analysis
 
         Returns:
             MLMarketRegimeResult with regime classification
@@ -90,10 +105,40 @@ class MLMarketRegimeDetector:
         if len(df) < 50:
             return self._default_result()
 
-        # Feature Engineering
+        # Feature Engineering (Base Features)
         features = self._engineer_features(df)
 
-        # Calculate regime probabilities using features
+        # Add Option Chain Features
+        if option_chain_data and option_chain_data.get('success'):
+            option_features = self._extract_option_chain_features(option_chain_data)
+            features.update(option_features)
+
+        # Add Sector Rotation Features
+        if sector_rotation_data and sector_rotation_data.get('success'):
+            sector_features = self._extract_sector_rotation_features(sector_rotation_data)
+            features.update(sector_features)
+
+        # Add Bias Analysis Features
+        if bias_analysis_data and bias_analysis_data.get('success'):
+            bias_features = self._extract_bias_analysis_features(bias_analysis_data)
+            features.update(bias_features)
+
+        # Add India VIX Features
+        if india_vix_data and india_vix_data.get('success'):
+            vix_features = self._extract_vix_features(india_vix_data)
+            features.update(vix_features)
+
+        # Add Gamma Squeeze Features
+        if gamma_squeeze_data and gamma_squeeze_data.get('success'):
+            gamma_features = self._extract_gamma_features(gamma_squeeze_data)
+            features.update(gamma_features)
+
+        # Add Advanced Chart Indicator Features
+        if advanced_chart_indicators:
+            chart_features = self._extract_chart_indicator_features(advanced_chart_indicators)
+            features.update(chart_features)
+
+        # Calculate regime probabilities using ALL features
         regime_probs = self._calculate_regime_probabilities(features, df)
 
         # Determine primary regime
@@ -114,6 +159,22 @@ class MLMarketRegimeDetector:
 
         if oi_trap_result and oi_trap_result.trap_detected:
             signals.append(f"⚠️ {oi_trap_result.trap_type.value} detected")
+
+        # Add signals from new data sources
+        if option_chain_data and option_chain_data.get('success'):
+            signals.extend(self._generate_option_chain_signals(option_chain_data))
+
+        if sector_rotation_data and sector_rotation_data.get('success'):
+            signals.extend(self._generate_sector_rotation_signals(sector_rotation_data))
+
+        if bias_analysis_data and bias_analysis_data.get('success'):
+            signals.extend(self._generate_bias_analysis_signals(bias_analysis_data))
+
+        if india_vix_data and india_vix_data.get('success'):
+            signals.extend(self._generate_vix_signals(india_vix_data))
+
+        if gamma_squeeze_data and gamma_squeeze_data.get('success'):
+            signals.extend(self._generate_gamma_signals(gamma_squeeze_data))
 
         # Calculate trend strength
         trend_strength = self._calculate_trend_strength(df, features)
@@ -140,6 +201,16 @@ class MLMarketRegimeDetector:
         # Generate signals
         signals.extend(self._generate_regime_signals(regime, confidence, features))
 
+        # Calculate Support/Resistance Levels
+        support_resistance = self._calculate_support_resistance_levels(
+            df, features, option_chain_data, advanced_chart_indicators
+        )
+
+        # Generate Entry/Exit Signals
+        entry_exit_signals = self._generate_entry_exit_signals(
+            regime, confidence, trend_strength, features, support_resistance
+        )
+
         return MLMarketRegimeResult(
             regime=regime,
             confidence=confidence,
@@ -150,7 +221,9 @@ class MLMarketRegimeDetector:
             recommended_strategy=recommended_strategy,
             optimal_timeframe=optimal_timeframe,
             feature_importance=feature_importance,
-            signals=signals
+            signals=signals,
+            support_resistance=support_resistance,
+            entry_exit_signals=entry_exit_signals
         )
 
     def _engineer_features(self, df: pd.DataFrame) -> Dict[str, float]:
@@ -494,6 +567,440 @@ class MLMarketRegimeDetector:
 
         return signals
 
+    # =========================================================================
+    # NEW FEATURE EXTRACTION METHODS
+    # =========================================================================
+
+    def _extract_option_chain_features(self, option_data: Dict) -> Dict[str, float]:
+        """Extract features from option chain data"""
+        features = {}
+
+        # PCR features
+        features['pcr_value'] = option_data.get('pcr', 1.0)
+        features['pcr_bullish'] = 1.0 if features['pcr_value'] < 0.7 else 0.0
+        features['pcr_bearish'] = 1.0 if features['pcr_value'] > 1.3 else 0.0
+
+        # OI concentration
+        features['call_oi_concentration'] = option_data.get('call_oi_concentration', 0.0)
+        features['put_oi_concentration'] = option_data.get('put_oi_concentration', 0.0)
+
+        # Max Pain vs Spot
+        max_pain = option_data.get('max_pain', 0)
+        spot = option_data.get('spot', 0)
+        if spot > 0:
+            features['max_pain_distance'] = ((spot - max_pain) / spot) * 100
+        else:
+            features['max_pain_distance'] = 0
+
+        # Gamma exposure
+        features['total_gamma'] = option_data.get('total_gamma', 0)
+        features['call_gamma'] = option_data.get('total_call_gamma', 0)
+        features['put_gamma'] = option_data.get('total_put_gamma', 0)
+
+        return features
+
+    def _extract_sector_rotation_features(self, sector_data: Dict) -> Dict[str, float]:
+        """Extract features from sector rotation analysis"""
+        features = {}
+
+        # Sector breadth
+        features['sector_breadth'] = sector_data.get('sector_breadth', 50.0)
+        features['bullish_sectors'] = sector_data.get('bullish_sectors_count', 0)
+        features['bearish_sectors'] = sector_data.get('bearish_sectors_count', 0)
+
+        # Rotation bias score
+        rotation_bias = sector_data.get('rotation_bias', 'NEUTRAL')
+        if 'BULLISH' in rotation_bias:
+            features['rotation_score'] = sector_data.get('rotation_score', 50) / 100.0
+        elif 'BEARISH' in rotation_bias:
+            features['rotation_score'] = -sector_data.get('rotation_score', 50) / 100.0
+        else:
+            features['rotation_score'] = 0.0
+
+        # Leader/laggard spread
+        leaders = sector_data.get('leaders', [])
+        laggards = sector_data.get('laggards', [])
+        if leaders and laggards:
+            leader_pct = leaders[0].get('change_pct', 0)
+            laggard_pct = laggards[0].get('change_pct', 0)
+            features['leader_laggard_spread'] = leader_pct - laggard_pct
+        else:
+            features['leader_laggard_spread'] = 0.0
+
+        return features
+
+    def _extract_bias_analysis_features(self, bias_data: Dict) -> Dict[str, float]:
+        """Extract features from bias analysis (8 indicators)"""
+        features = {}
+
+        # Overall bias
+        overall_bias = bias_data.get('overall_bias', 'NEUTRAL')
+        features['bias_bullish'] = 1.0 if overall_bias == 'BULLISH' else 0.0
+        features['bias_bearish'] = 1.0 if overall_bias == 'BEARISH' else 0.0
+
+        # Confidence
+        features['bias_confidence'] = bias_data.get('overall_confidence', 50.0) / 100.0
+
+        # Indicator alignment
+        total_indicators = bias_data.get('total_indicators', 8)
+        bullish_count = bias_data.get('bullish_count', 0)
+        bearish_count = bias_data.get('bearish_count', 0)
+
+        if total_indicators > 0:
+            features['bias_alignment'] = (bullish_count - bearish_count) / total_indicators
+        else:
+            features['bias_alignment'] = 0.0
+
+        # Fast vs Slow divergence
+        features['fast_bull_pct'] = bias_data.get('fast_bull_pct', 50.0) / 100.0
+        features['fast_bear_pct'] = bias_data.get('fast_bear_pct', 50.0) / 100.0
+
+        return features
+
+    def _extract_vix_features(self, vix_data: Dict) -> Dict[str, float]:
+        """Extract features from India VIX"""
+        features = {}
+
+        # VIX value and sentiment
+        features['vix_value'] = vix_data.get('value', 15.0)
+        features['vix_score'] = vix_data.get('score', 0) / 100.0
+
+        # VIX regime
+        vix_sentiment = vix_data.get('sentiment', 'MODERATE')
+        if 'FEAR' in vix_sentiment:
+            features['vix_regime'] = -1.0
+        elif 'LOW' in vix_sentiment or 'COMPLACENCY' in vix_sentiment:
+            features['vix_regime'] = 1.0
+        else:
+            features['vix_regime'] = 0.0
+
+        return features
+
+    def _extract_gamma_features(self, gamma_data: Dict) -> Dict[str, float]:
+        """Extract features from gamma squeeze analysis"""
+        features = {}
+
+        # Gamma squeeze risk
+        squeeze_score = gamma_data.get('squeeze_score', 0)
+        features['gamma_squeeze_score'] = squeeze_score / 100.0
+
+        # Net gamma exposure
+        net_gamma = gamma_data.get('net_gamma', 0)
+        features['net_gamma_normalized'] = np.tanh(net_gamma / 1000000.0) if net_gamma != 0 else 0.0
+
+        # Gamma concentration
+        features['gamma_concentration'] = gamma_data.get('gamma_concentration', 0)
+
+        return features
+
+    def _extract_chart_indicator_features(self, chart_indicators: Dict) -> Dict[str, float]:
+        """Extract features from Advanced Chart indicators"""
+        features = {}
+
+        # Volume Order Blocks
+        if 'order_blocks' in chart_indicators:
+            ob_data = chart_indicators['order_blocks']
+            features['bullish_ob_count'] = len([b for b in ob_data.get('bullish_blocks', []) if b.get('active')])
+            features['bearish_ob_count'] = len([b for b in ob_data.get('bearish_blocks', []) if b.get('active')])
+
+        # Ultimate RSI
+        if 'rsi' in chart_indicators:
+            rsi_data = chart_indicators['rsi']
+            rsi_value = rsi_data.get('ultimate_rsi', pd.Series([50])).iloc[-1] if isinstance(rsi_data.get('ultimate_rsi'), pd.Series) else 50
+            features['ultimate_rsi'] = rsi_value
+            features['rsi_overbought'] = 1.0 if rsi_value > 70 else 0.0
+            features['rsi_oversold'] = 1.0 if rsi_value < 30 else 0.0
+
+        # Money Flow Profile
+        if 'money_flow_profile' in chart_indicators:
+            mfp_data = chart_indicators['money_flow_profile']
+            features['money_flow_bullish'] = mfp_data.get('bullish_pct', 50.0) / 100.0
+
+        # DeltaFlow Profile
+        if 'deltaflow_profile' in chart_indicators:
+            dfp_data = chart_indicators['deltaflow_profile']
+            features['deltaflow_sentiment'] = dfp_data.get('overall_delta', 0) / 100.0
+
+        # BOS/CHOCH signals
+        if 'bos' in chart_indicators:
+            bos_events = chart_indicators['bos']
+            recent_bos = bos_events[-5:] if len(bos_events) > 0 else []
+            bullish_bos = len([b for b in recent_bos if b.get('type') == 'BULLISH'])
+            bearish_bos = len([b for b in recent_bos if b.get('type') == 'BEARISH'])
+            features['bos_bias'] = (bullish_bos - bearish_bos) / max(len(recent_bos), 1)
+
+        return features
+
+    # =========================================================================
+    # NEW SIGNAL GENERATION METHODS
+    # =========================================================================
+
+    def _generate_option_chain_signals(self, option_data: Dict) -> List[str]:
+        """Generate signals from option chain data"""
+        signals = []
+
+        pcr = option_data.get('pcr', 1.0)
+        if pcr < 0.7:
+            signals.append(f"📊 PCR: {pcr:.2f} - Bullish (More Calls)")
+        elif pcr > 1.3:
+            signals.append(f"📊 PCR: {pcr:.2f} - Bearish (More Puts)")
+
+        max_pain = option_data.get('max_pain', 0)
+        spot = option_data.get('spot', 0)
+        if max_pain > 0 and spot > 0:
+            distance = ((spot - max_pain) / spot) * 100
+            if abs(distance) > 1:
+                direction = "above" if distance > 0 else "below"
+                signals.append(f"🎯 Max Pain: {max_pain:.0f} ({abs(distance):.1f}% {direction} spot)")
+
+        return signals
+
+    def _generate_sector_rotation_signals(self, sector_data: Dict) -> List[str]:
+        """Generate signals from sector rotation"""
+        signals = []
+
+        breadth = sector_data.get('sector_breadth', 50.0)
+        if breadth > 60:
+            signals.append(f"🌊 Sector Breadth: {breadth:.0f}% - Strong market breadth")
+        elif breadth < 40:
+            signals.append(f"🌊 Sector Breadth: {breadth:.0f}% - Weak market breadth")
+
+        rotation_bias = sector_data.get('rotation_bias', 'NEUTRAL')
+        if rotation_bias != 'NEUTRAL':
+            signals.append(f"🔄 Rotation: {rotation_bias}")
+
+        leaders = sector_data.get('leaders', [])
+        if leaders:
+            top_sector = leaders[0].get('sector', 'Unknown')
+            top_change = leaders[0].get('change_pct', 0)
+            signals.append(f"🥇 Leader: {top_sector} (+{top_change:.1f}%)")
+
+        return signals
+
+    def _generate_bias_analysis_signals(self, bias_data: Dict) -> List[str]:
+        """Generate signals from bias analysis"""
+        signals = []
+
+        overall_bias = bias_data.get('overall_bias', 'NEUTRAL')
+        confidence = bias_data.get('overall_confidence', 50.0)
+        bullish_count = bias_data.get('bullish_count', 0)
+        bearish_count = bias_data.get('bearish_count', 0)
+        total = bias_data.get('total_indicators', 8)
+
+        if overall_bias != 'NEUTRAL':
+            signals.append(f"📈 Bias: {overall_bias} ({confidence:.0f}% confidence)")
+            signals.append(f"📊 Indicators: {bullish_count}🟢 {bearish_count}🔴 of {total}")
+
+        return signals
+
+    def _generate_vix_signals(self, vix_data: Dict) -> List[str]:
+        """Generate signals from India VIX"""
+        signals = []
+
+        vix_value = vix_data.get('value', 15.0)
+        vix_sentiment = vix_data.get('sentiment', 'MODERATE')
+
+        signals.append(f"📊 India VIX: {vix_value:.2f} - {vix_sentiment}")
+
+        return signals
+
+    def _generate_gamma_signals(self, gamma_data: Dict) -> List[str]:
+        """Generate signals from gamma squeeze"""
+        signals = []
+
+        squeeze_risk = gamma_data.get('squeeze_risk', 'LOW')
+        squeeze_bias = gamma_data.get('squeeze_bias', 'NEUTRAL')
+
+        if squeeze_risk != 'LOW':
+            signals.append(f"⚡ Gamma Squeeze: {squeeze_risk} - {squeeze_bias}")
+            interpretation = gamma_data.get('interpretation', '')
+            if interpretation:
+                signals.append(f"   {interpretation}")
+
+        return signals
+
+    # =========================================================================
+    # SUPPORT/RESISTANCE CALCULATION
+    # =========================================================================
+
+    def _calculate_support_resistance_levels(
+        self,
+        df: pd.DataFrame,
+        features: Dict,
+        option_data: Optional[Dict],
+        chart_indicators: Optional[Dict]
+    ) -> Dict:
+        """Calculate major and near support/resistance levels"""
+        current_price = df['close'].iloc[-1]
+
+        supports = []
+        resistances = []
+
+        # 1. From price action (swing highs/lows)
+        highs = df['high'].rolling(window=10).max()
+        lows = df['low'].rolling(window=10).min()
+
+        # Recent swing levels
+        for i in range(-50, -1):
+            if i < -len(df):
+                break
+            price_high = highs.iloc[i]
+            price_low = lows.iloc[i]
+
+            if price_high < current_price and price_high not in resistances:
+                resistances.append(price_high)
+            if price_low > current_price and price_low not in supports:
+                supports.append(price_low)
+
+        # 2. From option chain (max pain, high OI strikes)
+        if option_data and option_data.get('success'):
+            max_pain = option_data.get('max_pain', 0)
+            if max_pain > 0:
+                if max_pain < current_price:
+                    supports.append(max_pain)
+                else:
+                    resistances.append(max_pain)
+
+        # 3. From order blocks
+        if chart_indicators and 'order_blocks' in chart_indicators:
+            ob_data = chart_indicators['order_blocks']
+
+            # Bullish OBs = Support
+            for block in ob_data.get('bullish_blocks', []):
+                if block.get('active'):
+                    supports.append(block['mid'])
+
+            # Bearish OBs = Resistance
+            for block in ob_data.get('bearish_blocks', []):
+                if block.get('active'):
+                    resistances.append(block['mid'])
+
+        # Sort and filter
+        supports = sorted([s for s in supports if s < current_price], reverse=True)[:5]
+        resistances = sorted([r for r in resistances if r > current_price])[:5]
+
+        # Classify major vs near
+        atr = df['high'] - df['low']
+        avg_atr = atr.tail(14).mean()
+
+        near_supports = [s for s in supports if (current_price - s) < avg_atr * 2]
+        major_supports = [s for s in supports if s not in near_supports]
+
+        near_resistances = [r for r in resistances if (r - current_price) < avg_atr * 2]
+        major_resistances = [r for r in resistances if r not in near_resistances]
+
+        return {
+            'current_price': current_price,
+            'major_support': major_supports[0] if major_supports else None,
+            'near_support': near_supports[0] if near_supports else None,
+            'major_resistance': major_resistances[0] if major_resistances else None,
+            'near_resistance': near_resistances[0] if near_resistances else None,
+            'all_supports': supports[:3],
+            'all_resistances': resistances[:3],
+            'atr': avg_atr
+        }
+
+    # =========================================================================
+    # ENTRY/EXIT SIGNAL GENERATION
+    # =========================================================================
+
+    def _generate_entry_exit_signals(
+        self,
+        regime: str,
+        confidence: float,
+        trend_strength: float,
+        features: Dict,
+        support_resistance: Dict
+    ) -> Dict:
+        """Generate entry/exit signals based on regime and support/resistance"""
+        current_price = support_resistance['current_price']
+        near_support = support_resistance.get('near_support')
+        near_resistance = support_resistance.get('near_resistance')
+        major_support = support_resistance.get('major_support')
+        major_resistance = support_resistance.get('major_resistance')
+        atr = support_resistance.get('atr', 0)
+
+        signals = {
+            'action': 'WAIT',
+            'direction': 'NEUTRAL',
+            'entry_level': None,
+            'stop_loss': None,
+            'target_1': None,
+            'target_2': None,
+            'risk_reward': None,
+            'confidence': confidence,
+            'reasoning': []
+        }
+
+        # TRENDING UP REGIME
+        if regime == "Trending Up" and confidence > 60:
+            signals['direction'] = 'LONG'
+
+            # Entry on pullback to support
+            if near_support:
+                signals['action'] = 'BUY_ON_PULLBACK'
+                signals['entry_level'] = near_support
+                signals['stop_loss'] = major_support if major_support else near_support * 0.98
+                signals['target_1'] = near_resistance if near_resistance else current_price * 1.015
+                signals['target_2'] = major_resistance if major_resistance else current_price * 1.03
+                signals['reasoning'].append(f"Buy on pullback to {near_support:.2f}")
+                signals['reasoning'].append(f"Stop loss at {signals['stop_loss']:.2f}")
+                signals['reasoning'].append(f"Targets: {signals['target_1']:.2f}, {signals['target_2']:.2f}")
+            else:
+                signals['action'] = 'BUY_ON_BREAK'
+                signals['entry_level'] = current_price * 1.001
+                signals['stop_loss'] = current_price * 0.995
+                signals['target_1'] = current_price * 1.015
+                signals['target_2'] = current_price * 1.03
+
+        # TRENDING DOWN REGIME
+        elif regime == "Trending Down" and confidence > 60:
+            signals['direction'] = 'SHORT'
+
+            # Entry on rally to resistance
+            if near_resistance:
+                signals['action'] = 'SELL_ON_RALLY'
+                signals['entry_level'] = near_resistance
+                signals['stop_loss'] = major_resistance if major_resistance else near_resistance * 1.02
+                signals['target_1'] = near_support if near_support else current_price * 0.985
+                signals['target_2'] = major_support if major_support else current_price * 0.97
+                signals['reasoning'].append(f"Sell on rally to {near_resistance:.2f}")
+                signals['reasoning'].append(f"Stop loss at {signals['stop_loss']:.2f}")
+                signals['reasoning'].append(f"Targets: {signals['target_1']:.2f}, {signals['target_2']:.2f}")
+            else:
+                signals['action'] = 'SELL_ON_BREAK'
+                signals['entry_level'] = current_price * 0.999
+                signals['stop_loss'] = current_price * 1.005
+                signals['target_1'] = current_price * 0.985
+                signals['target_2'] = current_price * 0.97
+
+        # RANGE BOUND REGIME
+        elif regime == "Range Bound":
+            signals['action'] = 'RANGE_TRADE'
+            signals['direction'] = 'BOTH'
+
+            if near_support and near_resistance:
+                signals['reasoning'].append(f"Range: {near_support:.2f} - {near_resistance:.2f}")
+                signals['reasoning'].append(f"Buy near support, Sell near resistance")
+                signals['entry_level'] = f"{near_support:.2f} / {near_resistance:.2f}"
+
+        # REVERSAL REGIME
+        elif "Reversal" in regime:
+            signals['action'] = 'WAIT_FOR_CONFIRMATION'
+            signals['direction'] = 'LONG' if 'Uptrend' in regime else 'SHORT'
+            signals['reasoning'].append("Wait for 2-3 BOS confirmations")
+            signals['reasoning'].append("Reduce position size until confirmed")
+
+        # Calculate risk/reward if entry and targets are set
+        if signals['entry_level'] and isinstance(signals['entry_level'], (int, float)):
+            if signals['stop_loss'] and signals['target_1']:
+                risk = abs(signals['entry_level'] - signals['stop_loss'])
+                reward = abs(signals['target_1'] - signals['entry_level'])
+                if risk > 0:
+                    signals['risk_reward'] = reward / risk
+
+        return signals
+
     def _default_result(self) -> MLMarketRegimeResult:
         """Default result for insufficient data"""
         return MLMarketRegimeResult(
@@ -506,7 +1013,9 @@ class MLMarketRegimeDetector:
             recommended_strategy="Insufficient data",
             optimal_timeframe="Intraday",
             feature_importance={},
-            signals=["Insufficient data for regime detection"]
+            signals=["Insufficient data for regime detection"],
+            support_resistance={},
+            entry_exit_signals={}
         )
 
 

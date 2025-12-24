@@ -3496,14 +3496,16 @@ with tab6:
                     tabs = st.tabs(indicator_tabs)
                     tab_idx = 0
 
-                    # Market Regime Dashboard (Always first tab)
+                    # Market Regime Dashboard (Always first tab) - EXPANDED ML VERSION
                     with tabs[tab_idx]:
-                        from ml.market_regime_detector import MarketRegimeDetector
+                        from src.ml_market_regime import MLMarketRegimeDetector
+                        from enhanced_market_data import EnhancedMarketData
+                        from bias_analysis import BiasAnalysisPro
 
-                        st.markdown("### 🎯 Market Regime Analysis")
-                        st.caption("AI-powered market regime detection using all indicators")
+                        st.markdown("### 🎯 ML Market Regime Analysis")
+                        st.caption("🚀 AI-powered market regime detection using ALL available data sources")
 
-                        # Collect indicator data
+                        # Collect indicator data for regime detection
                         regime_indicator_data = {}
 
                         # BOS data
@@ -3515,21 +3517,6 @@ with tab6:
                         else:
                             regime_indicator_data['bos'] = []
                             regime_indicator_data['choch'] = []
-
-                        # HTF SR data
-                        if show_htf_sr and htf_params:
-                            from indicators.htf_support_resistance import HTFSupportResistance
-                            htf_levels_for_regime = []
-                            for level_config in htf_params.get('levels_config', []):
-                                htf_indicator = HTFSupportResistance(
-                                    timeframes=[level_config['timeframe']],
-                                    pivot_length=level_config['length']
-                                )
-                                levels = htf_indicator.calculate_levels(df_stats)
-                                htf_levels_for_regime.extend(levels)
-                            regime_indicator_data['htf_sr'] = htf_levels_for_regime
-                        else:
-                            regime_indicator_data['htf_sr'] = []
 
                         # Order Blocks data
                         if show_vob:
@@ -3555,33 +3542,59 @@ with tab6:
                             dfp_for_regime = DeltaFlowVolumeProfile(**deltaflow_params) if deltaflow_params else DeltaFlowVolumeProfile(bins=30)
                             regime_indicator_data['deltaflow_profile'] = dfp_for_regime.get_signals(df_stats)
 
-                        # Detect regime
-                        regime_detector = MarketRegimeDetector()
-                        regime_result = regime_detector.detect_regime(df_stats, regime_indicator_data)
+                        # Fetch additional data sources
+                        with st.spinner("Fetching comprehensive market data..."):
+                            # Enhanced market data (sector rotation, VIX, gamma squeeze)
+                            enhanced_data_fetcher = EnhancedMarketData()
+
+                            sector_rotation_data = enhanced_data_fetcher.analyze_sector_rotation()
+                            india_vix_data = enhanced_data_fetcher.fetch_india_vix()
+                            gamma_squeeze_data = enhanced_data_fetcher.detect_gamma_squeeze('NIFTY')
+
+                            # Bias analysis
+                            bias_analyzer = BiasAnalysisPro()
+                            bias_analysis_data = bias_analyzer.analyze_all_bias_indicators(data=df_stats)
+
+                            # Option chain data (from session state)
+                            option_chain_data = None
+                            if 'overall_option_data' in st.session_state:
+                                option_chain_data = st.session_state.overall_option_data.get('NIFTY')
+
+                        # Detect regime using ML with ALL data sources
+                        regime_detector = MLMarketRegimeDetector()
+                        regime_result = regime_detector.detect_regime(
+                            df_stats,
+                            cvd_result=None,
+                            volatility_result=None,
+                            oi_trap_result=None,
+                            option_chain_data=option_chain_data,
+                            sector_rotation_data=sector_rotation_data,
+                            bias_analysis_data=bias_analysis_data,
+                            india_vix_data=india_vix_data,
+                            gamma_squeeze_data=gamma_squeeze_data,
+                            advanced_chart_indicators=regime_indicator_data
+                        )
 
                         # Display regime info
                         col1, col2, col3 = st.columns(3)
 
                         with col1:
-                            regime = regime_result['regime']
+                            regime = regime_result.regime
                             regime_emoji = {
-                                'STRONG_UPTREND': '🚀',
-                                'WEAK_UPTREND': '📈',
-                                'RANGING': '↔️',
-                                'WEAK_DOWNTREND': '📉',
-                                'STRONG_DOWNTREND': '💥',
-                                'REVERSAL_TO_UPTREND': '🔄📈',
-                                'REVERSAL_TO_DOWNTREND': '🔄📉',
-                                'UNCERTAIN': '❓'
+                                'Trending Up': '🚀',
+                                'Trending Down': '📉',
+                                'Range Bound': '↔️',
+                                'Volatile Breakout': '⚡',
+                                'Consolidation': '🔄'
                             }
                             st.metric(
                                 "Current Regime",
-                                f"{regime_emoji.get(regime, '🎯')} {regime.replace('_', ' ').title()}",
+                                f"{regime_emoji.get(regime, '🎯')} {regime}",
                                 delta=None
                             )
 
                         with col2:
-                            confidence_pct = regime_result['confidence'] * 100
+                            confidence_pct = regime_result.confidence
                             confidence_color = '🟢' if confidence_pct > 70 else '🟡' if confidence_pct > 50 else '🔴'
                             st.metric(
                                 "Confidence",
@@ -3590,76 +3603,191 @@ with tab6:
                             )
 
                         with col3:
-                            volatility = regime_result['volatility']
-                            vol_emoji = {'HIGH_VOLATILITY': '⚡', 'NORMAL_VOLATILITY': '📊', 'LOW_VOLATILITY': '💤'}
                             st.metric(
                                 "Volatility",
-                                f"{vol_emoji.get(volatility, '📊')} {volatility.replace('_', ' ').title()}",
+                                f"📊 {regime_result.volatility_state}",
                                 delta=None
                             )
 
                         st.divider()
+
+                        # Display Support/Resistance Levels
+                        if regime_result.support_resistance:
+                            st.markdown("### 🎯 Support & Resistance Levels")
+
+                            sr_levels = regime_result.support_resistance
+                            col1, col2 = st.columns(2)
+
+                            with col1:
+                                st.markdown("#### 📈 Resistance Levels")
+                                resistance_data = []
+                                if sr_levels.get('near_resistance'):
+                                    resistance_data.append({
+                                        'Type': 'Near Resistance',
+                                        'Level': f"₹{sr_levels['near_resistance']:.2f}",
+                                        'Distance': f"{((sr_levels['near_resistance'] - sr_levels['current_price']) / sr_levels['current_price'] * 100):.2f}%"
+                                    })
+                                if sr_levels.get('major_resistance'):
+                                    resistance_data.append({
+                                        'Type': 'Major Resistance',
+                                        'Level': f"₹{sr_levels['major_resistance']:.2f}",
+                                        'Distance': f"{((sr_levels['major_resistance'] - sr_levels['current_price']) / sr_levels['current_price'] * 100):.2f}%"
+                                    })
+                                for i, r in enumerate(sr_levels.get('all_resistances', [])[:3], 1):
+                                    resistance_data.append({
+                                        'Type': f'R{i}',
+                                        'Level': f"₹{r:.2f}",
+                                        'Distance': f"{((r - sr_levels['current_price']) / sr_levels['current_price'] * 100):.2f}%"
+                                    })
+
+                                if resistance_data:
+                                    st.dataframe(pd.DataFrame(resistance_data), use_container_width=True, hide_index=True)
+                                else:
+                                    st.info("No resistance levels detected")
+
+                            with col2:
+                                st.markdown("#### 📉 Support Levels")
+                                support_data = []
+                                if sr_levels.get('near_support'):
+                                    support_data.append({
+                                        'Type': 'Near Support',
+                                        'Level': f"₹{sr_levels['near_support']:.2f}",
+                                        'Distance': f"{((sr_levels['current_price'] - sr_levels['near_support']) / sr_levels['current_price'] * 100):.2f}%"
+                                    })
+                                if sr_levels.get('major_support'):
+                                    support_data.append({
+                                        'Type': 'Major Support',
+                                        'Level': f"₹{sr_levels['major_support']:.2f}",
+                                        'Distance': f"{((sr_levels['current_price'] - sr_levels['major_support']) / sr_levels['current_price'] * 100):.2f}%"
+                                    })
+                                for i, s in enumerate(sr_levels.get('all_supports', [])[:3], 1):
+                                    support_data.append({
+                                        'Type': f'S{i}',
+                                        'Level': f"₹{s:.2f}",
+                                        'Distance': f"{((sr_levels['current_price'] - s) / sr_levels['current_price'] * 100):.2f}%"
+                                    })
+
+                                if support_data:
+                                    st.dataframe(pd.DataFrame(support_data), use_container_width=True, hide_index=True)
+                                else:
+                                    st.info("No support levels detected")
+
+                            st.divider()
+
+                        # Display Entry/Exit Signals
+                        if regime_result.entry_exit_signals:
+                            st.markdown("### 🎯 Entry/Exit Trading Signals")
+
+                            entry_exit = regime_result.entry_exit_signals
+
+                            col1, col2, col3 = st.columns(3)
+
+                            with col1:
+                                action_emoji = {
+                                    'BUY_ON_PULLBACK': '📈',
+                                    'SELL_ON_RALLY': '📉',
+                                    'BUY_ON_BREAK': '🚀',
+                                    'SELL_ON_BREAK': '💥',
+                                    'RANGE_TRADE': '↔️',
+                                    'WAIT': '⏸️',
+                                    'WAIT_FOR_CONFIRMATION': '⏳'
+                                }
+                                st.metric(
+                                    "Action",
+                                    f"{action_emoji.get(entry_exit['action'], '🎯')} {entry_exit['action'].replace('_', ' ').title()}",
+                                    delta=None
+                                )
+
+                            with col2:
+                                direction_emoji = {'LONG': '🟢', 'SHORT': '🔴', 'NEUTRAL': '⚪', 'BOTH': '🔵'}
+                                st.metric(
+                                    "Direction",
+                                    f"{direction_emoji.get(entry_exit['direction'], '⚪')} {entry_exit['direction']}",
+                                    delta=None
+                                )
+
+                            with col3:
+                                if entry_exit.get('risk_reward'):
+                                    rr_color = '🟢' if entry_exit['risk_reward'] > 2 else '🟡' if entry_exit['risk_reward'] > 1.5 else '🔴'
+                                    st.metric(
+                                        "Risk:Reward",
+                                        f"{rr_color} 1:{entry_exit['risk_reward']:.2f}",
+                                        delta=None
+                                    )
+                                else:
+                                    st.metric("Risk:Reward", "N/A", delta=None)
+
+                            # Trading Levels
+                            if entry_exit.get('entry_level') and isinstance(entry_exit['entry_level'], (int, float)):
+                                st.markdown("#### 📊 Trading Levels")
+                                levels_data = []
+                                levels_data.append({
+                                    'Level': 'Entry',
+                                    'Price': f"₹{entry_exit['entry_level']:.2f}"
+                                })
+                                if entry_exit.get('stop_loss'):
+                                    levels_data.append({
+                                        'Level': 'Stop Loss',
+                                        'Price': f"₹{entry_exit['stop_loss']:.2f}"
+                                    })
+                                if entry_exit.get('target_1'):
+                                    levels_data.append({
+                                        'Level': 'Target 1',
+                                        'Price': f"₹{entry_exit['target_1']:.2f}"
+                                    })
+                                if entry_exit.get('target_2'):
+                                    levels_data.append({
+                                        'Level': 'Target 2',
+                                        'Price': f"₹{entry_exit['target_2']:.2f}"
+                                    })
+                                st.dataframe(pd.DataFrame(levels_data), use_container_width=True, hide_index=True)
+
+                            # Reasoning
+                            if entry_exit.get('reasoning'):
+                                st.markdown("#### 💡 Trading Rationale")
+                                for reason in entry_exit['reasoning']:
+                                    st.markdown(f"• {reason}")
+
+                            st.divider()
 
                         # Regime Details
                         col1, col2 = st.columns(2)
 
                         with col1:
                             st.markdown("#### 📊 Regime Indicators")
-                            trend_dir = regime_result['trend_direction']
-                            trend_strength = regime_result['trend_strength']
-
                             indicator_data = []
                             indicator_data.append({
-                                'Indicator': 'Trend Direction',
-                                'Value': f"{'🟢' if trend_dir == 'BULLISH' else '🔴' if trend_dir == 'BEARISH' else '⚪'} {trend_dir}"
-                            })
-                            indicator_data.append({
                                 'Indicator': 'Trend Strength',
-                                'Value': f"{trend_strength:.1%}"
+                                'Value': f"{regime_result.trend_strength:.1f}%"
                             })
                             indicator_data.append({
-                                'Indicator': 'Ranging Market',
-                                'Value': '✅ Yes' if regime_result['is_ranging'] else '❌ No'
+                                'Indicator': 'Market Phase',
+                                'Value': regime_result.market_phase
                             })
                             indicator_data.append({
-                                'Indicator': 'Reversal Signal',
-                                'Value': '⚠️ Detected' if regime_result['reversal_signal'] else '✅ None'
+                                'Indicator': 'Optimal Timeframe',
+                                'Value': regime_result.optimal_timeframe
                             })
 
                             st.dataframe(pd.DataFrame(indicator_data), use_container_width=True, hide_index=True)
 
                         with col2:
-                            st.markdown("#### 💡 Trading Recommendations")
-                            recs = regime_result['recommendations']
+                            st.markdown("#### 💡 Trading Strategy")
+                            st.info(regime_result.recommended_strategy)
 
-                            rec_data = []
-                            rec_data.append({
-                                'Recommendation': 'Position Bias',
-                                'Value': recs['position_bias']
-                            })
-                            rec_data.append({
-                                'Recommendation': 'Strategy',
-                                'Value': recs['strategy'].replace('_', ' ').title()
-                            })
-                            rec_data.append({
-                                'Recommendation': 'Position Size',
-                                'Value': f"{recs['position_size_multiplier']:.1f}x"
-                            })
-                            rec_data.append({
-                                'Recommendation': 'Stop Loss Width',
-                                'Value': f"{recs['stop_loss_multiplier']:.1f}x"
-                            })
+                        # All Signals
+                        if regime_result.signals:
+                            st.markdown("#### 🎯 Market Signals")
+                            signal_cols = st.columns(2)
+                            mid = len(regime_result.signals) // 2
 
-                            st.dataframe(pd.DataFrame(rec_data), use_container_width=True, hide_index=True)
+                            with signal_cols[0]:
+                                for signal in regime_result.signals[:mid]:
+                                    st.markdown(f"• {signal}")
 
-                        # Allowed Setups
-                        st.markdown("#### ✅ Recommended Trade Setups")
-                        allowed_setups = recs['allowed_setups']
-                        if allowed_setups:
-                            for setup in allowed_setups:
-                                st.markdown(f"• {setup}")
-                        else:
-                            st.info("No specific setups recommended in current regime")
+                            with signal_cols[1]:
+                                for signal in regime_result.signals[mid:]:
+                                    st.markdown(f"• {signal}")
 
                     tab_idx += 1
 
