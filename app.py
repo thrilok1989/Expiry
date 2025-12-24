@@ -449,7 +449,7 @@ if 'overall_option_data' not in st.session_state:
 # - Lazy loading for tab-specific data
 # - Streamlit caching for expensive computations
 
-# Auto-refresh every 60 seconds (configurable via AUTO_REFRESH_INTERVAL)
+# Auto-refresh every 1 minute (configurable via AUTO_REFRESH_INTERVAL)
 # This ensures the app stays updated with latest market data
 # The refresh is seamless - no blur/flash thanks to custom CSS above
 refresh_count = st_autorefresh(interval=AUTO_REFRESH_INTERVAL * 1000, key="data_refresh")
@@ -668,13 +668,13 @@ if 'chart_data_cache' not in st.session_state:
 if 'chart_data_cache_time' not in st.session_state:
     st.session_state.chart_data_cache_time = {}
 
-@st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
+@st.cache_data(ttl=60, show_spinner=False)  # 60 seconds (1 minute)
 def get_cached_chart_data(symbol, period, interval):
     """Cached chart data fetcher - reduces API calls"""
     chart_analyzer = AdvancedChartAnalysis()
     return chart_analyzer.fetch_intraday_data(symbol, period=period, interval=interval)
 
-@st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
+@st.cache_data(ttl=60, show_spinner=False)  # 60 seconds (1 minute)
 def calculate_vob_indicators(df_key, sensitivity=5):
     """Cached VOB calculation - reduces redundant computations"""
     from indicators.volume_order_blocks import VolumeOrderBlocks
@@ -689,7 +689,7 @@ def calculate_vob_indicators(df_key, sensitivity=5):
     vob_indicator = VolumeOrderBlocks(sensitivity=sensitivity)
     return vob_indicator.calculate(df)
 
-@st.cache_data(ttl=120, show_spinner=False)  # Increased from 60s to 120s for better performance
+@st.cache_data(ttl=60, show_spinner=False)  # 60 seconds (1 minute)
 def calculate_sentiment():
     """Cached sentiment calculation"""
     try:
@@ -4567,16 +4567,16 @@ with tab9:
     st.header("🌐 Enhanced Market Data Analysis")
     st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
-    # Auto-fetch enhanced market data if not already loaded or stale (older than 5 minutes)
+    # Auto-fetch enhanced market data if not already loaded or stale (older than 1 minute)
     should_fetch = False
 
     if 'enhanced_market_data' not in st.session_state:
         should_fetch = True
     else:
-        # Check if data is older than 5 minutes
+        # Check if data is older than 1 minute
         from datetime import timedelta
         data_age = get_current_time_ist() - st.session_state.enhanced_market_data.get('timestamp', get_current_time_ist())
-        if data_age > timedelta(minutes=5):
+        if data_age > timedelta(minutes=1):
             should_fetch = True
 
     if should_fetch:

@@ -97,10 +97,10 @@ MARKET_HOURS = {
 # Session-based refresh intervals (seconds)
 # Optimized to prevent API rate limiting (HTTP 429)
 REFRESH_INTERVALS = {
-    'pre_market': 45,      # 45 seconds during pre-market
-    'regular': 45,         # 45 seconds during regular trading
-    'post_market': 120,    # 120 seconds during post-market
-    'closed': 300          # 5 minutes when market is closed (minimal activity)
+    'pre_market': 60,      # 60 seconds during pre-market
+    'regular': 60,         # 60 seconds during regular trading
+    'post_market': 60,     # 60 seconds during post-market
+    'closed': 60           # 60 seconds when market is closed (1 minute)
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -127,8 +127,8 @@ VOB_TOUCH_TOLERANCE = 5  # Points
 # UI SETTINGS
 # ═══════════════════════════════════════════════════════════════════════
 
-# Auto-refresh interval: 5 minutes (300 seconds)
-AUTO_REFRESH_INTERVAL = 300  # seconds (5 minutes - optimized for fast clicks)
+# Auto-refresh interval: 1 minute (60 seconds)
+AUTO_REFRESH_INTERVAL = 60  # seconds (1 minute - optimized for fast clicks)
 DEMO_MODE = False
 
 APP_TITLE = "🎯 NIFTY/SENSEX Manual Trader"
