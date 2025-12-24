@@ -3952,6 +3952,9 @@ with tab7:
                         regime_detector = MarketRegimeDetector()
                         regime_result = regime_detector.detect_regime(df_stats, regime_indicator_data)
 
+                        # Store in session state for ML Entry Finder
+                        st.session_state.market_regime_result = regime_result
+
                         # Display regime info
                         col1, col2, col3 = st.columns(3)
 
