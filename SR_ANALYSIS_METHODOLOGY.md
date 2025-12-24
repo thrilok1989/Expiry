@@ -35,9 +35,11 @@ Tab 12: 📜 Signal History & Performance
 
 ---
 
-## 🔍 STEP 1: DATA COLLECTION FROM 5 INSTITUTIONAL SOURCES
+## 🔍 STEP 1: DATA COLLECTION FROM 4 INSTITUTIONAL SOURCES
 
-The system collects S/R levels from multiple sources in **PRIORITY ORDER**:
+⚠️ **IMPORTANT**: Tab 1 (Overall Market Sentiment) S/R data is **EXCLUDED** - not working properly.
+
+The system collects S/R levels from ONLY these sources in **PRIORITY ORDER**:
 
 ### **SOURCE 1: OI WALLS (Max PUT/CALL OI)** - HIGHEST PRIORITY
 ```python
@@ -115,6 +117,13 @@ Resistance = Current Price + 100
 
 Strength: LOW
 Priority Score Bonus: 0 points
+```
+
+### **❌ EXCLUDED: Tab 1 (Overall Market Sentiment) S/R**
+```
+NOT USED - Not working properly/not reliable
+The system does NOT use S/R levels from Tab 1.
+Only institutional sources (OI, GEX, HTF, VOB) are used.
 ```
 
 ---

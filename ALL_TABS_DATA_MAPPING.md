@@ -9,10 +9,12 @@
 **Data Available:**
 - Overall sentiment score
 - Sentiment direction (BULLISH/BEARISH/NEUTRAL)
-- Support/Resistance levels from multiple sources
+- ~~Support/Resistance levels from multiple sources~~ ❌ **EXCLUDED - Not reliable**
 - Market bias indicators
 
-**Currently Used in ML:** ✅ Yes (market_sentiment)
+**Currently Used in ML:** ⚠️ Partial (sentiment only, S/R excluded)
+
+**IMPORTANT:** Tab 1 S/R data is **NOT USED** - not working properly. Only institutional S/R from Tab 7 & Tab 8 are used.
 
 ---
 
