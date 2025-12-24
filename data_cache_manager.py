@@ -46,8 +46,8 @@ class DataCacheManager:
 
         # Cache TTLs (in seconds)
         self.ttl_config = {
-            'nifty_data': 60,
-            'sensex_data': 60,
+            'nifty_data': 10,       # 10 seconds for spot price real-time updates
+            'sensex_data': 10,      # 10 seconds for spot price real-time updates
             'bias_analysis': 60,
             'option_chain': 60,
             'advanced_chart': 60,
@@ -56,7 +56,7 @@ class DataCacheManager:
         # Background refresh intervals (in seconds)
         # Note: These are dynamically adjusted based on market session
         self.refresh_intervals = {
-            'market_data': 10,      # NIFTY/SENSEX (adjusted by market session)
+            'market_data': 10,      # NIFTY/SENSEX spot price (10 seconds for real-time)
             'analysis_data': 60,    # All analysis (adjusted by market session)
         }
 

@@ -4683,7 +4683,7 @@ def rank_support_resistance_seller(pcr_df):
 # -----------------------
 # DHAN API
 # -----------------------
-@st.cache_data(ttl=60)  # 60 seconds (1 minute) to reduce API calls
+@st.cache_data(ttl=10)  # 10 seconds for real-time spot price updates
 def get_nifty_spot_price():
     """Fetch NIFTY spot price with retry logic and rate limiting"""
     max_retries = 3
