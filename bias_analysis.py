@@ -335,6 +335,7 @@ class BiasAnalysisPro:
 
     def calculate_vidya(self, df: pd.DataFrame, length: int = 10, momentum: int = 20, band_distance: float = 2.0):
         """Calculate VIDYA (Variable Index Dynamic Average) matching Pine Script"""
+        cols = self._get_column_names(df)
         close = df[cols['close']]
 
         # Calculate momentum (CMO - Chande Momentum Oscillator)
@@ -563,6 +564,7 @@ class BiasAnalysisPro:
 
     def calculate_price_roc(self, df: pd.DataFrame, length: int = 12):
         """Calculate Price Rate of Change"""
+        cols = self._get_column_names(df)
         price_roc = ((df[cols['close']] - df[cols['close']].shift(length)) / df[cols['close']].shift(length)) * 100
 
         price_momentum_bullish = price_roc.iloc[-1] > 0
@@ -572,8 +574,8 @@ class BiasAnalysisPro:
 
     def calculate_choppiness_index(self, df: pd.DataFrame, period: int = 14):
         """Calculate Choppiness Index"""
-        high_low = df[cols['high']] - df[cols['low']]
         cols = self._get_column_names(df)
+        high_low = df[cols['high']] - df[cols['low']]
         high_close = abs(df[cols['high']] - df[cols['close']].shift(1))
         low_close = abs(df[cols['low']] - df[cols['close']].shift(1))
 
@@ -591,10 +593,10 @@ class BiasAnalysisPro:
 
     def detect_divergence(self, df: pd.DataFrame, lookback: int = 30):
         """Detect RSI/MACD Divergences"""
+        cols = self._get_column_names(df)
         rsi = self.calculate_rsi(df[cols['close']], 14)
 
         # MACD
-        cols = self._get_column_names(df)
         macd_line = df[cols['close']].ewm(span=12).mean() - df[cols['close']].ewm(span=26).mean()
 
         close_series = df[cols['close']].tail(lookback)
