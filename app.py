@@ -5058,7 +5058,7 @@ with tab9:
     st.write("Initializing screener...")
 
     try:
-        from nse_stock_screener import render_nse_stock_screener_tab
+        from nse_stock_screener_dhan import render_nse_stock_screener_tab
         render_nse_stock_screener_tab()
     except Exception as e:
         st.error(f"❌ Error loading NSE Stock Screener: {e}")
@@ -5069,9 +5069,9 @@ with tab9:
         **NSE Stock Screener Not Available**
 
         To use this feature:
-        1. Ensure nse_stock_screener.py is in the project root
-        2. Required modules: advanced_chart_analysis.py, bias_analysis.py, src/ml_market_regime.py
-        3. Internet connection required for fetching stock data
+        1. Ensure nse_stock_screener_dhan.py is in the project root
+        2. Required modules: advanced_chart_analysis.py, bias_analysis.py, src/ml_market_regime.py, NiftyOptionScreener.py
+        3. Internet connection required for fetching stock data and Dhan API access
         """)
 
 # ═══════════════════════════════════════════════════════════════════════
