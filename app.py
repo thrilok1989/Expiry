@@ -4958,80 +4958,85 @@ with tab7:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab8:
-    st.header("🌐 Enhanced Market Data Analysis")
-    st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
+    try:
+        st.header("🌐 Enhanced Market Data Analysis")
+        st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
-    # Auto-fetch enhanced market data if not already loaded or stale (older than 1 minute)
-    should_fetch = False
+        # Auto-fetch enhanced market data if not already loaded or stale (older than 1 minute)
+        should_fetch = False
 
-    if 'enhanced_market_data' not in st.session_state:
-        should_fetch = True
-    else:
-        # Check if data is older than 1 minute
-        from datetime import timedelta
-        data_age = get_current_time_ist() - st.session_state.enhanced_market_data.get('timestamp', get_current_time_ist())
-        if data_age > timedelta(minutes=1):
+        if 'enhanced_market_data' not in st.session_state:
             should_fetch = True
+        else:
+            # Check if data is older than 1 minute
+            from datetime import timedelta
+            data_age = get_current_time_ist() - st.session_state.enhanced_market_data.get('timestamp', get_current_time_ist())
+            if data_age > timedelta(minutes=1):
+                should_fetch = True
 
-    if should_fetch:
-        with st.spinner("🔄 Auto-loading comprehensive market data from all sources..."):
-            try:
-                from enhanced_market_data import get_enhanced_market_data
-                enhanced_data = get_enhanced_market_data()
-                st.session_state.enhanced_market_data = enhanced_data
-                st.success("✅ Enhanced market data loaded successfully!")
-            except Exception as e:
-                st.error(f"❌ Failed to fetch enhanced data: {e}")
-                import traceback
-                st.error(traceback.format_exc())
-
-    # Control buttons
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        if st.button("🔄 Refresh Data", type="primary", use_container_width=True, key="refresh_enhanced_data_btn"):
-            with st.spinner("Refreshing market data..."):
+        if should_fetch:
+            with st.spinner("🔄 Auto-loading comprehensive market data from all sources..."):
                 try:
                     from enhanced_market_data import get_enhanced_market_data
                     enhanced_data = get_enhanced_market_data()
                     st.session_state.enhanced_market_data = enhanced_data
-                    st.success("✅ Data refreshed successfully!")
-                    st.rerun()
+                    st.success("✅ Enhanced market data loaded successfully!")
                 except Exception as e:
-                    st.error(f"❌ Failed to refresh data: {e}")
+                    st.error(f"❌ Failed to fetch enhanced data: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
 
-    with col2:
+        # Control buttons
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            if st.button("🔄 Refresh Data", type="primary", use_container_width=True, key="refresh_enhanced_data_btn"):
+                with st.spinner("Refreshing market data..."):
+                    try:
+                        from enhanced_market_data import get_enhanced_market_data
+                        enhanced_data = get_enhanced_market_data()
+                        st.session_state.enhanced_market_data = enhanced_data
+                        st.success("✅ Data refreshed successfully!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to refresh data: {e}")
+
+        with col2:
+            if 'enhanced_market_data' in st.session_state:
+                data = st.session_state.enhanced_market_data
+                st.caption(f"📅 Last Updated: {data['timestamp'].strftime('%Y-%m-%d %H:%M:%S IST')}")
+
+        # Display enhanced market data if available
         if 'enhanced_market_data' in st.session_state:
-            data = st.session_state.enhanced_market_data
-            st.caption(f"📅 Last Updated: {data['timestamp'].strftime('%Y-%m-%d %H:%M:%S IST')}")
+            try:
+                from enhanced_market_display import render_enhanced_market_data_tab
+                render_enhanced_market_data_tab(st.session_state.enhanced_market_data)
+            except Exception as e:
+                st.error(f"❌ Error displaying enhanced data: {e}")
+                import traceback
+                st.error(traceback.format_exc())
+        else:
+            st.info("""
+            ℹ️ Enhanced market data will auto-load on first visit and refresh every 5 minutes.
 
-    # Display enhanced market data if available
-    if 'enhanced_market_data' in st.session_state:
-        try:
-            from enhanced_market_display import render_enhanced_market_data_tab
-            render_enhanced_market_data_tab(st.session_state.enhanced_market_data)
-        except Exception as e:
-            st.error(f"❌ Error displaying enhanced data: {e}")
-            import traceback
-            st.error(traceback.format_exc())
-    else:
-        st.info("""
-        ℹ️ Enhanced market data will auto-load on first visit and refresh every 5 minutes.
+            **Data Sources:**
+            - 📊 **Dhan API:** India VIX, All Sector Indices (IT, Auto, Pharma, Metal, FMCG, Realty, Energy)
+            - 🌍 **Yahoo Finance:** Global Markets (S&P 500, Nasdaq, Dow, Nikkei, Hang Seng, etc.)
+            - 💰 **Intermarket:** USD Index, Crude Oil, Gold, USD/INR, US 10Y Treasury, Bitcoin
 
-        **Data Sources:**
-        - 📊 **Dhan API:** India VIX, All Sector Indices (IT, Auto, Pharma, Metal, FMCG, Realty, Energy)
-        - 🌍 **Yahoo Finance:** Global Markets (S&P 500, Nasdaq, Dow, Nikkei, Hang Seng, etc.)
-        - 💰 **Intermarket:** USD Index, Crude Oil, Gold, USD/INR, US 10Y Treasury, Bitcoin
+            **Advanced Analysis:**
+            - ⚡ **India VIX Analysis:** Fear & Greed Index with sentiment scoring
+            - 🏢 **Sector Rotation Model:** Identify market leadership and rotation patterns
+            - 🎯 **Gamma Squeeze Detection:** Option market makers hedging analysis
+            - ⏰ **Intraday Seasonality:** Time-based trading recommendations
+            - 🌐 **Global Correlation:** How worldwide markets affect Indian markets
 
-        **Advanced Analysis:**
-        - ⚡ **India VIX Analysis:** Fear & Greed Index with sentiment scoring
-        - 🏢 **Sector Rotation Model:** Identify market leadership and rotation patterns
-        - 🎯 **Gamma Squeeze Detection:** Option market makers hedging analysis
-        - ⏰ **Intraday Seasonality:** Time-based trading recommendations
-        - 🌐 **Global Correlation:** How worldwide markets affect Indian markets
-
-        **All data is presented in comprehensive tables with bias scores and trading insights!**
-        """)
+            **All data is presented in comprehensive tables with bias scores and trading insights!**
+            """)
+    except Exception as e:
+        st.error(f"❌ Critical error in Enhanced Market Data tab: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 9: NSE STOCK SCREENER
@@ -5039,10 +5044,11 @@ with tab8:
 
 with tab9:
     try:
+        st.markdown("### 🔍 NSE Stock Screener Loading...")
         from nse_stock_screener import render_nse_stock_screener_tab
         render_nse_stock_screener_tab()
     except Exception as e:
-        st.error(f"Error loading NSE Stock Screener: {e}")
+        st.error(f"❌ Error loading NSE Stock Screener: {e}")
         import traceback
         st.code(traceback.format_exc())
 
