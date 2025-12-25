@@ -61,6 +61,16 @@ class BiasAnalysisPro:
         self.overall_bias = "NEUTRAL"
         self.overall_score = 0
 
+    def _get_column_names(self, df: pd.DataFrame) -> Dict[str, str]:
+        """Get correct column names (handle both uppercase and lowercase)"""
+        return {
+            'open': 'Open' if 'Open' in df.columns else 'open',
+            'high': 'High' if 'High' in df.columns else 'high',
+            'low': 'Low' if 'Low' in df.columns else 'low',
+            'close': 'Close' if 'Close' in df.columns else 'close',
+            'volume': 'Volume' if 'Volume' in df.columns else 'volume' if 'volume' in df.columns else None
+        }
+
     def _default_config(self) -> Dict:
         """Default configuration from Pine Script"""
         return {
@@ -229,13 +239,15 @@ class BiasAnalysisPro:
 
     def calculate_mfi(self, df: pd.DataFrame, period: int = 10) -> pd.Series:
         """Calculate Money Flow Index with NaN/zero handling"""
+        cols = self._get_column_names(df)
+
         # Check if volume data is available
-        if df['Volume'].sum() == 0:
+        if cols['volume'] is None or df[cols['volume']].sum() == 0:
             # Return neutral MFI (50) if no volume data
             return pd.Series([50.0] * len(df), index=df.index)
 
-        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-        money_flow = typical_price * df['Volume']
+        typical_price = (df[cols['high']] + df[cols['low']] + df[cols['close']]) / 3
+        money_flow = typical_price * df[cols['volume']]
 
         positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0)
         negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0)
@@ -254,9 +266,10 @@ class BiasAnalysisPro:
 
     def calculate_dmi(self, df: pd.DataFrame, period: int = 13, smoothing: int = 8):
         """Calculate DMI indicators"""
-        high = df['High']
-        low = df['Low']
-        close = df['Close']
+        high = df[cols['high']]
+        cols = self._get_column_names(df)
+        low = df[cols['low']]
+        close = df[cols['close']]
 
         # True Range
         tr1 = high - low
@@ -285,16 +298,17 @@ class BiasAnalysisPro:
     def calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
         """Calculate VWAP with NaN/zero handling"""
         # Check if volume data is available
-        if df['Volume'].sum() == 0:
+        cols = self._get_column_names(df)
+        if df[cols['volume']].sum() == 0:
             # Return typical price as fallback if no volume data
-            return (df['High'] + df['Low'] + df['Close']) / 3
+            return (df[cols['high']] + df[cols['low']] + df[cols['close']]) / 3
 
-        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-        cumulative_volume = df['Volume'].cumsum()
+        typical_price = (df[cols['high']] + df[cols['low']] + df[cols['close']]) / 3
+        cumulative_volume = df[cols['volume']].cumsum()
 
         # Avoid division by zero
         cumulative_volume_safe = cumulative_volume.replace(0, np.nan)
-        vwap = (typical_price * df['Volume']).cumsum() / cumulative_volume_safe
+        vwap = (typical_price * df[cols['volume']]).cumsum() / cumulative_volume_safe
 
         # Fill NaN with typical price
         vwap = vwap.fillna(typical_price)
@@ -303,9 +317,10 @@ class BiasAnalysisPro:
 
     def calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
         """Calculate ATR"""
-        high = df['High']
-        low = df['Low']
-        close = df['Close']
+        high = df[cols['high']]
+        cols = self._get_column_names(df)
+        low = df[cols['low']]
+        close = df[cols['close']]
 
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
@@ -320,7 +335,7 @@ class BiasAnalysisPro:
 
     def calculate_vidya(self, df: pd.DataFrame, length: int = 10, momentum: int = 20, band_distance: float = 2.0):
         """Calculate VIDYA (Variable Index Dynamic Average) matching Pine Script"""
-        close = df['Close']
+        close = df[cols['close']]
 
         # Calculate momentum (CMO - Chande Momentum Oscillator)
         m = close.diff()
@@ -361,12 +376,13 @@ class BiasAnalysisPro:
 
     def calculate_volume_delta(self, df: pd.DataFrame):
         """Calculate Volume Delta (up_vol - down_vol) - Buyer's Perspective"""
-        if df['Volume'].sum() == 0:
+        if df[cols['volume']].sum() == 0:
             return 0, False, False
 
         # Calculate up and down volume
-        up_vol = ((df['Close'] > df['Open']).astype(int) * df['Volume']).sum()
-        down_vol = ((df['Close'] < df['Open']).astype(int) * df['Volume']).sum()
+        cols = self._get_column_names(df)
+        up_vol = ((df[cols['close']] > df[cols['open']]).astype(int) * df[cols['volume']]).sum()
+        down_vol = ((df[cols['close']] < df[cols['open']]).astype(int) * df[cols['volume']]).sum()
 
         volume_delta = down_vol  - up_vol
         volume_bullish = volume_delta > 0
@@ -378,7 +394,7 @@ class BiasAnalysisPro:
         """Calculate High Volume Pivots matching Pine Script
         Returns: (hvp_bullish, hvp_bearish, pivot_high_count, pivot_low_count)
         """
-        if df['Volume'].sum() == 0:
+        if df[cols['volume']].sum() == 0:
             return False, False, 0, 0
 
         # Calculate pivot highs and lows
@@ -389,7 +405,8 @@ class BiasAnalysisPro:
             # Check for pivot high
             is_pivot_high = True
             for j in range(i - left_bars, i + right_bars + 1):
-                if j != i and df['High'].iloc[j] >= df['High'].iloc[i]:
+                cols = self._get_column_names(df)
+                if j != i and df[cols['high']].iloc[j] >= df[cols['high']].iloc[i]:
                     is_pivot_high = False
                     break
             if is_pivot_high:
@@ -398,14 +415,14 @@ class BiasAnalysisPro:
             # Check for pivot low
             is_pivot_low = True
             for j in range(i - left_bars, i + right_bars + 1):
-                if j != i and df['Low'].iloc[j] <= df['Low'].iloc[i]:
+                if j != i and df[cols['low']].iloc[j] <= df[cols['low']].iloc[i]:
                     is_pivot_low = False
                     break
             if is_pivot_low:
                 pivot_lows.append(i)
 
         # Calculate volume sum and reference
-        volume_sum = df['Volume'].rolling(window=left_bars * 2).sum()
+        volume_sum = df[cols['volume']].rolling(window=left_bars * 2).sum()
         ref_vol = volume_sum.quantile(0.95)
         norm_vol = (volume_sum / ref_vol * 5).fillna(0)
 
@@ -431,8 +448,9 @@ class BiasAnalysisPro:
         """
         # Calculate EMAs
         length2 = length1 + 13
-        ema1 = self.calculate_ema(df['Close'], length1)
-        ema2 = self.calculate_ema(df['Close'], length2)
+        cols = self._get_column_names(df)
+        ema1 = self.calculate_ema(df[cols['close']], length1)
+        ema2 = self.calculate_ema(df[cols['close']], length2)
 
         # Detect crossovers
         cross_up = (ema1.iloc[-2] <= ema2.iloc[-2]) and (ema1.iloc[-1] > ema2.iloc[-1])
@@ -452,7 +470,8 @@ class BiasAnalysisPro:
     def calculate_volatility_ratio(self, df: pd.DataFrame, length: int = 14) -> Tuple[pd.Series, bool, bool]:
         """Calculate Volatility Ratio"""
         atr = self.calculate_atr(df, length)
-        stdev = df['Close'].rolling(window=length).std()
+        cols = self._get_column_names(df)
+        stdev = df[cols['close']].rolling(window=length).std()
         volatility_ratio = (stdev / atr) * 100
 
         high_volatility = volatility_ratio.iloc[-1] > self.config['volatility_threshold']
@@ -463,14 +482,15 @@ class BiasAnalysisPro:
     def calculate_volume_roc(self, df: pd.DataFrame, length: int = 14) -> Tuple[pd.Series, bool, bool]:
         """Calculate Volume Rate of Change with NaN/zero handling"""
         # Check if volume data is available
-        if df['Volume'].sum() == 0:
+        cols = self._get_column_names(df)
+        if df[cols['volume']].sum() == 0:
             # Return neutral volume ROC if no volume data
             neutral_roc = pd.Series([0.0] * len(df), index=df.index)
             return neutral_roc, False, False
 
         # Avoid division by zero
-        volume_shifted = df['Volume'].shift(length).replace(0, np.nan)
-        volume_roc = ((df['Volume'] - df['Volume'].shift(length)) / volume_shifted) * 100
+        volume_shifted = df[cols['volume']].shift(length).replace(0, np.nan)
+        volume_roc = ((df[cols['volume']] - df[cols['volume']].shift(length)) / volume_shifted) * 100
 
         # Fill NaN with 0
         volume_roc = volume_roc.fillna(0)
@@ -485,13 +505,14 @@ class BiasAnalysisPro:
     def calculate_obv(self, df: pd.DataFrame, smoothing: int = 21):
         """Calculate On Balance Volume with NaN/zero handling"""
         # Check if volume data is available
-        if df['Volume'].sum() == 0:
+        cols = self._get_column_names(df)
+        if df[cols['volume']].sum() == 0:
             # Return neutral OBV if no volume data
             neutral_obv = pd.Series([0.0] * len(df), index=df.index)
             neutral_obv_ma = pd.Series([0.0] * len(df), index=df.index)
             return neutral_obv, neutral_obv_ma, False, False
 
-        obv = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
+        obv = (np.sign(df[cols['close']].diff()) * df[cols['volume']]).fillna(0).cumsum()
         obv_ma = obv.rolling(window=smoothing).mean()
 
         # Handle potential NaN or missing values
@@ -513,12 +534,13 @@ class BiasAnalysisPro:
     def calculate_force_index(self, df: pd.DataFrame, length: int = 13, smoothing: int = 2):
         """Calculate Force Index with NaN/zero handling"""
         # Check if volume data is available
-        if df['Volume'].sum() == 0:
+        cols = self._get_column_names(df)
+        if df[cols['volume']].sum() == 0:
             # Return neutral force index if no volume data
             neutral_force = pd.Series([0.0] * len(df), index=df.index)
             return neutral_force, False, False
 
-        force_index = (df['Close'] - df['Close'].shift(1)) * df['Volume']
+        force_index = (df[cols['close']] - df[cols['close']].shift(1)) * df[cols['volume']]
         force_index = force_index.fillna(0)
 
         force_index_ma = force_index.ewm(span=length, adjust=False).mean()
@@ -541,7 +563,7 @@ class BiasAnalysisPro:
 
     def calculate_price_roc(self, df: pd.DataFrame, length: int = 12):
         """Calculate Price Rate of Change"""
-        price_roc = ((df['Close'] - df['Close'].shift(length)) / df['Close'].shift(length)) * 100
+        price_roc = ((df[cols['close']] - df[cols['close']].shift(length)) / df[cols['close']].shift(length)) * 100
 
         price_momentum_bullish = price_roc.iloc[-1] > 0
         price_momentum_bearish = price_roc.iloc[-1] < 0
@@ -550,14 +572,15 @@ class BiasAnalysisPro:
 
     def calculate_choppiness_index(self, df: pd.DataFrame, period: int = 14):
         """Calculate Choppiness Index"""
-        high_low = df['High'] - df['Low']
-        high_close = abs(df['High'] - df['Close'].shift(1))
-        low_close = abs(df['Low'] - df['Close'].shift(1))
+        high_low = df[cols['high']] - df[cols['low']]
+        cols = self._get_column_names(df)
+        high_close = abs(df[cols['high']] - df[cols['close']].shift(1))
+        low_close = abs(df[cols['low']] - df[cols['close']].shift(1))
 
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
         sum_true_range = true_range.rolling(window=period).sum()
-        highest_high = df['High'].rolling(window=period).max()
-        lowest_low = df['Low'].rolling(window=period).min()
+        highest_high = df[cols['high']].rolling(window=period).max()
+        lowest_low = df[cols['low']].rolling(window=period).min()
 
         ci = 100 * np.log10(sum_true_range / (highest_high - lowest_low)) / np.log10(period)
 
@@ -568,12 +591,13 @@ class BiasAnalysisPro:
 
     def detect_divergence(self, df: pd.DataFrame, lookback: int = 30):
         """Detect RSI/MACD Divergences"""
-        rsi = self.calculate_rsi(df['Close'], 14)
+        rsi = self.calculate_rsi(df[cols['close']], 14)
 
         # MACD
-        macd_line = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
+        cols = self._get_column_names(df)
+        macd_line = df[cols['close']].ewm(span=12).mean() - df[cols['close']].ewm(span=26).mean()
 
-        close_series = df['Close'].tail(lookback)
+        close_series = df[cols['close']].tail(lookback)
         rsi_series = rsi.tail(lookback)
         macd_series = macd_line.tail(lookback)
 
@@ -605,8 +629,9 @@ class BiasAnalysisPro:
             if df.empty or len(df) < 2:
                 return None
 
-            current_price = df['Close'].iloc[-1]
-            prev_price = df['Close'].iloc[0]
+            cols = self._get_column_names(df)
+            current_price = df[cols['close']].iloc[-1]
+            prev_price = df[cols['close']].iloc[0]
             change_pct = ((current_price - prev_price) / prev_price) * 100
 
             return {
@@ -687,7 +712,8 @@ class BiasAnalysisPro:
                 'error': error_msg
             }
 
-        current_price = df['Close'].iloc[-1]
+        cols = self._get_column_names(df)
+        current_price = df[cols['close']].iloc[-1]
 
         # Initialize bias results list
         bias_results = []
@@ -774,8 +800,8 @@ class BiasAnalysisPro:
         })
 
         # 4. ORDER BLOCKS (EMA Crossover)
-        ema5 = self.calculate_ema(df['Close'], 5)
-        ema18 = self.calculate_ema(df['Close'], 18)
+        ema5 = self.calculate_ema(df[cols['close']], 5)
+        ema18 = self.calculate_ema(df[cols['close']], 18)
 
         # Detect crossovers
         cross_up = (ema5.iloc[-2] <= ema18.iloc[-2]) and (ema5.iloc[-1] > ema18.iloc[-1])
@@ -801,7 +827,7 @@ class BiasAnalysisPro:
         })
 
         # 5. RSI
-        rsi = self.calculate_rsi(df['Close'], self.config['rsi_period'])
+        rsi = self.calculate_rsi(df[cols['close']], self.config['rsi_period'])
         rsi_value = rsi.iloc[-1]
 
         if rsi_value > 50:
