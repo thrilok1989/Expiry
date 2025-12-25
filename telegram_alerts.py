@@ -344,6 +344,149 @@ class TelegramBot:
         """
         return self.send_message(message.strip())
 
+    def send_oi_unwinding_alert(self, position_type: str, entry_strike: int,
+                               oi_check_result: dict, current_price: float) -> bool:
+        """
+        Send OI unwinding exit alert
+
+        Args:
+            position_type: "LONG" or "SHORT"
+            entry_strike: Entry strike price
+            oi_check_result: Result from OIShiftMonitor.check_oi_shift()
+            current_price: Current market price
+        """
+        alert_emoji = "🚨" if oi_check_result['action'] == 'EXIT_ALL' else "⚠️"
+
+        message = f"""
+{alert_emoji} <b>OI UNWINDING ALERT - NIFTY</b>
+━━━━━━━━━━━━━━━━━━━━━━
+
+<b>Position:</b> {position_type} from ₹{entry_strike:,}
+<b>Current Price:</b> ₹{current_price:,.0f}
+
+🔴 <b>OI Change:</b>
+{oi_check_result['details']}
+<b>Change:</b> {oi_check_result['oi_change_pct']:.1f}% {alert_emoji}
+
+⚠️ <b>SUPPORT/RESISTANCE WALL COLLAPSING!</b>
+
+<b>Action:</b> {oi_check_result['action'].replace('_', ' ')}
+<b>Reason:</b> {oi_check_result['reason']}
+
+⏰ {get_current_time_ist().strftime('%I:%M %p IST')}
+
+🚨 Your entry level S/R is disappearing!
+        """
+        return self.send_message(message.strip())
+
+    def send_opposite_oi_buildup_alert(self, position_type: str, barrier_result: dict,
+                                      current_price: float) -> bool:
+        """
+        Send alert when fresh OI builds on opposite side
+
+        Args:
+            position_type: "LONG" or "SHORT"
+            barrier_result: Result from OIShiftMonitor.check_opposite_side_buildup()
+            current_price: Current market price
+        """
+        alert_emoji = "🔴" if barrier_result['alert_priority'] == 'CRITICAL' else "⚠️"
+
+        # Format barrier details
+        barriers_text = ""
+        for barrier in barrier_result.get('barriers', [])[:3]:  # Top 3
+            barriers_text += f"\n• ₹{barrier['strike']:,} (+{barrier['oi_change']:,} OI, {barrier['distance']}pts away)"
+
+        message = f"""
+{alert_emoji} <b>NEW BARRIER FORMING - NIFTY</b>
+━━━━━━━━━━━━━━━━━━━━━━
+
+<b>Position:</b> {position_type}
+<b>Current Price:</b> ₹{current_price:,.0f}
+
+🔴 <b>Fresh OI Detected:</b>{barriers_text}
+
+⚠️ <b>NEW {'RESISTANCE' if position_type == 'LONG' else 'SUPPORT'} FORMING!</b>
+
+<b>Action:</b> {barrier_result['action'].replace('_', ' ')}
+<b>Reason:</b> {barrier_result['reason']}
+
+⏰ {get_current_time_ist().strftime('%I:%M %p IST')}
+
+💡 Consider tightening SL or partial exit
+        """
+        return self.send_message(message.strip())
+
+    def send_volume_spike_alert(self, position_type: str, volume_check: dict,
+                               current_price: float) -> bool:
+        """
+        Send volume spike exit alert
+
+        Args:
+            position_type: "LONG" or "SHORT"
+            volume_check: Result from VolumeSpikeMonitor.check_volume_spike()
+            current_price: Current market price
+        """
+        alert_emoji = "🚨" if volume_check['severity'] == 'CRITICAL' else "⚠️"
+
+        message = f"""
+{alert_emoji} <b>VOLUME SPIKE ALERT - NIFTY</b>
+━━━━━━━━━━━━━━━━━━━━━━
+
+<b>Position:</b> {position_type}
+<b>Current Price:</b> ₹{current_price:,.0f}
+
+🔴 <b>VOLUME SPIKE DETECTED:</b>
+<b>Volume Ratio:</b> {volume_check['volume_ratio']:.1f}x average
+<b>Buy Volume:</b> {volume_check['buy_volume']:,} ({volume_check['buy_pct']:.0f}%)
+<b>Sell Volume:</b> {volume_check['sell_volume']:,} ({volume_check['sell_pct']:.0f}%)
+<b>Delta:</b> {volume_check['delta']:,}
+
+⚠️ <b>INSTITUTIONAL MOVE DETECTED!</b>
+
+<b>Action:</b> {volume_check['action'].replace('_', ' ')}
+<b>Reason:</b> {volume_check['reason']}
+
+⏰ {get_current_time_ist().strftime('%I:%M %p IST')}
+
+🚨 Market shifting against you!
+        """
+        return self.send_message(message.strip())
+
+    def send_volume_absorption_alert(self, position_type: str, absorption_result: dict,
+                                    current_price: float) -> bool:
+        """
+        Send volume absorption exit alert
+
+        Args:
+            position_type: "LONG" or "SHORT"
+            absorption_result: Result from VolumeSpikeMonitor.detect_absorption()
+            current_price: Current market price
+        """
+        sr_type = "RESISTANCE" if position_type == "LONG" else "SUPPORT"
+
+        message = f"""
+⚠️ <b>VOLUME ABSORPTION ALERT - NIFTY</b>
+━━━━━━━━━━━━━━━━━━━━━━
+
+<b>Position:</b> {position_type}
+<b>Current Price:</b> ₹{current_price:,.0f}
+
+🔴 <b>Absorption Detected:</b>
+<b>Total Volume:</b> {absorption_result['total_volume']:,}
+<b>Price Change:</b> Only {absorption_result['price_change_pct']:.2f}%
+
+⚠️ <b>{sr_type} DEFENDING STRONGLY!</b>
+
+<b>Action:</b> {absorption_result['action'].replace('_', ' ')}
+<b>Reason:</b> {absorption_result['reason']}
+
+⏰ {get_current_time_ist().strftime('%I:%M %p IST')}
+
+💡 High volume but price not breaking
+Sellers/buyers absorbing all pressure
+        """
+        return self.send_message(message.strip())
+
     def send_vob_status_summary(self, nifty_data: dict, sensex_data: dict):
         """Send VOB status summary for both NIFTY and SENSEX"""
 
