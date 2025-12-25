@@ -1,206 +1,333 @@
 """
 Real-Time HTF Volume Footprint Indicator
 Converted from Pine Script by BigBeluga
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Shows volume distribution across price levels on higher timeframes
+Identifies Point of Control (POC) - the price with highest volume
 """
 
 import pandas as pd
 import numpy as np
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+
+
+@dataclass
+class VolumeLevel:
+    """Represents a single volume level in the footprint"""
+    price_low: float
+    price_high: float
+    volume: float
+    is_poc: bool = False
+
+
+@dataclass
+class VolumeFootprint:
+    """Complete volume footprint for a timeframe period"""
+    start_bar: int
+    end_bar: int
+    high: float
+    low: float
+    levels: List[VolumeLevel]
+    poc_price: float
+    poc_volume: float
 
 
 class HTFVolumeFootprint:
     """
-    Higher Time Frame Volume Footprint indicator that displays
-    volume distribution across price levels
+    Higher Timeframe Volume Footprint Indicator
+
+    Displays volume distribution across price levels for higher timeframes
+    Shows Point of Control (POC) - price level with highest volume
+    Useful for identifying institutional activity and key support/resistance
     """
 
-    def __init__(self, bins=20, timeframe='W', dynamic_poc=False):
+    def __init__(
+        self,
+        bins: int = 20,
+        timeframe: str = '1D',
+        show_dynamic_poc: bool = False
+    ):
         """
         Initialize HTF Volume Footprint indicator
 
         Args:
-            bins: Number of bins for volume distribution
-            timeframe: Timeframe for analysis ('D', 'W', '2W', 'M')
-            dynamic_poc: Show dynamic Point of Control
+            bins: Number of price levels to divide the range into
+            timeframe: Higher timeframe to analyze ('1D', '1W', '1M')
+            show_dynamic_poc: Whether to show POC as it updates
         """
         self.bins = bins
         self.timeframe = timeframe
-        self.dynamic_poc = dynamic_poc
+        self.show_dynamic_poc = show_dynamic_poc
 
-    def calculate(self, df):
+        # Map timeframe to bars
+        self.timeframe_bars = {
+            '1D': 1,
+            '2D': 2,
+            '3D': 3,
+            '4D': 4,
+            '5D': 5,
+            '1W': 5,
+            '2W': 10,
+            '3W': 15,
+            '1M': 20,
+            '2M': 40,
+            '3M': 60
+        }
+
+    def _get_column_names(self, df: pd.DataFrame) -> Dict[str, str]:
+        """Get correct column names (handle both uppercase and lowercase)"""
+        return {
+            'open': 'Open' if 'Open' in df.columns else 'open',
+            'high': 'High' if 'High' in df.columns else 'high',
+            'low': 'Low' if 'Low' in df.columns else 'low',
+            'close': 'Close' if 'Close' in df.columns else 'close',
+            'volume': 'Volume' if 'Volume' in df.columns else 'volume' if 'volume' in df.columns else None
+        }
+
+    def _normalize_volume(self, df: pd.DataFrame, cols: Dict[str, str]) -> pd.Series:
+        """Normalize volume using standard deviation"""
+        if cols['volume'] is None:
+            return pd.Series([1.0] * len(df), index=df.index)
+
+        volume_stdev = df[cols['volume']].rolling(window=min(200, len(df))).std()
+        volume_stdev = volume_stdev.fillna(1.0).replace(0, 1.0)
+
+        normalized = df[cols['volume']] / volume_stdev
+        return normalized.fillna(1.0)
+
+    def _detect_htf_periods(self, df: pd.DataFrame, period_bars: int) -> List[Tuple[int, int]]:
         """
-        Calculate Volume Footprint
+        Detect higher timeframe periods in the data
 
         Args:
-            df: DataFrame with OHLCV data (1-minute or higher)
+            df: DataFrame with OHLC data
+            period_bars: Number of bars per HTF period
 
         Returns:
-            dict: Dictionary containing volume footprint data
+            List of (start_index, end_index) tuples for each HTF period
         """
-        df = df.copy()
+        periods = []
+        total_bars = len(df)
 
-        # Ensure datetime index
-        if not isinstance(df.index, pd.DatetimeIndex):
-            if 'timestamp' in df.columns:
-                df = df.set_index('timestamp')
-            elif 'datetime' in df.columns:
-                df = df.set_index('datetime')
+        for i in range(0, total_bars, period_bars):
+            start = i
+            end = min(i + period_bars, total_bars)
+            if end > start:
+                periods.append((start, end))
 
-        # Resample to target timeframe
-        df_resampled = self._resample_to_htf(df)
+        return periods
 
-        # Calculate volume footprint for each period
+    def calculate(self, df: pd.DataFrame) -> Dict:
+        """
+        Calculate HTF volume footprint
+
+        Args:
+            df: DataFrame with OHLCV data
+
+        Returns:
+            Dict containing footprint data and POC levels
+        """
+        if len(df) < 10:
+            return {
+                'success': False,
+                'error': 'Insufficient data'
+            }
+
+        cols = self._get_column_names(df)
+
+        if cols['volume'] is None:
+            return {
+                'success': False,
+                'error': 'Volume data not available'
+            }
+
+        # Get timeframe period in bars
+        period_bars = self.timeframe_bars.get(self.timeframe, 5)
+
+        # Normalize volume
+        normalized_volume = self._normalize_volume(df, cols)
+
+        # Detect HTF periods
+        periods = self._detect_htf_periods(df, period_bars)
+
+        if not periods:
+            return {
+                'success': False,
+                'error': 'No HTF periods detected'
+            }
+
+        # Calculate footprint for most recent complete period and current period
         footprints = []
-        historical_pocs = []  # Track historical POC lines for completed periods
 
-        current_time = df.index[-1]
+        for start_idx, end_idx in periods[-3:]:  # Last 3 periods
+            period_df = df.iloc[start_idx:end_idx]
 
-        for i, period_start in enumerate(df_resampled.index):
-            # Ensure period_start is a Timestamp
-            period_start = pd.Timestamp(period_start)
+            if len(period_df) == 0:
+                continue
 
-            # Get data for this period
-            if self.timeframe == 'W':
-                period_end = period_start + pd.Timedelta(weeks=1)
-            elif self.timeframe == '2W':
-                period_end = period_start + pd.Timedelta(weeks=2)
-            elif self.timeframe == 'M':
-                period_end = period_start + pd.DateOffset(months=1)
-            elif self.timeframe == 'D':
-                period_end = period_start + pd.Timedelta(days=1)
-            else:
-                period_end = period_start + pd.Timedelta(days=1)
+            # Get period high and low
+            period_high = period_df[cols['high']].max()
+            period_low = period_df[cols['low']].min()
 
-            period_data = df[(df.index >= period_start) & (df.index < period_end)]
+            if period_high == period_low:
+                continue
 
-            if len(period_data) > 0:
-                footprint = self._calculate_period_footprint(period_data, period_start)
-                footprint['period_end'] = period_end
-                footprint['is_current'] = (current_time >= period_start and current_time < period_end)
+            # Calculate bin size
+            bin_size = (period_high - period_low) / self.bins
+
+            # Initialize volume levels
+            levels = []
+            for i in range(self.bins):
+                level_low = period_low + i * bin_size
+                level_high = level_low + bin_size
+                levels.append(VolumeLevel(
+                    price_low=level_low,
+                    price_high=level_high,
+                    volume=0.0
+                ))
+
+            # Distribute volume across levels
+            for j in range(len(period_df)):
+                close_price = period_df[cols['close']].iloc[j]
+                vol = normalized_volume.iloc[start_idx + j]
+
+                # Find which level this close price belongs to
+                for level in levels:
+                    if level.price_low <= close_price < level.price_high:
+                        level.volume += vol
+                        break
+
+            # Find POC (level with highest volume)
+            if levels:
+                max_volume = max(level.volume for level in levels)
+                for level in levels:
+                    if level.volume == max_volume:
+                        level.is_poc = True
+
+                # Get POC price (midpoint of POC level)
+                poc_level = next(level for level in levels if level.is_poc)
+                poc_price = (poc_level.price_low + poc_level.price_high) / 2
+
+                footprint = VolumeFootprint(
+                    start_bar=start_idx,
+                    end_bar=end_idx - 1,
+                    high=period_high,
+                    low=period_low,
+                    levels=levels,
+                    poc_price=poc_price,
+                    poc_volume=max_volume
+                )
+
                 footprints.append(footprint)
 
-                # Add to historical POCs if this is a completed period (not current)
-                if not footprint['is_current']:
-                    historical_pocs.append({
-                        'period_start': period_start,
-                        'period_end': min(period_end, current_time),
-                        'poc_price': footprint['poc']
-                    })
+        if not footprints:
+            return {
+                'success': False,
+                'error': 'No footprints calculated'
+            }
 
-        # Get the most recent footprint
-        current_footprint = footprints[-1] if len(footprints) > 0 else None
+        # Get current footprint (last one)
+        current_footprint = footprints[-1]
 
-        return {
-            'footprints': footprints,
-            'current_footprint': current_footprint,
-            'historical_pocs': historical_pocs,
-            'timeframe': self.timeframe,
-            'dynamic_poc': self.dynamic_poc
-        }
+        # Calculate value area (levels containing 70% of volume)
+        total_volume = sum(level.volume for level in current_footprint.levels)
+        sorted_levels = sorted(current_footprint.levels, key=lambda x: x.volume, reverse=True)
 
-    def _resample_to_htf(self, df):
-        """Resample dataframe to higher timeframe"""
-        timeframe_map = {
-            'D': 'D',
-            '2D': '2D',
-            '3D': '3D',
-            '4D': '4D',
-            '5D': '5D',
-            'W': 'W',
-            '2W': '2W',
-            '3W': '3W',
-            'M': 'M',
-            '2M': '2M',
-            '3M': '3M'
-        }
+        value_area_volume = 0
+        value_area_high = current_footprint.low
+        value_area_low = current_footprint.high
 
-        resample_freq = timeframe_map.get(self.timeframe, 'W')
+        for level in sorted_levels:
+            value_area_volume += level.volume
+            value_area_high = max(value_area_high, level.price_high)
+            value_area_low = min(value_area_low, level.price_low)
 
-        df_resampled = df.resample(resample_freq).agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
-
-        return df_resampled
-
-    def _calculate_period_footprint(self, period_data, period_start):
-        """Calculate volume footprint for a specific period"""
-        # Get high and low for the period
-        period_high = period_data['high'].max()
-        period_low = period_data['low'].min()
-        period_range = period_high - period_low
-
-        if period_range == 0:
-            return None
-
-        # Calculate step size
-        step = period_range / self.bins
-
-        # Initialize volume distribution
-        volume_distribution = np.zeros(self.bins)
-
-        # Normalize volume by standard deviation
-        vol_std = period_data['volume'].std()
-        if vol_std == 0:
-            vol_std = 1
-
-        # Distribute volume across bins
-        for idx, row in period_data.iterrows():
-            close_price = row['close']
-            volume_val = row['volume'] / vol_std
-
-            # Find which bin this price belongs to
-            bin_idx = int((close_price - period_low) / step)
-            bin_idx = min(bin_idx, self.bins - 1)  # Ensure within bounds
-
-            if bin_idx >= 0:
-                volume_distribution[bin_idx] += volume_val
-
-        # Find Point of Control (POC) - bin with highest volume
-        poc_bin = np.argmax(volume_distribution)
-        poc_price = period_low + (poc_bin + 0.5) * step
-
-        # Calculate value area (70% of volume)
-        total_volume = np.sum(volume_distribution)
-        value_area_volume = total_volume * 0.7
-
-        # Find value area high and low
-        sorted_bins = np.argsort(volume_distribution)[::-1]
-        cumulative_volume = 0
-        value_area_bins = []
-
-        for bin_idx in sorted_bins:
-            cumulative_volume += volume_distribution[bin_idx]
-            value_area_bins.append(bin_idx)
-            if cumulative_volume >= value_area_volume:
+            if value_area_volume >= total_volume * 0.7:
                 break
 
-        value_area_low = period_low + min(value_area_bins) * step
-        value_area_high = period_low + (max(value_area_bins) + 1) * step
-
-        # Create bin data
-        bins_data = []
-        for i in range(self.bins):
-            bin_lower = period_low + i * step
-            bin_upper = bin_lower + step
-            bins_data.append({
-                'lower': bin_lower,
-                'upper': bin_upper,
-                'mid': (bin_lower + bin_upper) / 2,
-                'volume': volume_distribution[i],
-                'is_poc': (i == poc_bin)
-            })
-
         return {
-            'period_start': period_start,
-            'period_high': period_high,
-            'period_low': period_low,
-            'period_mid': (period_high + period_low) / 2,
-            'poc': poc_price,
+            'success': True,
+            'footprints': footprints,
+            'current_footprint': current_footprint,
+            'poc_price': current_footprint.poc_price,
+            'poc_volume': current_footprint.poc_volume,
             'value_area_high': value_area_high,
             'value_area_low': value_area_low,
-            'bins': bins_data,
-            'total_volume': total_volume
+            'htf_high': current_footprint.high,
+            'htf_low': current_footprint.low,
+            'timeframe': self.timeframe,
+            'bins': self.bins
         }
+
+    def get_signals(self, df: pd.DataFrame) -> Dict:
+        """
+        Get trading signals from volume footprint
+
+        Args:
+            df: DataFrame with OHLCV data
+
+        Returns:
+            Dict containing signals and analysis
+        """
+        result = self.calculate(df)
+
+        if not result['success']:
+            return result
+
+        cols = self._get_column_names(df)
+        current_price = df[cols['close']].iloc[-1]
+
+        signals = []
+
+        # Price near POC
+        poc_distance = abs(current_price - result['poc_price'])
+        poc_distance_pct = (poc_distance / current_price) * 100
+
+        if poc_distance_pct < 0.5:  # Within 0.5% of POC
+            signals.append({
+                'type': 'POC_PROXIMITY',
+                'message': f"Price near POC ({result['poc_price']:.2f})",
+                'bias': 'NEUTRAL',
+                'strength': 'HIGH'
+            })
+
+        # Price near value area bounds
+        if abs(current_price - result['value_area_high']) / current_price * 100 < 0.5:
+            signals.append({
+                'type': 'VALUE_AREA_HIGH',
+                'message': f"Price at Value Area High ({result['value_area_high']:.2f})",
+                'bias': 'BEARISH',
+                'strength': 'MEDIUM'
+            })
+
+        if abs(current_price - result['value_area_low']) / current_price * 100 < 0.5:
+            signals.append({
+                'type': 'VALUE_AREA_LOW',
+                'message': f"Price at Value Area Low ({result['value_area_low']:.2f})",
+                'bias': 'BULLISH',
+                'strength': 'MEDIUM'
+            })
+
+        # Price near HTF extremes
+        if abs(current_price - result['htf_high']) / current_price * 100 < 0.5:
+            signals.append({
+                'type': 'HTF_HIGH',
+                'message': f"Price at {self.timeframe} High ({result['htf_high']:.2f})",
+                'bias': 'BEARISH',
+                'strength': 'HIGH'
+            })
+
+        if abs(current_price - result['htf_low']) / current_price * 100 < 0.5:
+            signals.append({
+                'type': 'HTF_LOW',
+                'message': f"Price at {self.timeframe} Low ({result['htf_low']:.2f})",
+                'bias': 'BULLISH',
+                'strength': 'HIGH'
+            })
+
+        result['signals'] = signals
+        result['current_price'] = current_price
+
+        return result

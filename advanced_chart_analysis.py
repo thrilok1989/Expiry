@@ -23,6 +23,7 @@ from indicators.liquidity_sentiment_profile import LiquiditySentimentProfile
 from indicators.advanced_price_action import AdvancedPriceAction
 from indicators.money_flow_profile import MoneyFlowProfile
 from indicators.deltaflow_volume_profile import DeltaFlowVolumeProfile
+from indicators.reversal_probability_zones import ReversalProbabilityZones
 from dhan_data_fetcher import DhanDataFetcher
 from config import get_dhan_credentials
 
@@ -157,11 +158,11 @@ class AdvancedChartAnalysis:
                              show_volume=True, show_liquidity_profile=False,
                              show_money_flow_profile=False, show_deltaflow_profile=False,
                              show_bos=False, show_choch=False, show_fibonacci=False,
-                             show_patterns=False,
+                             show_patterns=False, show_reversal_zones=True,
                              vob_params=None, htf_params=None, footprint_params=None,
                              rsi_params=None, om_params=None, liquidity_params=None,
                              money_flow_params=None, deltaflow_params=None,
-                             price_action_params=None):
+                             price_action_params=None, reversal_zones_params=None):
         """
         Create advanced chart with all indicators
 
@@ -177,6 +178,7 @@ class AdvancedChartAnalysis:
             show_liquidity_profile: Show Liquidity Sentiment Profile
             show_money_flow_profile: Show Money Flow Profile (volume/money flow weighted)
             show_deltaflow_profile: Show DeltaFlow Volume Profile (delta per price level)
+            show_reversal_zones: Show Reversal Probability Zones (LuxAlgo)
             vob_params: Parameters for Volume Order Blocks indicator
             htf_params: Parameters for HTF Support/Resistance indicator
             footprint_params: Parameters for HTF Volume Footprint indicator
@@ -185,6 +187,7 @@ class AdvancedChartAnalysis:
             liquidity_params: Parameters for Liquidity Sentiment Profile indicator
             money_flow_params: Parameters for Money Flow Profile indicator
             deltaflow_params: Parameters for DeltaFlow Volume Profile indicator
+            reversal_zones_params: Parameters for Reversal Probability Zones indicator
 
         Returns:
             plotly Figure object
@@ -269,6 +272,13 @@ class AdvancedChartAnalysis:
                 else:
                     price_action_indicator = AdvancedPriceAction()
 
+            reversal_zones_indicator = None
+            if show_reversal_zones:
+                if reversal_zones_params:
+                    reversal_zones_indicator = ReversalProbabilityZones(**reversal_zones_params)
+                else:
+                    reversal_zones_indicator = ReversalProbabilityZones(swing_length=20, max_reversals=1000)
+
             # Calculate all indicators
             vob_data = vob_indicator.calculate(df) if vob_indicator else None
             rsi_data = ultimate_rsi.get_signals(df) if ultimate_rsi else None
@@ -277,6 +287,7 @@ class AdvancedChartAnalysis:
             money_flow_data = money_flow_indicator.calculate(df) if money_flow_indicator else None
             deltaflow_data = deltaflow_indicator.calculate(df) if deltaflow_indicator else None
             price_action_data = price_action_indicator.analyze(df) if price_action_indicator else None
+            reversal_zones_data = reversal_zones_indicator.calculate(df) if reversal_zones_indicator else None
         except Exception as e:
             raise Exception(f"Error calculating indicators: {str(e)}")
 
