@@ -5112,7 +5112,7 @@ def render_nifty_option_screener():
         # Telegram settings
         st.markdown("---")
         st.markdown("### 🤖 TELEGRAM SETTINGS")
-        auto_send = st.checkbox("Auto-send signals to Telegram", value=False, key="nifty_screener_auto_send_telegram")
+        auto_send = st.checkbox("Auto-send signals to Telegram", value=True, key="nifty_screener_auto_send_telegram")
         show_signal_preview = st.checkbox("Show signal preview", value=True, key="nifty_screener_show_signal_preview")
         
         if st.button("Clear Caches"):
