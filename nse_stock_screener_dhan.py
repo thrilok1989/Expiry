@@ -21,8 +21,12 @@ from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import io
 
-# Import actual analysis modules
-try:
+# Import actual analysis modules (lazy loading to avoid boot issues)
+def _import_analysis_modules():
+    """Lazy import to avoid loading NiftyOptionScreener at boot"""
+    global AdvancedChartAnalysis, BiasAnalysisPro, MLMarketRegimeDetector
+    global analyze_atm_bias, analyze_oi_pcr_metrics, calculate_seller_max_pain, compute_pcr_df
+
     from advanced_chart_analysis import AdvancedChartAnalysis
     from bias_analysis import BiasAnalysisPro
     from src.ml_market_regime import MLMarketRegimeDetector
@@ -31,12 +35,9 @@ try:
         analyze_atm_bias,
         analyze_oi_pcr_metrics,
         calculate_seller_max_pain,
-        compute_pcr_df,
-        safe_int,
-        safe_float
+        compute_pcr_df
     )
-except ImportError as e:
-    st.error(f"Error importing analysis modules: {e}")
+    return True
 
 # NSE FNO Stocks list
 NSE_FNO_STOCKS = [
@@ -127,6 +128,9 @@ class NSEStockScreener:
 
     def __init__(self):
         """Initialize with actual analysis classes + Dhan API"""
+        # Lazy load analysis modules
+        _import_analysis_modules()
+
         self.chart_analyzer = AdvancedChartAnalysis()
         self.bias_analyzer = BiasAnalysisPro()
         self.ml_regime_detector = MLMarketRegimeDetector()
