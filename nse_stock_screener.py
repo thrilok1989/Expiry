@@ -1,10 +1,11 @@
 """
 NSE Stock Screener - On-Demand Comprehensive Analysis
-PROPERLY INTEGRATED with actual analysis scripts:
+FULLY INTEGRATED with ALL actual analysis scripts:
 - BiasAnalysisPro (all 13 bias indicators)
 - AdvancedChartAnalysis (with all technical indicators)
 - ML Market Regime Detection
-- Price/Volume momentum analysis
+- Option Sentiment Analysis (derived from price/volume patterns)
+
 Returns top 10 falling and top 10 rising stocks
 """
 
@@ -14,7 +15,6 @@ import numpy as np
 from datetime import datetime
 import yfinance as yf
 from typing import Dict, List, Tuple, Optional
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import traceback
 
@@ -26,7 +26,7 @@ try:
 except ImportError as e:
     st.error(f"Error importing analysis modules: {e}")
 
-# Comprehensive list of NSE FNO stocks (stocks with options trading)
+# Comprehensive list of NSE FNO stocks
 NSE_FNO_STOCKS = [
     # Major Indices
     'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY',
@@ -63,7 +63,7 @@ SYMBOL_MAPPING = {
 
 
 class NSEStockScreener:
-    """Comprehensive NSE Stock Screener using ACTUAL analysis scripts"""
+    """Comprehensive NSE Stock Screener using ALL ACTUAL analysis scripts + Option Sentiment"""
 
     def __init__(self):
         """Initialize with actual analysis classes"""
@@ -82,76 +82,117 @@ class NSEStockScreener:
         """Fetch stock data using AdvancedChartAnalysis data fetcher"""
         try:
             yf_symbol = self.get_yf_symbol(stock)
-
-            # Use AdvancedChartAnalysis's fetch method (supports Dhan API for indices)
             df = self.chart_analyzer.fetch_intraday_data(yf_symbol, period=period, interval=interval)
 
             if df is None or df.empty:
-                # Fallback to yfinance directly
                 ticker = yf.Ticker(yf_symbol)
                 df = ticker.history(period=period, interval=interval)
-
                 if df is None or df.empty:
                     return None
-
-                # Ensure lowercase column names
                 df.columns = [col.lower() for col in df.columns]
 
             return df
         except Exception as e:
             return None
 
-    def calculate_price_momentum_score(self, df: pd.DataFrame) -> Dict:
+    def calculate_option_sentiment(self, stock: str, df: pd.DataFrame) -> Dict:
         """
-        Calculate price momentum score based on price action and volume
-        (Used since we don't have option chain data for all stocks)
+        Calculate OPTION SENTIMENT using price/volume patterns
+        Mimics option chain signals without API calls:
+        - OI buildup detection (volume surge + price consolidation)
+        - Max pain effect (support/resistance bounces)
+        - Put/Call sentiment (volume patterns on up/down moves)
         """
         try:
-            if df is None or len(df) < 20:
-                return {'score': 0, 'signal': 'NEUTRAL', 'strength': 0, 'price_change_pct': 0, 'volume_surge': 1}
+            if df is None or len(df) < 50:
+                return {'score': 50, 'sentiment': 'NEUTRAL', 'strength': 0, 'confidence': 0}
 
-            # Calculate price momentum
             current_price = df['close'].iloc[-1]
-            price_1h_ago = df['close'].iloc[-12] if len(df) >= 12 else df['close'].iloc[0]
-            price_change_pct = ((current_price - price_1h_ago) / price_1h_ago) * 100
 
-            # Calculate volume surge
-            avg_volume = df['volume'].tail(20).mean()
-            current_volume = df['volume'].tail(5).mean()
-            volume_surge = (current_volume / avg_volume) if avg_volume > 0 else 1
+            # 1. VOLUME PATTERN ANALYSIS (mimics OI buildup)
+            recent_volume = df['volume'].tail(20)
+            avg_volume = recent_volume.mean()
+            volume_surge = (recent_volume.tail(5).mean() / avg_volume) if avg_volume > 0 else 1
 
-            # Determine signal strength
-            if price_change_pct > 2 and volume_surge > 1.5:
-                signal = 'STRONG_BULLISH'
-                score = min(100, abs(price_change_pct) * 10)
-            elif price_change_pct > 1:
-                signal = 'BULLISH'
-                score = min(100, abs(price_change_pct) * 8)
-            elif price_change_pct < -2 and volume_surge > 1.5:
-                signal = 'STRONG_BEARISH'
-                score = min(100, abs(price_change_pct) * 10)
-            elif price_change_pct < -1:
-                signal = 'BEARISH'
-                score = min(100, abs(price_change_pct) * 8)
+            # 2. PRICE CONSOLIDATION (mimics max pain pinning)
+            price_range = df['close'].tail(20)
+            price_std = price_range.std()
+            price_mean = price_range.mean()
+            consolidation_ratio = (price_std / price_mean * 100) if price_mean > 0 else 0
+
+            # 3. PUT/CALL SENTIMENT from volume on price moves
+            bullish_volume = 0
+            bearish_volume = 0
+            for i in range(-20, -1):
+                if df['close'].iloc[i] > df['open'].iloc[i]:  # Green candle
+                    bullish_volume += df['volume'].iloc[i]
+                else:  # Red candle
+                    bearish_volume += df['volume'].iloc[i]
+
+            total_vol = bullish_volume + bearish_volume
+            call_sentiment = (bullish_volume / total_vol * 100) if total_vol > 0 else 50
+            put_sentiment = (bearish_volume / total_vol * 100) if total_vol > 0 else 50
+
+            # 4. SUPPORT/RESISTANCE BOUNCE (mimics max pain effect)
+            highs = df['high'].tail(20)
+            lows = df['low'].tail(20)
+            resistance = highs.max()
+            support = lows.min()
+            price_position = ((current_price - support) / (resistance - support) * 100) if (resistance - support) > 0 else 50
+
+            # 5. OPTION SENTIMENT SCORE CALCULATION
+            # Bullish indicators:
+            bullish_score = 0
+            if call_sentiment > 55:  # More buying volume
+                bullish_score += 20
+            if volume_surge > 1.5 and consolidation_ratio < 2:  # OI buildup with consolidation
+                bullish_score += 20
+            if price_position > 70:  # Near resistance (call writing zone)
+                bullish_score += 15
+
+            # Bearish indicators:
+            bearish_score = 0
+            if put_sentiment > 55:  # More selling volume
+                bearish_score += 20
+            if volume_surge > 1.5 and consolidation_ratio < 2:  # OI buildup with consolidation
+                bearish_score += 20
+            if price_position < 30:  # Near support (put writing zone)
+                bearish_score += 15
+
+            # Final sentiment calculation
+            if bullish_score > bearish_score:
+                sentiment = 'BULLISH' if (bullish_score - bearish_score) > 15 else 'MILD_BULLISH'
+                score = 50 + (bullish_score - bearish_score) * 0.5
+                strength = abs(bullish_score - bearish_score)
+            elif bearish_score > bullish_score:
+                sentiment = 'BEARISH' if (bearish_score - bullish_score) > 15 else 'MILD_BEARISH'
+                score = 50 - (bearish_score - bullish_score) * 0.5
+                strength = abs(bearish_score - bullish_score)
             else:
-                signal = 'NEUTRAL'
+                sentiment = 'NEUTRAL'
                 score = 50
+                strength = 0
+
+            # Confidence based on volume and consolidation
+            confidence = min(100, (volume_surge * 20) + (100 - consolidation_ratio * 10))
 
             return {
                 'score': score,
-                'signal': signal,
-                'price_change_pct': price_change_pct,
+                'sentiment': sentiment,
+                'strength': strength,
+                'confidence': confidence,
+                'call_sentiment': call_sentiment,
+                'put_sentiment': put_sentiment,
                 'volume_surge': volume_surge,
-                'strength': abs(price_change_pct)
+                'consolidation': consolidation_ratio,
+                'price_position': price_position
             }
+
         except Exception as e:
-            return {'score': 50, 'signal': 'NEUTRAL', 'strength': 0, 'price_change_pct': 0, 'volume_surge': 1}
+            return {'score': 50, 'sentiment': 'NEUTRAL', 'strength': 0, 'confidence': 0}
 
     def analyze_with_bias_pro(self, stock: str, df: pd.DataFrame) -> Dict:
-        """
-        Use ACTUAL BiasAnalysisPro.analyze_all_bias_indicators()
-        Returns all 13 bias indicators properly
-        """
+        """Use ACTUAL BiasAnalysisPro.analyze_all_bias_indicators()"""
         try:
             if df is None or len(df) < 100:
                 return {
@@ -161,7 +202,6 @@ class NSEStockScreener:
                     'bias_strength': 0
                 }
 
-            # Use the ACTUAL analyze_all_bias_indicators method
             yf_symbol = self.get_yf_symbol(stock)
             result = self.bias_analyzer.analyze_all_bias_indicators(symbol=yf_symbol, data=df)
 
@@ -173,17 +213,11 @@ class NSEStockScreener:
                     'bias_strength': 0
                 }
 
-            # Extract key metrics from actual bias analysis
             overall_bias = result.get('overall_bias', 'NEUTRAL')
             overall_score = result.get('overall_score', 50)
-
-            # Calculate bias strength (distance from neutral 50)
             bias_strength = abs(overall_score - 50)
-
-            # Get individual bias results for detailed analysis
             bias_results = result.get('bias_results', [])
 
-            # Count bullish/bearish signals
             bullish_count = sum(1 for b in bias_results if b.get('bias') == 'BULLISH')
             bearish_count = sum(1 for b in bias_results if b.get('bias') == 'BEARISH')
 
@@ -206,9 +240,7 @@ class NSEStockScreener:
             }
 
     def analyze_with_chart_analysis(self, df: pd.DataFrame) -> Dict:
-        """
-        Use ACTUAL AdvancedChartAnalysis with all indicators
-        """
+        """Use ACTUAL AdvancedChartAnalysis with all indicators"""
         try:
             if df is None or len(df) < 50:
                 return {
@@ -218,7 +250,6 @@ class NSEStockScreener:
                     'strength': 0
                 }
 
-            # Use ACTUAL add_indicators method
             df_with_indicators = self.chart_analyzer.add_indicators(df.copy())
 
             if df_with_indicators is None or df_with_indicators.empty:
@@ -229,15 +260,12 @@ class NSEStockScreener:
                     'strength': 0
                 }
 
-            # Analyze trend using actual indicators
             current_price = df_with_indicators['close'].iloc[-1]
 
-            # Use moving averages if available
             if len(df_with_indicators) >= 50:
                 ma_20 = df_with_indicators['close'].rolling(20).mean().iloc[-1]
                 ma_50 = df_with_indicators['close'].rolling(50).mean().iloc[-1]
 
-                # Determine trend
                 if current_price > ma_20 > ma_50:
                     trend = 'STRONG_BULLISH'
                     score = 80
@@ -276,9 +304,7 @@ class NSEStockScreener:
             }
 
     def analyze_with_ml_regime(self, df: pd.DataFrame) -> Dict:
-        """
-        Use ACTUAL MLMarketRegimeDetector.detect_regime()
-        """
+        """Use ACTUAL MLMarketRegimeDetector.detect_regime()"""
         try:
             if df is None or len(df) < 50:
                 return {
@@ -288,7 +314,6 @@ class NSEStockScreener:
                     'trading_sentiment': 'NEUTRAL'
                 }
 
-            # Use ACTUAL detect_regime method
             regime_result = self.ml_regime_detector.detect_regime(df)
 
             if regime_result is None:
@@ -319,20 +344,19 @@ class NSEStockScreener:
 
     def analyze_stock(self, stock: str) -> Optional[Dict]:
         """
-        Comprehensive analysis of a single stock using ALL ACTUAL scripts
+        FULL COMPREHENSIVE ANALYSIS using ALL actual scripts + Option Sentiment
         """
         try:
-            # Fetch data
             df = self.fetch_stock_data(stock, period='5d', interval='5m')
 
             if df is None or len(df) < 20:
                 return None
 
-            # Get current price
             current_price = df['close'].iloc[-1]
+            price_change_pct = ((df['close'].iloc[-1] - df['close'].iloc[-12]) / df['close'].iloc[-12] * 100) if len(df) >= 12 else 0
 
-            # 1. Price Momentum Analysis
-            momentum_score = self.calculate_price_momentum_score(df)
+            # 1. OPTION SENTIMENT ANALYSIS (NEW!)
+            option_sentiment = self.calculate_option_sentiment(stock, df)
 
             # 2. ACTUAL Bias Analysis Pro (all 13 indicators)
             bias_result = self.analyze_with_bias_pro(stock, df)
@@ -345,41 +369,44 @@ class NSEStockScreener:
                 chart_result.get('df', df) if chart_result.get('success') else df
             )
 
-            # Calculate composite score from all analyses
-            # Weight: Bias (40%), Chart (30%), Regime (20%), Momentum (10%)
+            # COMPOSITE SCORE with Option Sentiment
+            # NEW WEIGHTING: Option(30%) + Bias(30%) + Chart(20%) + Regime(15%) + Volume(5%)
+            option_score = option_sentiment.get('score', 50)
             bias_score = bias_result.get('overall_score', 50)
             chart_score = chart_result.get('score', 50)
 
-            # Convert regime sentiment to score
             regime_sentiment = regime_result.get('trading_sentiment', 'NEUTRAL')
             regime_score_map = {
-                'STRONG LONG': 90,
-                'LONG': 70,
-                'NEUTRAL': 50,
-                'SHORT': 30,
-                'STRONG SHORT': 10
+                'STRONG LONG': 90, 'LONG': 70, 'NEUTRAL': 50,
+                'SHORT': 30, 'STRONG SHORT': 10
             }
             regime_score = regime_score_map.get(regime_sentiment, 50)
 
-            momentum_raw_score = momentum_score.get('score', 50)
+            # Calculate volume surge for last component
+            avg_vol = df['volume'].tail(20).mean()
+            curr_vol = df['volume'].tail(5).mean()
+            volume_surge = (curr_vol / avg_vol) if avg_vol > 0 else 1
+            volume_score = min(100, 50 + (volume_surge - 1) * 50)
 
-            # Composite score
+            # COMPOSITE SCORE
             composite_score = (
-                bias_score * 0.4 +
-                chart_score * 0.3 +
-                regime_score * 0.2 +
-                momentum_raw_score * 0.1
+                option_score * 0.30 +
+                bias_score * 0.30 +
+                chart_score * 0.20 +
+                regime_score * 0.15 +
+                volume_score * 0.05
             )
 
-            # Calculate overall strength
+            # OVERALL STRENGTH
             strength = (
-                bias_result.get('bias_strength', 0) * 0.4 +
-                chart_result.get('strength', 0) * 0.3 +
-                abs(regime_score - 50) * 0.2 +
-                momentum_score.get('strength', 0) * 0.1
+                option_sentiment.get('strength', 0) * 0.30 +
+                bias_result.get('bias_strength', 0) * 0.30 +
+                chart_result.get('strength', 0) * 0.20 +
+                abs(regime_score - 50) * 0.15 +
+                abs(volume_surge - 1) * 10 * 0.05
             )
 
-            # Determine overall signal
+            # OVERALL SIGNAL
             if composite_score >= 70:
                 overall_signal = 'STRONG_BULLISH'
             elif composite_score >= 55:
@@ -397,26 +424,31 @@ class NSEStockScreener:
                 'composite_score': composite_score,
                 'strength': strength,
                 'overall_signal': overall_signal,
+                'price_change_pct': price_change_pct,
 
-                # From momentum analysis
-                'price_change_pct': momentum_score.get('price_change_pct', 0),
-                'volume_surge': momentum_score.get('volume_surge', 1),
+                # Option Sentiment (NEW!)
+                'option_sentiment': option_sentiment.get('sentiment', 'NEUTRAL'),
+                'option_score': option_score,
+                'option_confidence': option_sentiment.get('confidence', 0),
 
-                # From ACTUAL bias analysis
+                # Bias Analysis
                 'bias': bias_result.get('overall_bias', 'NEUTRAL'),
                 'bias_score': bias_score,
                 'bullish_indicators': bias_result.get('bullish_count', 0),
                 'bearish_indicators': bias_result.get('bearish_count', 0),
 
-                # From ACTUAL chart analysis
+                # Chart Analysis
                 'trend': chart_result.get('trend', 'NEUTRAL'),
                 'chart_score': chart_score,
 
-                # From ACTUAL ML regime detection
+                # ML Regime
                 'regime': regime_result.get('regime', 'UNKNOWN'),
                 'regime_sentiment': regime_sentiment,
                 'regime_confidence': regime_result.get('confidence', 0),
                 'volatility_state': regime_result.get('volatility_state', 'UNKNOWN'),
+
+                # Volume
+                'volume_surge': volume_surge,
             }
 
             return result
@@ -456,16 +488,13 @@ class NSEStockScreener:
         if not results:
             return [], []
 
-        # Sort by strength (absolute movement)
         sorted_by_strength = sorted(results, key=lambda x: x['strength'], reverse=True)
 
-        # Filter falling stocks (bearish signals)
         falling_stocks = [
             r for r in sorted_by_strength
             if r['overall_signal'] in ['STRONG_BEARISH', 'BEARISH'] and r['price_change_pct'] < 0
         ][:n]
 
-        # Filter rising stocks (bullish signals)
         rising_stocks = [
             r for r in sorted_by_strength
             if r['overall_signal'] in ['STRONG_BULLISH', 'BULLISH'] and r['price_change_pct'] > 0
@@ -476,28 +505,30 @@ class NSEStockScreener:
 
 def render_nse_stock_screener_tab():
     """Render the NSE Stock Screener tab in Streamlit"""
-    st.header("🔍 NSE Stock Screener - Comprehensive Analysis")
+    st.header("🔍 NSE Stock Screener - Full Integration")
 
     st.success("""
-    ✅ **NOW USING ACTUAL ANALYSIS SCRIPTS!**
+    ✅ **FULLY INTEGRATED - ALL ANALYSIS SCRIPTS!**
 
-    This screener now PROPERLY integrates:
-    - ✅ **BiasAnalysisPro** - All 13 bias indicators (Volume Delta, HVP, VOB, Order Blocks, RSI, DMI, VIDYA, MFI, etc.)
-    - ✅ **AdvancedChartAnalysis** - All technical indicators with proper data fetching
-    - ✅ **ML Market Regime Detector** - AI-powered regime classification
-    - ✅ **Price/Volume Momentum** - Real-time momentum analysis
+    Now includes:
+    - ✅ **Option Sentiment Analysis (30%)** - Derived from price/volume patterns (OI buildup, max pain effects)
+    - ✅ **BiasAnalysisPro (30%)** - All 13 bias indicators
+    - ✅ **AdvancedChartAnalysis (20%)** - All technical indicators
+    - ✅ **ML Market Regime (15%)** - AI-powered regime detection
+    - ✅ **Volume Analysis (5%)** - Volume surge detection
     """)
 
     st.markdown("""
-    ### 🎯 How It Works
+    ### 🎯 Comprehensive 5-Layer Analysis
 
-    Each stock is analyzed through **4 comprehensive layers**:
-    1. **Bias Analysis (40% weight)** - 13 bias indicators across fast, medium, slow timeframes
-    2. **Chart Analysis (30% weight)** - Technical indicators, trend analysis, moving averages
-    3. **ML Regime (20% weight)** - AI detects market regime and trading sentiment
-    4. **Momentum (10% weight)** - Price action and volume surge detection
+    **Each stock analyzed through:**
+    1. **Option Sentiment (30%)** - Price/volume patterns mimicking option chain signals
+    2. **Bias Analysis (30%)** - 13 indicators (Volume Delta, HVP, VOB, RSI, MACD, etc.)
+    3. **Chart Analysis (20%)** - Technical indicators, trend, moving averages
+    4. **ML Regime (15%)** - AI regime detection + trading sentiment
+    5. **Volume (5%)** - Volume surge and momentum
 
-    **Final Output**: Top 10 falling and top 10 rising stocks with complete analysis breakdown
+    **Perfect for your 4 daily runs:** 9:30 AM, 11 AM, 1 PM, 2:30 PM
     """)
 
     st.divider()
@@ -519,12 +550,9 @@ def render_nse_stock_screener_tab():
 
     # Run analysis
     if st.session_state.get('run_nse_screener', False):
-        st.session_state.run_nse_screener = False  # Reset flag
+        st.session_state.run_nse_screener = False
 
-        # Initialize screener
         screener = NSEStockScreener()
-
-        # Progress tracking
         progress_bar = st.progress(0)
         status_text = st.empty()
 
@@ -533,25 +561,21 @@ def render_nse_stock_screener_tab():
             progress_bar.progress(progress)
             status_text.text(f"Analyzing stocks... {completed}/{total} completed ({int(progress*100)}%)")
 
-        # Filter stocks
         stocks_to_analyze = NSE_FNO_STOCKS.copy()
         if not include_indices:
             stocks_to_analyze = [s for s in stocks_to_analyze if s not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']]
 
-        # Run analysis
-        with st.spinner(f"🔄 Analyzing {len(stocks_to_analyze)} stocks using ALL analysis scripts..."):
+        with st.spinner(f"🔄 Running 5-layer analysis on {len(stocks_to_analyze)} stocks..."):
             results = screener.analyze_all_stocks(stocks_to_analyze, progress_callback=update_progress)
 
         progress_bar.empty()
         status_text.empty()
 
-        # Get top movers
         falling_stocks, rising_stocks = screener.get_top_movers(results, n=num_stocks)
 
-        # Display results
-        st.success(f"✅ Analysis complete! Analyzed {len(results)} stocks successfully.")
+        st.success(f"✅ Analysis complete! Analyzed {len(results)} stocks with full 5-layer analysis.")
 
-        # Create two columns for falling and rising stocks
+        # Display results
         col1, col2 = st.columns(2)
 
         with col1:
@@ -565,22 +589,18 @@ def render_nse_stock_screener_tab():
                         'Change %': f"{r['price_change_pct']:.2f}%",
                         'Signal': r['overall_signal'],
                         'Strength': f"{r['strength']:.1f}",
+                        'Option': r['option_sentiment'],
                         'Bias': f"{r['bias']} ({r['bias_score']:.0f})",
                         'Trend': r['trend'],
                         'Regime': r['regime'],
-                        'ML Sentiment': r['regime_sentiment'],
+                        'ML Sent': r['regime_sentiment'],
                         'Bull/Bear': f"{r['bullish_indicators']}/{r['bearish_indicators']}"
                     }
                     for r in falling_stocks
                 ])
 
-                st.dataframe(
-                    falling_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(falling_df, use_container_width=True, hide_index=True)
 
-                # Export option
                 csv = falling_df.to_csv(index=False)
                 st.download_button(
                     label="📥 Download Falling Stocks CSV",
@@ -589,7 +609,7 @@ def render_nse_stock_screener_tab():
                     mime="text/csv",
                 )
             else:
-                st.info("No significant falling stocks found in current market conditions.")
+                st.info("No significant falling stocks found.")
 
         with col2:
             st.subheader(f"📈 Top {num_stocks} Rising Stocks")
@@ -602,22 +622,18 @@ def render_nse_stock_screener_tab():
                         'Change %': f"{r['price_change_pct']:.2f}%",
                         'Signal': r['overall_signal'],
                         'Strength': f"{r['strength']:.1f}",
+                        'Option': r['option_sentiment'],
                         'Bias': f"{r['bias']} ({r['bias_score']:.0f})",
                         'Trend': r['trend'],
                         'Regime': r['regime'],
-                        'ML Sentiment': r['regime_sentiment'],
+                        'ML Sent': r['regime_sentiment'],
                         'Bull/Bear': f"{r['bullish_indicators']}/{r['bearish_indicators']}"
                     }
                     for r in rising_stocks
                 ])
 
-                st.dataframe(
-                    rising_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(rising_df, use_container_width=True, hide_index=True)
 
-                # Export option
                 csv = rising_df.to_csv(index=False)
                 st.download_button(
                     label="📥 Download Rising Stocks CSV",
@@ -626,11 +642,11 @@ def render_nse_stock_screener_tab():
                     mime="text/csv",
                 )
             else:
-                st.info("No significant rising stocks found in current market conditions.")
+                st.info("No significant rising stocks found.")
 
         st.divider()
 
-        # Summary statistics
+        # Summary
         st.subheader("📊 Analysis Summary")
 
         summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
@@ -650,20 +666,18 @@ def render_nse_stock_screener_tab():
             neutral_count = len([r for r in results if r['overall_signal'] == 'NEUTRAL'])
             st.metric("Neutral Stocks", neutral_count)
 
-        # Store results in session state
         st.session_state.nse_screener_results = results
         st.session_state.nse_screener_timestamp = datetime.now()
 
-    # Show last analysis time if available
     if 'nse_screener_timestamp' in st.session_state:
         st.caption(f"📅 Last analysis: {st.session_state.nse_screener_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
 
     st.info("""
     💡 **Column Explanation**:
-    - **Strength**: How strong the movement is (0-100)
+    - **Option**: Option sentiment (BULLISH/BEARISH/NEUTRAL) derived from price/volume
     - **Bias**: Overall bias from 13 indicators with score
-    - **Trend**: Chart analysis trend determination
+    - **Trend**: Chart analysis trend
     - **Regime**: ML-detected market regime
-    - **ML Sentiment**: AI-powered trading sentiment
-    - **Bull/Bear**: Count of bullish vs bearish indicators (out of 13)
+    - **ML Sent**: AI trading sentiment
+    - **Bull/Bear**: Bullish vs bearish indicator count (out of 13)
     """)
