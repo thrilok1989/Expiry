@@ -605,7 +605,7 @@ class MLMarketRegimeDetector:
     # =========================================================================
 
     def _extract_option_chain_features(self, option_data: Dict) -> Dict[str, float]:
-        """Extract features from option chain data"""
+        """Extract features from option chain data (including ATM bias & support/resistance)"""
         features = {}
 
         # PCR features
@@ -629,6 +629,73 @@ class MLMarketRegimeDetector:
         features['total_gamma'] = option_data.get('total_gamma', 0)
         features['call_gamma'] = option_data.get('total_call_gamma', 0)
         features['put_gamma'] = option_data.get('total_put_gamma', 0)
+
+        # ATM Bias features (NEW!)
+        atm_bias = option_data.get('atm_bias', {})
+        if atm_bias:
+            # ATM bias score (-1 to +1, where +1 = strong bullish, -1 = strong bearish)
+            features['atm_bias_score'] = atm_bias.get('score', 0)
+            features['atm_bias_confidence'] = atm_bias.get('confidence', 0) / 100.0
+
+            # Convert verdict to numeric
+            verdict = atm_bias.get('verdict', 'NEUTRAL')
+            if 'BULLISH' in verdict:
+                features['atm_bias_direction'] = 1.0
+            elif 'BEARISH' in verdict:
+                features['atm_bias_direction'] = -1.0
+            else:
+                features['atm_bias_direction'] = 0.0
+
+        # Support level features (NEW!)
+        support = option_data.get('support', {})
+        if support and support.get('strike', 0) > 0:
+            features['support_distance_pct'] = support.get('distance_pct', 0)
+            features['support_strength'] = 0.5 if support.get('strength') == 'Medium' else (1.0 if support.get('strength') == 'Strong' else 0.25)
+
+            # Support verdict
+            if 'BULLISH' in support.get('verdict', ''):
+                features['support_bullish'] = 1.0
+            else:
+                features['support_bullish'] = 0.0
+
+        # Resistance level features (NEW!)
+        resistance = option_data.get('resistance', {})
+        if resistance and resistance.get('strike', 0) > 0:
+            features['resistance_distance_pct'] = resistance.get('distance_pct', 0)
+            features['resistance_strength'] = 0.5 if resistance.get('strength') == 'Medium' else (1.0 if resistance.get('strength') == 'Strong' else 0.25)
+
+            # Resistance verdict
+            if 'BEARISH' in resistance.get('verdict', ''):
+                features['resistance_bearish'] = 1.0
+            else:
+                features['resistance_bearish'] = 0.0
+
+        # Seller's perspective (NEW!)
+        seller_bias = option_data.get('seller_bias', 'NEUTRAL')
+        if 'BULLISH' in seller_bias:
+            features['seller_direction'] = 1.0
+        elif 'BEARISH' in seller_bias:
+            features['seller_direction'] = -1.0
+        else:
+            features['seller_direction'] = 0.0
+
+        features['seller_confidence'] = option_data.get('seller_confidence', 50) / 100.0
+
+        # Entry signal (NEW!)
+        entry_signal = option_data.get('entry_signal', {})
+        if entry_signal:
+            position = entry_signal.get('position', 'NEUTRAL')
+            if 'LONG' in position or 'BUY' in position:
+                features['entry_signal_direction'] = 1.0
+            elif 'SHORT' in position or 'SELL' in position:
+                features['entry_signal_direction'] = -1.0
+            else:
+                features['entry_signal_direction'] = 0.0
+
+            features['entry_signal_confidence'] = entry_signal.get('confidence', 0) / 100.0
+
+        # Moment detector score (NEW!)
+        features['moment_score'] = option_data.get('moment_score', 0)
 
         return features
 
@@ -857,7 +924,7 @@ class MLMarketRegimeDetector:
     # =========================================================================
 
     def _generate_option_chain_signals(self, option_data: Dict) -> List[str]:
-        """Generate signals from option chain data"""
+        """Generate signals from option chain data (including ATM bias & support/resistance)"""
         signals = []
 
         pcr = option_data.get('pcr', 1.0)
@@ -873,6 +940,68 @@ class MLMarketRegimeDetector:
             if abs(distance) > 1:
                 direction = "above" if distance > 0 else "below"
                 signals.append(f"🎯 Max Pain: {max_pain:.0f} ({abs(distance):.1f}% {direction} spot)")
+
+        # ATM Bias signals (NEW!)
+        atm_bias = option_data.get('atm_bias', {})
+        if atm_bias:
+            verdict = atm_bias.get('verdict', 'NEUTRAL')
+            confidence = atm_bias.get('confidence', 0)
+            if confidence > 50:  # Only show if confidence is reasonable
+                signals.append(f"🎯 ATM Bias: {verdict} ({confidence:.0f}% confidence)")
+
+            # Show specific strong bias metrics
+            metrics = atm_bias.get('metrics', {})
+            if metrics:
+                net_delta = metrics.get('net_delta', 0)
+                if abs(net_delta) > 0.3:
+                    delta_direction = "Bullish" if net_delta > 0 else "Bearish"
+                    signals.append(f"   ⚡ Strong Delta: {delta_direction} ({abs(net_delta):.2f})")
+
+        # Support level signals (NEW!)
+        support = option_data.get('support', {})
+        if support and support.get('strike', 0) > 0:
+            strike = support.get('strike')
+            distance_pct = support.get('distance_pct', 0)
+            strength = support.get('strength', 'Unknown')
+            verdict = support.get('verdict', '')
+
+            if distance_pct < 2:  # Within 2% of support
+                signals.append(f"🛡️ Near Support: ₹{strike} ({strength}) - {verdict}")
+            else:
+                signals.append(f"🛡️ Key Support: ₹{strike} ({distance_pct:.1f}% below, {strength})")
+
+        # Resistance level signals (NEW!)
+        resistance = option_data.get('resistance', {})
+        if resistance and resistance.get('strike', 0) > 0:
+            strike = resistance.get('strike')
+            distance_pct = resistance.get('distance_pct', 0)
+            strength = resistance.get('strength', 'Unknown')
+            verdict = resistance.get('verdict', '')
+
+            if distance_pct < 2:  # Within 2% of resistance
+                signals.append(f"🔒 Near Resistance: ₹{strike} ({strength}) - {verdict}")
+            else:
+                signals.append(f"🔒 Key Resistance: ₹{strike} ({distance_pct:.1f}% above, {strength})")
+
+        # Seller's perspective signal (NEW!)
+        seller_bias = option_data.get('seller_bias', 'NEUTRAL')
+        seller_confidence = option_data.get('seller_confidence', 50)
+        if seller_bias != 'NEUTRAL' and seller_confidence > 40:
+            signals.append(f"💼 Seller's View: {seller_bias} ({seller_confidence:.0f}%)")
+
+        # Entry signal (NEW!)
+        entry_signal = option_data.get('entry_signal', {})
+        if entry_signal:
+            position = entry_signal.get('position', 'NEUTRAL')
+            conf = entry_signal.get('confidence', 0)
+            if position != 'NEUTRAL' and conf > 40:
+                signals.append(f"🎯 Entry Signal: {position} ({conf:.0f}%)")
+
+        # Moment detector (NEW!)
+        moment_score = option_data.get('moment_score', 0)
+        moment_verdict = option_data.get('moment_verdict', 'NEUTRAL')
+        if moment_score > 50:
+            signals.append(f"⚡ Moment Detected: {moment_verdict} (Score: {moment_score:.0f})")
 
         return signals
 
