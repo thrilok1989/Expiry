@@ -4968,29 +4968,9 @@ with tab8:
     try:
         st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
-        # Auto-fetch enhanced market data if not already loaded or stale (older than 1 minute)
-        should_fetch = False
-
-        if 'enhanced_market_data' not in st.session_state:
-            should_fetch = True
-        else:
-            # Check if data is older than 1 minute
-            from datetime import timedelta
-            data_age = get_current_time_ist() - st.session_state.enhanced_market_data.get('timestamp', get_current_time_ist())
-            if data_age > timedelta(minutes=1):
-                should_fetch = True
-
-        if should_fetch:
-            with st.spinner("🔄 Auto-loading comprehensive market data from all sources..."):
-                try:
-                    from enhanced_market_data import get_enhanced_market_data
-                    enhanced_data = get_enhanced_market_data()
-                    st.session_state.enhanced_market_data = enhanced_data
-                    st.success("✅ Enhanced market data loaded successfully!")
-                except Exception as e:
-                    st.error(f"❌ Failed to fetch enhanced data: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
+        # DISABLED AUTO-FETCH - Only fetch when user clicks Refresh
+        # This prevents tab from hanging when Dhan API is down (holidays, weekends)
+        # Auto-fetch code commented out to prevent blank tabs
 
         # Control buttons
         col1, col2 = st.columns([1, 1])
