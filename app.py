@@ -1879,10 +1879,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🔍 NSE Stock Screener"
 ])
 
-# Debug: Confirm tabs were created
-if tab8 and tab9:
-    pass  # Tabs created successfully
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 1: OVERALL MARKET SENTIMENT
@@ -4963,37 +4959,18 @@ with tab7:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab8:
-    # GUARANTEED CONTENT - ALWAYS VISIBLE
-    st.title("🌐 Enhanced Market Data Analysis")
-    st.success("✅ Tab 8 is loaded and working!")
-    st.write("Loading Enhanced Market Data...")
+    st.markdown("# 🌐 Enhanced Market Data Analysis")
+    st.markdown("### ✅ Tab 8 LOADED")
+    st.write("=" * 50)
+    st.info("If you see this, tab 8 is working!")
+    st.write("=" * 50)
 
     try:
         st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
-        # Auto-fetch enhanced market data if not already loaded or stale (older than 1 minute)
-        should_fetch = False
-
-        if 'enhanced_market_data' not in st.session_state:
-            should_fetch = True
-        else:
-            # Check if data is older than 1 minute
-            from datetime import timedelta
-            data_age = get_current_time_ist() - st.session_state.enhanced_market_data.get('timestamp', get_current_time_ist())
-            if data_age > timedelta(minutes=1):
-                should_fetch = True
-
-        if should_fetch:
-            with st.spinner("🔄 Auto-loading comprehensive market data from all sources..."):
-                try:
-                    from enhanced_market_data import get_enhanced_market_data
-                    enhanced_data = get_enhanced_market_data()
-                    st.session_state.enhanced_market_data = enhanced_data
-                    st.success("✅ Enhanced market data loaded successfully!")
-                except Exception as e:
-                    st.error(f"❌ Failed to fetch enhanced data: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
+        # DISABLED AUTO-FETCH - Only fetch when user clicks Refresh
+        # This prevents tab from hanging when Dhan API is down (holidays, weekends)
+        # Auto-fetch code commented out to prevent blank tabs
 
         # Control buttons
         col1, col2 = st.columns([1, 1])
@@ -5052,10 +5029,11 @@ with tab8:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab9:
-    # GUARANTEED CONTENT - ALWAYS VISIBLE
-    st.title("🔍 NSE Stock Screener")
-    st.success("✅ Tab 9 is loaded and working!")
-    st.write("Initializing screener...")
+    st.markdown("# 🔍 NSE Stock Screener")
+    st.markdown("### ✅ Tab 9 LOADED")
+    st.write("=" * 50)
+    st.info("If you see this, tab 9 is working!")
+    st.write("=" * 50)
 
     try:
         from nse_stock_screener_dhan import render_nse_stock_screener_tab
