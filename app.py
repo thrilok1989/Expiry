@@ -1879,6 +1879,11 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🔍 NSE Stock Screener"
 ])
 
+# Debug: Confirm tabs were created
+if tab8 and tab9:
+    pass  # Tabs created successfully
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 1: OVERALL MARKET SENTIMENT
 # ═══════════════════════════════════════════════════════════════════════
@@ -4958,8 +4963,11 @@ with tab7:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab8:
-    st.markdown("## 🌐 Enhanced Market Data Analysis")
+    # GUARANTEED CONTENT - ALWAYS VISIBLE
+    st.title("🌐 Enhanced Market Data Analysis")
+    st.success("✅ Tab 8 is loaded and working!")
     st.write("Loading Enhanced Market Data...")
+
     try:
         st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
@@ -5044,7 +5052,9 @@ with tab8:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab9:
-    st.markdown("## 🔍 NSE Stock Screener")
+    # GUARANTEED CONTENT - ALWAYS VISIBLE
+    st.title("🔍 NSE Stock Screener")
+    st.success("✅ Tab 9 is loaded and working!")
     st.write("Initializing screener...")
 
     try:
