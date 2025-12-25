@@ -40,6 +40,10 @@ class AdvancedPriceAction:
         Returns:
             Tuple of (swing_highs, swing_lows) lists with dicts containing index, price, time
         """
+        # Handle both uppercase and lowercase column names
+        high_col = 'High' if 'High' in df.columns else 'high'
+        low_col = 'Low' if 'Low' in df.columns else 'low'
+
         swing_highs = []
         swing_lows = []
 
@@ -49,28 +53,28 @@ class AdvancedPriceAction:
             # Check for swing high
             is_swing_high = True
             for j in range(i - length, i + length + 1):
-                if j != i and df['high'].iloc[j] >= df['high'].iloc[i]:
+                if j != i and df[high_col].iloc[j] >= df[high_col].iloc[i]:
                     is_swing_high = False
                     break
 
             if is_swing_high:
                 swing_highs.append({
                     'index': i,
-                    'price': df['high'].iloc[i],
+                    'price': df[high_col].iloc[i],
                     'time': df.index[i]
                 })
 
             # Check for swing low
             is_swing_low = True
             for j in range(i - length, i + length + 1):
-                if j != i and df['low'].iloc[j] <= df['low'].iloc[i]:
+                if j != i and df[low_col].iloc[j] <= df[low_col].iloc[i]:
                     is_swing_low = False
                     break
 
             if is_swing_low:
                 swing_lows.append({
                     'index': i,
-                    'price': df['low'].iloc[i],
+                    'price': df[low_col].iloc[i],
                     'time': df.index[i]
                 })
 
@@ -115,6 +119,9 @@ class AdvancedPriceAction:
         Returns:
             List of BOS events with type, price, time, and previous structure level
         """
+        # Handle both uppercase and lowercase column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+
         bos_events = []
 
         # Track the most recent swing high and low
@@ -134,28 +141,28 @@ class AdvancedPriceAction:
                     break
 
             # Check for bullish BOS (price breaks above recent swing high)
-            if recent_swing_high and df['close'].iloc[i] > recent_swing_high['price']:
+            if recent_swing_high and df[close_col].iloc[i] > recent_swing_high['price']:
                 # Check if we haven't already recorded this BOS
                 if not any(bos['type'] == 'BULLISH' and bos['structure_level'] == recent_swing_high['price']
                           for bos in bos_events):
                     bos_events.append({
                         'type': 'BULLISH',
                         'index': i,
-                        'price': df['close'].iloc[i],
+                        'price': df[close_col].iloc[i],
                         'time': df.index[i],
                         'structure_level': recent_swing_high['price'],
                         'structure_time': recent_swing_high['time']
                     })
 
             # Check for bearish BOS (price breaks below recent swing low)
-            if recent_swing_low and df['close'].iloc[i] < recent_swing_low['price']:
+            if recent_swing_low and df[close_col].iloc[i] < recent_swing_low['price']:
                 # Check if we haven't already recorded this BOS
                 if not any(bos['type'] == 'BEARISH' and bos['structure_level'] == recent_swing_low['price']
                           for bos in bos_events):
                     bos_events.append({
                         'type': 'BEARISH',
                         'index': i,
-                        'price': df['close'].iloc[i],
+                        'price': df[close_col].iloc[i],
                         'time': df.index[i],
                         'structure_level': recent_swing_low['price'],
                         'structure_time': recent_swing_low['time']
@@ -509,6 +516,9 @@ class AdvancedPriceAction:
         Returns:
             List of detected flag/pennant patterns
         """
+        # Handle both uppercase and lowercase column names
+        close_col = 'Close' if 'Close' in df.columns else 'close'
+
         patterns = []
 
         if len(df) < lookback + 10:
@@ -520,8 +530,8 @@ class AdvancedPriceAction:
             flagpole_start = i - lookback
             flagpole_end = i
 
-            price_change = df['close'].iloc[flagpole_end] - df['close'].iloc[flagpole_start]
-            percent_change = (price_change / df['close'].iloc[flagpole_start]) * 100
+            price_change = df[close_col].iloc[flagpole_end] - df[close_col].iloc[flagpole_start]
+            percent_change = (price_change / df[close_col].iloc[flagpole_start]) * 100
 
             # Look for strong moves (> 5% in lookback period)
             if abs(percent_change) > 5:
@@ -555,7 +565,7 @@ class AdvancedPriceAction:
                         'percent_change': percent_change,
                         'consolidation_highs': consolidation_highs,
                         'consolidation_lows': consolidation_lows,
-                        'breakout_target': df['close'].iloc[flagpole_end] + price_change  # Measured move
+                        'breakout_target': df[close_col].iloc[flagpole_end] + price_change  # Measured move
                     })
 
         return patterns
