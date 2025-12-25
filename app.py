@@ -1867,7 +1867,7 @@ st.divider()
 # ═══════════════════════════════════════════════════════════════════════
 
 # Native tabs - work seamlessly on mobile and desktop, no multiple clicks needed
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🌟 Overall Market Sentiment",
     "🎯 Trade Setup",
     "📊 Active Signals",
@@ -1876,9 +1876,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "📉 Advanced Chart Analysis",
     "🎯 NIFTY Option Screener v7.0",
     "🌐 Enhanced Market Data",
-    "🤖 MASTER AI ANALYSIS",
-    "🔬 Advanced Analytics",
-    "📜 Signal History & Performance"
+    "🔍 NSE Stock Screener"
 ])
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -5036,251 +5034,25 @@ with tab8:
         """)
 
 # ═══════════════════════════════════════════════════════════════════════
-# TAB 9: MASTER AI ANALYSIS
+# TAB 9: NSE STOCK SCREENER
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab9:
-    # Add button to open in new tab
-    st.markdown("""
-    <div style="background-color: #1f77b4; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
-        <h3 style="color: white; margin: 0 0 10px 0;">🚀 Open AI Analysis in New Browser Tab</h3>
-        <p style="color: white; margin: 0 0 10px 0;">Get a dedicated full-screen view of all AI analysis modules</p>
-        <a href="/🤖_AI_Analysis" target="_blank" style="text-decoration: none;">
-            <button style="
-                background-color: #4CAF50;
-                color: white;
-                padding: 12px 30px;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 16px;
-                font-weight: bold;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            ">
-                🪟 Open in New Tab
-            </button>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
     try:
-        # Auto-load market data if not already loaded
-        if 'data_df' not in st.session_state or st.session_state.data_df is None:
-            with st.spinner("📊 Loading NIFTY market data for analysis..."):
-                # Fetch NIFTY data
-                df = get_cached_chart_data('^NSEI', '1d', '1m')
-
-                if df is not None and not df.empty:
-                    # Add ATR indicator if not present
-                    if 'ATR' not in df.columns:
-                        from advanced_chart_analysis import AdvancedChartAnalysis
-                        chart_analyzer = AdvancedChartAnalysis()
-                        df = chart_analyzer.add_indicators(df)
-
-                    # Store in session state for reuse
-                    st.session_state.data_df = df
-                else:
-                    st.error("❌ Failed to load market data. Please check your connection and try again.")
-                    st.stop()
-
-        df = st.session_state.data_df
-
-        # Get option chain data
-        option_chain = {}
-        if 'overall_option_data' in st.session_state and st.session_state.overall_option_data:
-            option_chain = st.session_state.overall_option_data
-
-        # Get VIX data
-        vix_current = 15.0  # Default
-        if 'enhanced_market_data' in st.session_state:
-            try:
-                vix_current = st.session_state.enhanced_market_data.get('india_vix', {}).get('current', 15.0)
-            except:
-                pass
-
-        # VIX history (use recent values or create simple series)
-        vix_history = pd.Series([vix_current] * 50)  # Simple placeholder
-
-        # Get instrument
-        selected_instrument = st.session_state.get('selected_index', 'NIFTY')
-
-        # Calculate days to expiry (simple approximation)
-        from datetime import datetime
-        today = datetime.now()
-        # Find next Thursday (weekly expiry)
-        days_ahead = (3 - today.weekday()) % 7
-        if days_ahead == 0:
-            days_ahead = 7
-        days_to_expiry = days_ahead
-
-        # Render the AI analysis tab
-        render_master_ai_analysis_tab(
-            df=df,
-            option_chain=option_chain,
-            vix_current=vix_current,
-            vix_history=vix_history,
-            instrument=selected_instrument,
-            days_to_expiry=days_to_expiry
-        )
+        from nse_stock_screener import render_nse_stock_screener_tab
+        render_nse_stock_screener_tab()
     except Exception as e:
-        st.error(f"Error in Master AI Analysis: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-
-# Show info below (removed the warning about loading data)
-    st.info("""
-            📊 **Master AI Analysis** combines ALL advanced modules:
-
-            1. 🌡️ **Volatility Regime Detection** - Detects market volatility state
-            2. 🎯 **OI Trap Detection** - Identifies retail trapping patterns
-            3. 📊 **CVD & Delta Imbalance** - Professional orderflow analysis
-            4. 🏦 **Institutional vs Retail** - Detects smart money activity
-            5. 🧲 **Liquidity Gravity** - Predicts price magnet levels
-            6. 💰 **Position Sizing** - Dynamic lot calculation with Kelly Criterion
-            7. 🛡️ **Risk Management** - Trailing stops, partial profits
-            8. 📈 **Expectancy Model** - Statistical edge validation
-            9. 🤖 **ML Market Regime** - AI-powered regime classification
-            10. 📋 **Market Summary** - Comprehensive actionable insights
-
-            **Result**: 75-85%+ win rate potential 🎯
-            """)
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 10: ADVANCED ANALYTICS
-# ═══════════════════════════════════════════════════════════════════════
-
-with tab10:
-    # Add button to open in new tab
-    st.markdown("""
-    <div style="background-color: #9c27b0; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
-        <h3 style="color: white; margin: 0 0 10px 0;">🚀 Open Advanced Analytics in New Browser Tab</h3>
-        <p style="color: white; margin: 0 0 10px 0;">Explore individual AI modules in a dedicated full-screen view</p>
-        <a href="/🤖_AI_Analysis" target="_blank" style="text-decoration: none;">
-            <button style="
-                background-color: #4CAF50;
-                color: white;
-                padding: 12px 30px;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 16px;
-                font-weight: bold;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            ">
-                🪟 Open in New Tab
-            </button>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    try:
-        # Auto-load market data if not already loaded
-        if 'data_df' not in st.session_state or st.session_state.data_df is None:
-            with st.spinner("📊 Loading NIFTY market data for analysis..."):
-                # Fetch NIFTY data
-                df = get_cached_chart_data('^NSEI', '1d', '1m')
-
-                if df is not None and not df.empty:
-                    # Add ATR indicator if not present
-                    if 'ATR' not in df.columns:
-                        from advanced_chart_analysis import AdvancedChartAnalysis
-                        chart_analyzer = AdvancedChartAnalysis()
-                        df = chart_analyzer.add_indicators(df)
-
-                    # Store in session state for reuse
-                    st.session_state.data_df = df
-                else:
-                    st.error("❌ Failed to load market data. Please check your connection and try again.")
-                    st.stop()
-
-        df = st.session_state.data_df
-
-        # Get option chain data
-        option_chain = {}
-        if 'overall_option_data' in st.session_state and st.session_state.overall_option_data:
-            option_chain = st.session_state.overall_option_data
-
-        # Get VIX data
-        vix_current = 15.0
-        if 'enhanced_market_data' in st.session_state:
-            try:
-                vix_current = st.session_state.enhanced_market_data.get('india_vix', {}).get('current', 15.0)
-            except:
-                pass
-
-        vix_history = pd.Series([vix_current] * 50)
-
-        # Render individual modules
-        render_advanced_analytics_tab(
-            df=df,
-            option_chain=option_chain,
-            vix_current=vix_current,
-            vix_history=vix_history
-        )
-    except Exception as e:
-        st.error(f"Error in Advanced Analytics: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 11: SIGNAL HISTORY & PERFORMANCE
-# ═══════════════════════════════════════════════════════════════════════
-
-with tab11:
-    try:
-        from signal_tracker import display_signal_history_tab, update_active_signals
-
-        # Auto-update active signals with current market data
-        if 'bias_analysis_results' in st.session_state and isinstance(st.session_state.bias_analysis_results, dict):
-            df_price = st.session_state.bias_analysis_results.get('df')
-            if df_price is not None and len(df_price) > 0:
-                current_price = df_price['close'].iloc[-1]
-
-                # Gather market data for ML exit analysis
-                market_data = {}
-
-                # Add ML regime
-                if 'ml_regime_result' in st.session_state:
-                    market_data['ml_regime'] = st.session_state.ml_regime_result
-
-                # Add money flow signals
-                if 'money_flow_signals' in st.session_state:
-                    market_data['money_flow_signals'] = st.session_state.money_flow_signals
-
-                # Add deltaflow signals
-                if 'deltaflow_signals' in st.session_state:
-                    market_data['deltaflow_signals'] = st.session_state.deltaflow_signals
-
-                # Add ATM bias data
-                if 'atm_bias_data' in st.session_state:
-                    market_data['atm_bias_data'] = st.session_state.atm_bias_data
-
-                # Add volatility result
-                if 'volatility_result' in st.session_state:
-                    market_data['volatility_result'] = st.session_state.volatility_result
-
-                # Update active signals with ML analysis
-                update_result = update_active_signals(current_price, market_data=market_data)
-
-        # Display signal history and performance metrics
-        display_signal_history_tab()
-
-    except Exception as e:
-        st.error(f"Error loading Signal History: {e}")
+        st.error(f"Error loading NSE Stock Screener: {e}")
         import traceback
         st.code(traceback.format_exc())
 
         st.info("""
-        **Signal Tracker Not Available**
+        **NSE Stock Screener Not Available**
 
         To use this feature:
-        1. Ensure signal_tracker.py is in the project root
-        2. Set up Supabase credentials in .streamlit/secrets.toml
-        3. Run the SQL schema in Supabase (see signal_tracker.py for SQL)
+        1. Ensure nse_stock_screener.py is in the project root
+        2. Required modules: advanced_chart_analysis.py, bias_analysis.py, src/ml_market_regime.py
+        3. Internet connection required for fetching stock data
         """)
 
 # ═══════════════════════════════════════════════════════════════════════
