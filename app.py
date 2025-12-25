@@ -4958,8 +4958,9 @@ with tab7:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab8:
+    st.markdown("## 🌐 Enhanced Market Data Analysis")
+    st.write("Loading Enhanced Market Data...")
     try:
-        st.header("🌐 Enhanced Market Data Analysis")
         st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
         # Auto-fetch enhanced market data if not already loaded or stale (older than 1 minute)
@@ -5043,8 +5044,10 @@ with tab8:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab9:
+    st.markdown("## 🔍 NSE Stock Screener")
+    st.write("Initializing screener...")
+
     try:
-        st.markdown("### 🔍 NSE Stock Screener Loading...")
         from nse_stock_screener import render_nse_stock_screener_tab
         render_nse_stock_screener_tab()
     except Exception as e:
