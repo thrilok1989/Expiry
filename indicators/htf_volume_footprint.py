@@ -258,7 +258,8 @@ class HTFVolumeFootprint:
             'htf_high': current_footprint.high,
             'htf_low': current_footprint.low,
             'timeframe': self.timeframe,
-            'bins': self.bins
+            'bins': self.bins,
+            'show_dynamic_poc': self.show_dynamic_poc
         }
 
     def get_signals(self, df: pd.DataFrame) -> Dict:
