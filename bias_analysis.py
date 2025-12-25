@@ -266,8 +266,8 @@ class BiasAnalysisPro:
 
     def calculate_dmi(self, df: pd.DataFrame, period: int = 13, smoothing: int = 8):
         """Calculate DMI indicators"""
-        high = df[cols['high']]
         cols = self._get_column_names(df)
+        high = df[cols['high']]
         low = df[cols['low']]
         close = df[cols['close']]
 
@@ -317,8 +317,8 @@ class BiasAnalysisPro:
 
     def calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
         """Calculate ATR"""
-        high = df[cols['high']]
         cols = self._get_column_names(df)
+        high = df[cols['high']]
         low = df[cols['low']]
         close = df[cols['close']]
 
@@ -377,11 +377,12 @@ class BiasAnalysisPro:
 
     def calculate_volume_delta(self, df: pd.DataFrame):
         """Calculate Volume Delta (up_vol - down_vol) - Buyer's Perspective"""
+        cols = self._get_column_names(df)
         if df[cols['volume']].sum() == 0:
             return 0, False, False
 
         # Calculate up and down volume
-        cols = self._get_column_names(df)
+        
         up_vol = ((df[cols['close']] > df[cols['open']]).astype(int) * df[cols['volume']]).sum()
         down_vol = ((df[cols['close']] < df[cols['open']]).astype(int) * df[cols['volume']]).sum()
 
@@ -395,6 +396,7 @@ class BiasAnalysisPro:
         """Calculate High Volume Pivots matching Pine Script
         Returns: (hvp_bullish, hvp_bearish, pivot_high_count, pivot_low_count)
         """
+        cols = self._get_column_names(df)
         if df[cols['volume']].sum() == 0:
             return False, False, 0, 0
 
@@ -406,7 +408,7 @@ class BiasAnalysisPro:
             # Check for pivot high
             is_pivot_high = True
             for j in range(i - left_bars, i + right_bars + 1):
-                cols = self._get_column_names(df)
+                
                 if j != i and df[cols['high']].iloc[j] >= df[cols['high']].iloc[i]:
                     is_pivot_high = False
                     break
