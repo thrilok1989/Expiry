@@ -3663,6 +3663,54 @@ with tab6:
                             volume_footprint_data=volume_footprint_result
                         )
 
+                        # ═══════════════════════════════════════════════════════════════
+                        # TRADING SENTIMENT - PROMINENT DISPLAY (LONG/SHORT)
+                        # ═══════════════════════════════════════════════════════════════
+                        sentiment = regime_result.trading_sentiment
+                        sentiment_conf = regime_result.sentiment_confidence
+                        sentiment_score = regime_result.sentiment_score
+
+                        # Determine color based on sentiment
+                        if "STRONG LONG" in sentiment:
+                            sentiment_color = "#00ff88"  # Bright green
+                            bg_color = "rgba(0, 255, 136, 0.15)"
+                        elif "LONG" in sentiment:
+                            sentiment_color = "#00cc66"  # Green
+                            bg_color = "rgba(0, 204, 102, 0.15)"
+                        elif "STRONG SHORT" in sentiment:
+                            sentiment_color = "#ff4444"  # Bright red
+                            bg_color = "rgba(255, 68, 68, 0.15)"
+                        elif "SHORT" in sentiment:
+                            sentiment_color = "#ff6666"  # Red
+                            bg_color = "rgba(255, 102, 102, 0.15)"
+                        else:  # NEUTRAL
+                            sentiment_color = "#66b3ff"  # Blue
+                            bg_color = "rgba(102, 179, 255, 0.15)"
+
+                        # Big bold sentiment display
+                        st.markdown(f"""
+                        <div style="
+                            background: {bg_color};
+                            padding: 30px;
+                            border-radius: 15px;
+                            border-left: 8px solid {sentiment_color};
+                            text-align: center;
+                            margin-bottom: 20px;
+                        ">
+                            <div style='font-size: 1.2rem; color:#cccccc; margin-bottom:10px;'>
+                                📊 MARKET SENTIMENT (Based on ALL Indicators)
+                            </div>
+                            <div style='font-size: 4rem; color:{sentiment_color}; font-weight:900; margin:10px 0;'>
+                                {sentiment}
+                            </div>
+                            <div style='font-size: 1.5rem; color:{sentiment_color}; margin-top:10px;'>
+                                Confidence: {sentiment_conf:.1f}% | Score: {sentiment_score:+.1f}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        st.divider()
+
                         # Display regime info
                         col1, col2, col3 = st.columns(3)
 

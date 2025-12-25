@@ -28,6 +28,9 @@ class MLMarketRegimeResult:
     signals: List[str]
     support_resistance: Dict = None  # Support/Resistance levels (major and near)
     entry_exit_signals: Dict = None  # Entry/Exit signals with levels
+    trading_sentiment: str = "NEUTRAL"  # "STRONG LONG", "LONG", "NEUTRAL", "SHORT", "STRONG SHORT"
+    sentiment_confidence: float = 0.0  # 0-100
+    sentiment_score: float = 0.0  # -100 to +100 (negative=SHORT, positive=LONG)
 
 
 @dataclass
@@ -231,6 +234,16 @@ class MLMarketRegimeDetector:
             regime, confidence, trend_strength, features, support_resistance
         )
 
+        # Calculate Trading Sentiment (LONG/SHORT) based on ALL indicators
+        trading_sentiment, sentiment_confidence, sentiment_score = self._calculate_trading_sentiment(
+            regime=regime,
+            regime_confidence=confidence,
+            features=features,
+            trend_strength=trend_strength,
+            volatility_state=volatility_state,
+            market_phase=market_phase
+        )
+
         return MLMarketRegimeResult(
             regime=regime,
             confidence=confidence,
@@ -243,7 +256,10 @@ class MLMarketRegimeDetector:
             feature_importance=feature_importance,
             signals=signals,
             support_resistance=support_resistance,
-            entry_exit_signals=entry_exit_signals
+            entry_exit_signals=entry_exit_signals,
+            trading_sentiment=trading_sentiment,
+            sentiment_confidence=sentiment_confidence,
+            sentiment_score=sentiment_score
         )
 
     def _engineer_features(self, df: pd.DataFrame) -> Dict[str, float]:
@@ -1325,6 +1341,111 @@ class MLMarketRegimeDetector:
 
         return signals
 
+    def _calculate_trading_sentiment(
+        self,
+        regime: str,
+        regime_confidence: float,
+        features: Dict,
+        trend_strength: float,
+        volatility_state: str,
+        market_phase: str
+    ) -> Tuple[str, float, float]:
+        """
+        Calculate clear LONG/SHORT trading sentiment based on ALL indicators
+
+        Returns:
+            (sentiment, confidence, score)
+            sentiment: "STRONG LONG", "LONG", "NEUTRAL", "SHORT", "STRONG SHORT"
+            confidence: 0-100
+            score: -100 to +100 (negative=SHORT, positive=LONG)
+        """
+        # Initialize sentiment score (-100 to +100)
+        score = 0.0
+
+        # 1. REGIME CONTRIBUTION (40% weight)
+        if regime == "Trending Up":
+            score += 40 * (regime_confidence / 100.0)
+        elif regime == "Trending Down":
+            score -= 40 * (regime_confidence / 100.0)
+        elif "Breakout" in regime:
+            score += 20 * (regime_confidence / 100.0)  # Cautiously bullish on breakout
+        # Range Bound and Consolidation contribute 0
+
+        # 2. TREND STRENGTH (20% weight)
+        if trend_strength > 70:
+            score += 20
+        elif trend_strength > 50:
+            score += 10
+        elif trend_strength < 30:
+            score -= 10
+        elif trend_strength < 50:
+            score -= 5
+
+        # 3. MARKET PHASE (15% weight)
+        if market_phase == "Markup":
+            score += 15
+        elif market_phase == "Accumulation":
+            score += 10
+        elif market_phase == "Distribution":
+            score -= 10
+        elif market_phase == "Markdown":
+            score -= 15
+
+        # 4. ATM BIAS (10% weight) - from option chain
+        atm_bias_direction = features.get('atm_bias_direction', 0)  # 1=Bullish, -1=Bearish
+        atm_bias_confidence = features.get('atm_bias_confidence', 0)  # 0-1
+        score += 10 * atm_bias_direction * atm_bias_confidence
+
+        # 5. MOMENTUM (5% weight)
+        momentum_5 = features.get('momentum_5', 0)
+        if momentum_5 > 2:
+            score += 5
+        elif momentum_5 > 1:
+            score += 2.5
+        elif momentum_5 < -2:
+            score -= 5
+        elif momentum_5 < -1:
+            score -= 2.5
+
+        # 6. BIAS ANALYSIS (5% weight)
+        bias_alignment = features.get('bias_alignment', 0)  # -1 to +1
+        score += 5 * bias_alignment
+
+        # 7. SECTOR ROTATION (3% weight)
+        rotation_score = features.get('rotation_score', 0)  # -1 to +1
+        score += 3 * rotation_score
+
+        # 8. SELLER'S PERSPECTIVE (2% weight) - from option chain
+        seller_direction = features.get('seller_direction', 0)  # 1=Bullish, -1=Bearish
+        seller_confidence = features.get('seller_confidence', 0)  # 0-1
+        score += 2 * seller_direction * seller_confidence
+
+        # 9. VOLATILITY PENALTY
+        # High volatility reduces confidence but doesn't change direction
+        volatility_penalty = 0
+        if volatility_state == "Extreme":
+            volatility_penalty = 0.6  # 40% confidence reduction
+        elif volatility_state == "High":
+            volatility_penalty = 0.3  # 30% confidence reduction
+
+        # Calculate confidence (0-100)
+        # Confidence is based on score magnitude and agreement between indicators
+        confidence = min(abs(score), 100) * (1 - volatility_penalty)
+
+        # Determine sentiment category
+        if score >= 60:
+            sentiment = "STRONG LONG 🚀"
+        elif score >= 30:
+            sentiment = "LONG 📈"
+        elif score <= -60:
+            sentiment = "STRONG SHORT 📉"
+        elif score <= -30:
+            sentiment = "SHORT ⬇️"
+        else:
+            sentiment = "NEUTRAL ⚖️"
+
+        return sentiment, confidence, score
+
     def _default_result(self) -> MLMarketRegimeResult:
         """Default result for insufficient data"""
         return MLMarketRegimeResult(
@@ -1339,7 +1460,10 @@ class MLMarketRegimeDetector:
             feature_importance={},
             signals=["Insufficient data for regime detection"],
             support_resistance={},
-            entry_exit_signals={}
+            entry_exit_signals={},
+            trading_sentiment="NEUTRAL ⚖️",
+            sentiment_confidence=0.0,
+            sentiment_score=0.0
         )
 
 
