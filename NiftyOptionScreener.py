@@ -5460,6 +5460,68 @@ def render_nifty_option_screener():
     # Run OI/PCR analysis
     oi_pcr_metrics = analyze_oi_pcr_metrics(merged, spot, atm_strike)
 
+    # ============================================
+    # 💾 EXPORT DATA TO SESSION STATE FOR ML MARKET REGIME
+    # ============================================
+    # Store comprehensive option chain data for ML Market Regime integration
+    st.session_state['overall_option_data'] = {
+        'NIFTY': {
+            'success': True,
+            'spot': spot,
+            'atm_strike': atm_strike,
+            # PCR data
+            'pcr': oi_pcr_metrics.get('pcr_total', 1.0),
+            'pcr_interpretation': oi_pcr_metrics.get('pcr_interpretation', 'Neutral'),
+            # OI data
+            'total_ce_oi': oi_pcr_metrics.get('total_ce_oi', 0),
+            'total_pe_oi': oi_pcr_metrics.get('total_pe_oi', 0),
+            'call_oi_concentration': oi_pcr_metrics.get('atm_concentration_pct', 0) / 100.0,
+            'put_oi_concentration': oi_pcr_metrics.get('atm_concentration_pct', 0) / 100.0,
+            # Max Pain
+            'max_pain': seller_max_pain if seller_max_pain else atm_strike,
+            # Gamma data
+            'total_gamma': atm_bias.get('metrics', {}).get('net_gamma', 0) if atm_bias else 0,
+            'total_call_gamma': atm_bias.get('metrics', {}).get('gamma_exposure', 0) if atm_bias else 0,
+            'total_put_gamma': atm_bias.get('metrics', {}).get('gamma_exposure', 0) if atm_bias else 0,
+            # ATM Bias data
+            'atm_bias': {
+                'verdict': atm_bias.get('verdict', 'NEUTRAL') if atm_bias else 'NEUTRAL',
+                'score': atm_bias.get('total_score', 0) if atm_bias else 0,
+                'confidence': abs(atm_bias.get('total_score', 0)) * 100 if atm_bias else 0,
+                'bias_scores': atm_bias.get('bias_scores', {}) if atm_bias else {},
+                'metrics': atm_bias.get('metrics', {}) if atm_bias else {},
+                'interpretations': atm_bias.get('bias_interpretations', {}) if atm_bias else {}
+            },
+            # Support/Resistance data
+            'support': {
+                'strike': support_bias.get('strike', 0) if support_bias else 0,
+                'verdict': support_bias.get('verdict', 'NEUTRAL') if support_bias else 'NEUTRAL',
+                'score': support_bias.get('total_score', 0) if support_bias else 0,
+                'strength': support_bias.get('strength', 'Unknown') if support_bias else 'Unknown',
+                'distance_pct': ((spot - support_bias.get('strike', spot)) / spot * 100) if support_bias and support_bias.get('strike') else 0
+            },
+            'resistance': {
+                'strike': resistance_bias.get('strike', 0) if resistance_bias else 0,
+                'verdict': resistance_bias.get('verdict', 'NEUTRAL') if resistance_bias else 'NEUTRAL',
+                'score': resistance_bias.get('total_score', 0) if resistance_bias else 0,
+                'strength': resistance_bias.get('strength', 'Unknown') if resistance_bias else 'Unknown',
+                'distance_pct': ((resistance_bias.get('strike', spot) - spot) / spot * 100) if resistance_bias and resistance_bias.get('strike') else 0
+            },
+            # Seller's perspective signals
+            'seller_bias': seller_bias_result.get('seller_verdict', 'NEUTRAL') if seller_bias_result else 'NEUTRAL',
+            'seller_confidence': seller_bias_result.get('seller_confidence', 50) if seller_bias_result else 50,
+            # Entry signal
+            'entry_signal': {
+                'position': entry_signal.get('position', 'NEUTRAL'),
+                'confidence': entry_signal.get('confidence', 0),
+                'rationale': entry_signal.get('rationale', [])
+            },
+            # Moment metrics
+            'moment_score': moment_metrics.get('combined_moment_score', 0) if moment_metrics else 0,
+            'moment_verdict': moment_metrics.get('verdict', 'NEUTRAL') if moment_metrics else 'NEUTRAL'
+        }
+    }
+
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
