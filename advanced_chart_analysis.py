@@ -239,7 +239,7 @@ class AdvancedChartAnalysis:
                 if footprint_params:
                     htf_footprint = HTFVolumeFootprint(**footprint_params)
                 else:
-                    htf_footprint = HTFVolumeFootprint(bins=10, timeframe='D', dynamic_poc=True)
+                    htf_footprint = HTFVolumeFootprint(bins=10, timeframe='1D', show_dynamic_poc=True)
 
             lsp_indicator = None
             if show_liquidity_profile:

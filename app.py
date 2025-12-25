@@ -3406,8 +3406,8 @@ with tab6:
 
                 footprint_params = {
                     'bins': footprint_bins if show_footprint else 10,
-                    'timeframe': footprint_timeframe if show_footprint else 'D',
-                    'dynamic_poc': footprint_dynamic_poc if show_footprint else True
+                    'timeframe': footprint_timeframe if show_footprint else '1D',
+                    'show_dynamic_poc': footprint_dynamic_poc if show_footprint else True
                 } if show_footprint else None
 
                 rsi_params = {
