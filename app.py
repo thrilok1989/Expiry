@@ -2934,6 +2934,13 @@ with tab6:
     with col4:
         show_patterns = st.checkbox("📊 Geometric Patterns", value=True, key="show_patterns")
 
+    # New Advanced Indicators (LuxAlgo & BigBeluga)
+    st.markdown("**🎯 Advanced Reversal & Volume Analysis**")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        show_reversal_zones = st.checkbox("🎯 Reversal Probability Zones (LuxAlgo)", value=True, key="show_reversal_zones", help="Statistical reversal prediction with probability targets")
+
     st.divider()
 
     # Indicator Configuration Section
@@ -3320,6 +3327,57 @@ with tab6:
                     key="dfp_show_volume_bars"
                 )
 
+    # Reversal Probability Zones Settings
+    if show_reversal_zones:
+        with st.expander("🎯 Reversal Probability Zones Settings (LuxAlgo)", expanded=False):
+            st.markdown("**Reversal Analysis Configuration**")
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                rpz_swing_length = st.slider(
+                    "Swing Length",
+                    min_value=5,
+                    max_value=50,
+                    value=20,
+                    step=5,
+                    help="Lookback period for swing detection",
+                    key="rpz_swing_length"
+                )
+
+            with col2:
+                rpz_max_reversals = st.slider(
+                    "Max Historical Samples",
+                    min_value=100,
+                    max_value=2000,
+                    value=1000,
+                    step=100,
+                    help="Number of historical reversals to analyze",
+                    key="rpz_max_reversals"
+                )
+
+            with col3:
+                rpz_normalize = st.checkbox(
+                    "Normalize Data",
+                    value=False,
+                    help="Use percentage-based analysis",
+                    key="rpz_normalize"
+                )
+
+            st.markdown("**Probability Levels to Show**")
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                rpz_show_25 = st.checkbox("25th Percentile", value=True, key="rpz_show_25")
+
+            with col2:
+                rpz_show_50 = st.checkbox("50th Percentile", value=True, key="rpz_show_50")
+
+            with col3:
+                rpz_show_75 = st.checkbox("75th Percentile", value=True, key="rpz_show_75")
+
+            with col4:
+                rpz_show_90 = st.checkbox("90th Percentile", value=True, key="rpz_show_90")
+
     st.divider()
 
     # Display chart if data is available
@@ -3408,6 +3466,16 @@ with tab6:
                     'show_volume_bars': dfp_show_volume_bars if show_deltaflow_profile else True
                 } if show_deltaflow_profile else None
 
+                reversal_zones_params = {
+                    'swing_length': rpz_swing_length if show_reversal_zones else 20,
+                    'max_reversals': rpz_max_reversals if show_reversal_zones else 1000,
+                    'normalize_data': rpz_normalize if show_reversal_zones else False,
+                    'percentile_25': rpz_show_25 if show_reversal_zones else True,
+                    'percentile_50': rpz_show_50 if show_reversal_zones else True,
+                    'percentile_75': rpz_show_75 if show_reversal_zones else True,
+                    'percentile_90': rpz_show_90 if show_reversal_zones else True
+                } if show_reversal_zones else None
+
                 # Create chart with selected indicators
                 chart_analyzer = get_advanced_chart_analyzer()
                 fig = chart_analyzer.create_advanced_chart(
@@ -3426,6 +3494,7 @@ with tab6:
                     show_choch=show_choch,
                     show_fibonacci=show_fibonacci,
                     show_patterns=show_patterns,
+                    show_reversal_zones=show_reversal_zones,
                     vob_params=vob_params,
                     htf_params=htf_params,
                     footprint_params=footprint_params,
@@ -3433,7 +3502,8 @@ with tab6:
                     om_params=om_params,
                     liquidity_params=liquidity_params,
                     money_flow_params=money_flow_params,
-                    deltaflow_params=deltaflow_params
+                    deltaflow_params=deltaflow_params,
+                    reversal_zones_params=reversal_zones_params
                 )
 
                 # Display chart
@@ -3491,6 +3561,8 @@ with tab6:
                     indicator_tabs.append("⚡ DeltaFlow Profile")
                 if show_bos or show_choch or show_fibonacci or show_patterns:
                     indicator_tabs.append("🎯 Price Action")
+                if show_reversal_zones:
+                    indicator_tabs.append("🎯 Reversal Zones")
 
                 if indicator_tabs:
                     tabs = st.tabs(indicator_tabs)
@@ -3542,6 +3614,20 @@ with tab6:
                             dfp_for_regime = DeltaFlowVolumeProfile(**deltaflow_params) if deltaflow_params else DeltaFlowVolumeProfile(bins=30)
                             regime_indicator_data['deltaflow_profile'] = dfp_for_regime.get_signals(df_stats)
 
+                        # Reversal Probability Zones data
+                        reversal_zones_result = None
+                        if show_reversal_zones:
+                            from indicators.reversal_probability_zones import ReversalProbabilityZones
+                            rpz_for_regime = ReversalProbabilityZones(**reversal_zones_params) if reversal_zones_params else ReversalProbabilityZones()
+                            reversal_zones_result = rpz_for_regime.calculate(df_stats)
+
+                        # HTF Volume Footprint data
+                        volume_footprint_result = None
+                        if show_footprint:
+                            from indicators.htf_volume_footprint import HTFVolumeFootprint
+                            footprint_for_regime = HTFVolumeFootprint(**footprint_params) if footprint_params else HTFVolumeFootprint()
+                            volume_footprint_result = footprint_for_regime.get_signals(df_stats)
+
                         # Fetch additional data sources
                         with st.spinner("Fetching comprehensive market data..."):
                             # Enhanced market data (sector rotation, VIX, gamma squeeze)
@@ -3572,7 +3658,9 @@ with tab6:
                             bias_analysis_data=bias_analysis_data,
                             india_vix_data=india_vix_data,
                             gamma_squeeze_data=gamma_squeeze_data,
-                            advanced_chart_indicators=regime_indicator_data
+                            advanced_chart_indicators=regime_indicator_data,
+                            reversal_zones_data=reversal_zones_result,
+                            volume_footprint_data=volume_footprint_result
                         )
 
                         # Display regime info
@@ -4366,6 +4454,128 @@ with tab6:
                                     st.dataframe(pd.DataFrame(pattern_table), use_container_width=True, hide_index=True)
                                 else:
                                     st.info("No patterns detected")
+
+                        tab_idx += 1
+
+                    # Reversal Probability Zones Data (LuxAlgo)
+                    if show_reversal_zones:
+                        with tabs[tab_idx]:
+                            st.markdown("#### 🎯 Reversal Probability Zones Analysis (LuxAlgo)")
+                            st.caption("Statistical reversal prediction with probability targets")
+
+                            if reversal_zones_result and reversal_zones_result.get('success'):
+                                zone = reversal_zones_result.get('zone')
+                                current_price = reversal_zones_result.get('current_price', 0)
+
+                                # Zone Direction and Base Info
+                                col1, col2, col3 = st.columns(3)
+
+                                with col1:
+                                    direction = "🟢 Bullish" if zone.is_bullish else "🔴 Bearish"
+                                    st.metric("Expected Reversal", direction)
+
+                                with col2:
+                                    st.metric("Swing Price", f"₹{zone.price:.2f}")
+
+                                with col3:
+                                    st.metric("Current Price", f"₹{current_price:.2f}")
+
+                                st.divider()
+
+                                # Probability Targets
+                                st.markdown("**📊 Probability Targets**")
+
+                                targets_table = []
+                                if zone.percentile_25_price:
+                                    distance_pct = ((zone.percentile_25_price - current_price) / current_price) * 100
+                                    targets_table.append({
+                                        'Probability': '25%',
+                                        'Target Price': f"₹{zone.percentile_25_price:.2f}",
+                                        'Distance': f"{distance_pct:+.2f}%",
+                                        'Bars Expected': zone.percentile_25_bars
+                                    })
+
+                                if zone.percentile_50_price:
+                                    distance_pct = ((zone.percentile_50_price - current_price) / current_price) * 100
+                                    targets_table.append({
+                                        'Probability': '50%',
+                                        'Target Price': f"₹{zone.percentile_50_price:.2f}",
+                                        'Distance': f"{distance_pct:+.2f}%",
+                                        'Bars Expected': zone.percentile_50_bars
+                                    })
+
+                                if zone.percentile_75_price:
+                                    distance_pct = ((zone.percentile_75_price - current_price) / current_price) * 100
+                                    targets_table.append({
+                                        'Probability': '75%',
+                                        'Target Price': f"₹{zone.percentile_75_price:.2f}",
+                                        'Distance': f"{distance_pct:+.2f}%",
+                                        'Bars Expected': zone.percentile_75_bars
+                                    })
+
+                                if zone.percentile_90_price:
+                                    distance_pct = ((zone.percentile_90_price - current_price) / current_price) * 100
+                                    targets_table.append({
+                                        'Probability': '90%',
+                                        'Target Price': f"₹{zone.percentile_90_price:.2f}",
+                                        'Distance': f"{distance_pct:+.2f}%",
+                                        'Bars Expected': zone.percentile_90_bars
+                                    })
+
+                                if targets_table:
+                                    st.dataframe(pd.DataFrame(targets_table), use_container_width=True, hide_index=True)
+
+                                st.divider()
+
+                                # Historical Sample Info
+                                st.markdown("**📈 Historical Analysis**")
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    total_bullish = reversal_zones_result.get('total_bullish_samples', 0)
+                                    st.metric("Bullish Reversals Analyzed", total_bullish)
+
+                                with col2:
+                                    total_bearish = reversal_zones_result.get('total_bearish_samples', 0)
+                                    st.metric("Bearish Reversals Analyzed", total_bearish)
+
+                                # Recent Swings
+                                st.divider()
+                                st.markdown("**🔄 Recent Swing Points**")
+
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    st.markdown("**Swing Highs**")
+                                    swing_highs = reversal_zones_result.get('swing_highs', [])
+                                    if swing_highs:
+                                        highs_table = []
+                                        for sh in swing_highs[-5:]:
+                                            highs_table.append({
+                                                'Bar': sh.get('bar', 'N/A'),
+                                                'Price': f"₹{sh.get('price', 0):.2f}"
+                                            })
+                                        st.dataframe(pd.DataFrame(highs_table), use_container_width=True, hide_index=True)
+                                    else:
+                                        st.info("No swing highs detected")
+
+                                with col2:
+                                    st.markdown("**Swing Lows**")
+                                    swing_lows = reversal_zones_result.get('swing_lows', [])
+                                    if swing_lows:
+                                        lows_table = []
+                                        for sl in swing_lows[-5:]:
+                                            lows_table.append({
+                                                'Bar': sl.get('bar', 'N/A'),
+                                                'Price': f"₹{sl.get('price', 0):.2f}"
+                                            })
+                                        st.dataframe(pd.DataFrame(lows_table), use_container_width=True, hide_index=True)
+                                    else:
+                                        st.info("No swing lows detected")
+
+                            else:
+                                error_msg = reversal_zones_result.get('error', 'Unknown error') if reversal_zones_result else 'No data available'
+                                st.warning(f"⚠️ Unable to calculate reversal zones: {error_msg}")
 
                 # Trading signals based on indicators
                 st.divider()

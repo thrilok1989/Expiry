@@ -79,7 +79,9 @@ class MLMarketRegimeDetector:
         bias_analysis_data: Optional[Dict] = None,
         india_vix_data: Optional[Dict] = None,
         gamma_squeeze_data: Optional[Dict] = None,
-        advanced_chart_indicators: Optional[Dict] = None
+        advanced_chart_indicators: Optional[Dict] = None,
+        reversal_zones_data: Optional[Dict] = None,
+        volume_footprint_data: Optional[Dict] = None
     ) -> MLMarketRegimeResult:
         """
         Detect market regime using ML-style feature engineering
@@ -96,6 +98,8 @@ class MLMarketRegimeDetector:
             india_vix_data: India VIX sentiment data
             gamma_squeeze_data: Gamma squeeze risk analysis
             advanced_chart_indicators: All indicators from Advanced Chart Analysis
+            reversal_zones_data: Reversal Probability Zones analysis (swing patterns, reversal targets)
+            volume_footprint_data: HTF Volume Footprint analysis (POC, volume distribution)
 
         Returns:
             MLMarketRegimeResult with regime classification
@@ -138,6 +142,16 @@ class MLMarketRegimeDetector:
             chart_features = self._extract_chart_indicator_features(advanced_chart_indicators)
             features.update(chart_features)
 
+        # Add Reversal Probability Zones Features
+        if reversal_zones_data and reversal_zones_data.get('success'):
+            reversal_features = self._extract_reversal_zone_features(reversal_zones_data)
+            features.update(reversal_features)
+
+        # Add HTF Volume Footprint Features
+        if volume_footprint_data and volume_footprint_data.get('success'):
+            footprint_features = self._extract_volume_footprint_features(volume_footprint_data)
+            features.update(footprint_features)
+
         # Calculate regime probabilities using ALL features
         regime_probs = self._calculate_regime_probabilities(features, df)
 
@@ -175,6 +189,12 @@ class MLMarketRegimeDetector:
 
         if gamma_squeeze_data and gamma_squeeze_data.get('success'):
             signals.extend(self._generate_gamma_signals(gamma_squeeze_data))
+
+        if reversal_zones_data and reversal_zones_data.get('success'):
+            signals.extend(self._generate_reversal_zone_signals(reversal_zones_data))
+
+        if volume_footprint_data and volume_footprint_data.get('success'):
+            signals.extend(self._generate_volume_footprint_signals(volume_footprint_data))
 
         # Calculate trend strength
         trend_strength = self._calculate_trend_strength(df, features)
@@ -744,6 +764,94 @@ class MLMarketRegimeDetector:
 
         return features
 
+    def _extract_reversal_zone_features(self, reversal_data: Dict) -> Dict[str, float]:
+        """Extract features from Reversal Probability Zones indicator"""
+        features = {}
+
+        if not reversal_data or not reversal_data.get('success'):
+            return features
+
+        zone = reversal_data.get('zone')
+        if not zone:
+            return features
+
+        current_price = reversal_data.get('current_price', 0)
+
+        # Direction of expected reversal
+        features['reversal_is_bullish'] = 1.0 if zone.is_bullish else -1.0
+
+        # Proximity to percentile targets (normalized)
+        if zone.percentile_50_price and current_price > 0:
+            features['distance_to_50th_pct'] = abs(current_price - zone.percentile_50_price) / current_price
+
+        if zone.percentile_75_price and current_price > 0:
+            features['distance_to_75th_pct'] = abs(current_price - zone.percentile_75_price) / current_price
+
+        if zone.percentile_90_price and current_price > 0:
+            features['distance_to_90th_pct'] = abs(current_price - zone.percentile_90_price) / current_price
+
+        # Time until reversal (bars remaining to percentile targets)
+        features['bars_to_50th_pct'] = zone.percentile_50_bars / 100.0  # Normalize
+        features['bars_to_75th_pct'] = zone.percentile_75_bars / 100.0
+        features['bars_to_90th_pct'] = zone.percentile_90_bars / 100.0
+
+        # Sample quality (more samples = more reliable)
+        total_samples = reversal_data.get('total_bullish_samples', 0) + reversal_data.get('total_bearish_samples', 0)
+        features['reversal_sample_quality'] = min(total_samples / 1000.0, 1.0)  # Normalize to 0-1
+
+        return features
+
+    def _extract_volume_footprint_features(self, footprint_data: Dict) -> Dict[str, float]:
+        """Extract features from HTF Volume Footprint indicator"""
+        features = {}
+
+        if not footprint_data or not footprint_data.get('success'):
+            return features
+
+        current_price = footprint_data.get('current_price', 0)
+        poc_price = footprint_data.get('poc_price', 0)
+        htf_high = footprint_data.get('htf_high', 0)
+        htf_low = footprint_data.get('htf_low', 0)
+        value_area_high = footprint_data.get('value_area_high', 0)
+        value_area_low = footprint_data.get('value_area_low', 0)
+
+        if current_price == 0:
+            return features
+
+        # Distance to POC (Point of Control - highest volume price)
+        features['distance_to_poc'] = abs(current_price - poc_price) / current_price if poc_price > 0 else 0.0
+
+        # Price position in HTF range (0 = at low, 1 = at high)
+        if htf_high > htf_low:
+            features['htf_range_position'] = (current_price - htf_low) / (htf_high - htf_low)
+        else:
+            features['htf_range_position'] = 0.5
+
+        # Price position relative to value area
+        if current_price > value_area_high:
+            features['above_value_area'] = 1.0
+            features['below_value_area'] = 0.0
+        elif current_price < value_area_low:
+            features['above_value_area'] = 0.0
+            features['below_value_area'] = 1.0
+        else:
+            features['above_value_area'] = 0.0
+            features['below_value_area'] = 0.0
+
+        # POC as support/resistance signal
+        if current_price > poc_price:
+            features['poc_as_support'] = 1.0  # POC below price acts as support
+        else:
+            features['poc_as_support'] = -1.0  # POC above price acts as resistance
+
+        # Volume concentration (from footprint data)
+        if 'poc_volume' in footprint_data and 'current_footprint' in footprint_data:
+            total_volume = sum(level.volume for level in footprint_data['current_footprint'].levels)
+            if total_volume > 0:
+                features['volume_concentration'] = footprint_data['poc_volume'] / total_volume
+
+        return features
+
     # =========================================================================
     # NEW SIGNAL GENERATION METHODS
     # =========================================================================
@@ -829,6 +937,75 @@ class MLMarketRegimeDetector:
             interpretation = gamma_data.get('interpretation', '')
             if interpretation:
                 signals.append(f"   {interpretation}")
+
+        return signals
+
+    def _generate_reversal_zone_signals(self, reversal_data: Dict) -> List[str]:
+        """Generate signals from Reversal Probability Zones"""
+        signals = []
+
+        zone = reversal_data.get('zone')
+        if not zone:
+            return signals
+
+        current_price = reversal_data.get('current_price', 0)
+
+        # Direction of expected reversal
+        direction = "Bullish" if zone.is_bullish else "Bearish"
+        signals.append(f"🎯 Reversal Zone: {direction} reversal expected from {zone.price:.2f}")
+
+        # Show key probability targets
+        if zone.percentile_50_price:
+            distance_pct = abs(current_price - zone.percentile_50_price) / current_price * 100
+            if distance_pct < 2:  # Within 2% of target
+                signals.append(f"   ✓ Near 50% probability target: {zone.percentile_50_price:.2f}")
+            else:
+                signals.append(f"   Target (50%): {zone.percentile_50_price:.2f}")
+
+        if zone.percentile_75_price:
+            signals.append(f"   Target (75%): {zone.percentile_75_price:.2f}")
+
+        # Historical sample size
+        total_samples = reversal_data.get('total_bullish_samples' if zone.is_bullish else 'total_bearish_samples', 0)
+        if total_samples > 0:
+            signals.append(f"   Based on {total_samples} historical patterns")
+
+        return signals
+
+    def _generate_volume_footprint_signals(self, footprint_data: Dict) -> List[str]:
+        """Generate signals from HTF Volume Footprint"""
+        signals = []
+
+        current_price = footprint_data.get('current_price', 0)
+        poc_price = footprint_data.get('poc_price', 0)
+        value_area_high = footprint_data.get('value_area_high', 0)
+        value_area_low = footprint_data.get('value_area_low', 0)
+        htf_high = footprint_data.get('htf_high', 0)
+        htf_low = footprint_data.get('htf_low', 0)
+        timeframe = footprint_data.get('timeframe', '1D')
+
+        # POC analysis
+        if poc_price > 0:
+            poc_distance_pct = abs(current_price - poc_price) / current_price * 100
+            if poc_distance_pct < 0.5:  # Within 0.5% of POC
+                signals.append(f"📊 {timeframe} POC: Price at key volume node {poc_price:.2f}")
+            else:
+                position = "above" if current_price > poc_price else "below"
+                signals.append(f"📊 {timeframe} POC: {poc_price:.2f} ({position} current price)")
+
+        # Value area analysis
+        if value_area_high > 0 and value_area_low > 0:
+            if value_area_low <= current_price <= value_area_high:
+                signals.append(f"   ✓ Price in Value Area ({value_area_low:.2f} - {value_area_high:.2f})")
+            elif current_price > value_area_high:
+                signals.append(f"   ⚠️ Price above Value Area - potential reversal zone")
+            else:
+                signals.append(f"   ⚠️ Price below Value Area - potential support zone")
+
+        # HTF range analysis
+        if htf_high > 0 and htf_low > 0:
+            range_position = (current_price - htf_low) / (htf_high - htf_low) * 100
+            signals.append(f"   {timeframe} Range: {range_position:.0f}% ({htf_low:.2f} - {htf_high:.2f})")
 
         return signals
 
