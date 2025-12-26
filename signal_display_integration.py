@@ -17,6 +17,9 @@ from src.telegram_signal_manager import TelegramSignalManager
 from src.collapsible_signal_ui import display_collapsible_trading_signal
 from src.sr_integration import get_sr_data_for_signal_display, display_sr_trend_summary
 from telegram_alerts import TelegramAlerts
+from sr_extractor_advanced import AdvancedSRExtractor
+from smart_sl_calculator import SmartSLCalculator, calculate_atr
+from smart_target_calculator import SmartTargetCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -2082,6 +2085,368 @@ def display_final_assessment(
 
 **Missing a trade is 100x better than a bad entry!**
             """)
+
+    st.markdown("---")
+
+    # ============================================
+    # 🚀 ADVANCED POSITION & ACTION (14 S/R Sources + Smart SL/Targets)
+    # ============================================
+    st.markdown("## 🚀 ADVANCED POSITION & ACTION")
+    st.caption("**Advanced system with ALL 14 S/R sources, pattern-based SL, and confluence targets**")
+
+    # Extract S/R from all 14 sources
+    try:
+        # Get additional data from session state
+        volume_footprint_data = st.session_state.get('volume_footprint_data', {})
+        ultimate_rsi_data = st.session_state.get('ultimate_rsi_data', {})
+        om_indicator_data = st.session_state.get('om_indicator_data', {})
+        money_flow_data = st.session_state.get('money_flow_data', {})
+        deltaflow_data = st.session_state.get('deltaflow_data', {})
+        geometric_patterns = st.session_state.get('geometric_patterns', [])
+        bos_choch_data = st.session_state.get('bos_choch_data', {})
+        reversal_zones = st.session_state.get('reversal_zones', [])
+        liquidity_sentiment = st.session_state.get('liquidity_sentiment', {})
+
+        # Calculate DTE (days to expiry)
+        dte = st.session_state.get('dte', 7)  # Default 7 days
+
+        # Extract all S/R sources
+        sr_extractor = AdvancedSRExtractor(current_price, atm_strike)
+
+        adv_support_levels, adv_resistance_levels = sr_extractor.extract_all_sources(
+            intraday_levels=intraday_levels,
+            market_depth=market_depth,
+            option_chain=option_chain if option_chain else {},
+            volume_footprint_data=volume_footprint_data,
+            ultimate_rsi_data=ultimate_rsi_data,
+            om_indicator_data=om_indicator_data,
+            money_flow_data=money_flow_data,
+            deltaflow_data=deltaflow_data,
+            geometric_patterns=geometric_patterns,
+            bos_choch_data=bos_choch_data,
+            reversal_zones=reversal_zones,
+            liquidity_sentiment=liquidity_sentiment,
+            dte=dte
+        )
+
+        # Find confluence clusters
+        confluence_data = sr_extractor.find_confluence_clusters(threshold_distance=15)
+        support_clusters = confluence_data.get('support_clusters', [])
+        resistance_clusters = confluence_data.get('resistance_clusters', [])
+
+        # Display confluence stats
+        st.info(f"""
+**📊 Advanced S/R Analysis:**
+- Support Levels Found: {len(adv_support_levels)} sources
+- Resistance Levels Found: {len(adv_resistance_levels)} sources
+- Support Confluence Clusters: {len(support_clusters)} (2+ sources agreeing)
+- Resistance Confluence Clusters: {len(resistance_clusters)} (2+ sources agreeing)
+        """)
+
+        # Find nearest levels
+        nearest_adv_support = adv_support_levels[0] if adv_support_levels else None
+        nearest_adv_resistance = adv_resistance_levels[0] if adv_resistance_levels else None
+
+        # Check for active patterns
+        active_pattern = geometric_patterns[0] if geometric_patterns else None
+
+        # Display Advanced Entry Zones
+        col_adv1, col_adv2 = st.columns(2)
+
+        with col_adv1:
+            st.markdown("**🟢 ADVANCED LONG ZONES**")
+
+            # Show top confluence cluster or nearest support
+            if support_clusters:
+                cluster = support_clusters[0]
+                cluster_price = cluster['price']
+                dist_to_cluster = current_price - cluster_price
+
+                if 0 <= dist_to_cluster <= 5:
+                    status = "🟢 ACTIVE"
+                    bg = "#1a3d1a"
+                else:
+                    status = "⬇️ BELOW" if dist_to_cluster > 0 else "⬆️ ABOVE"
+                    bg = "#1a1a2e"
+
+                st.markdown(f"""
+                <div style='background: {bg}; padding: 12px; border-radius: 8px; border-left: 4px solid #00ff88;'>
+                    <div style='font-size: 13px; color: #888;'>
+                        <strong>CONFLUENCE ZONE</strong> {status}
+                    </div>
+                    <div style='font-size: 18px; font-weight: bold; color: #00ff88; margin: 6px 0;'>
+                        ₹{cluster_price:,.0f} <span style='font-size: 13px; color: #888;'>({dist_to_cluster:.0f} pts)</span>
+                    </div>
+                    <div style='font-size: 12px; color: #aaa;'>
+                        🎯 {cluster['confluence_count']} sources agree<br/>
+                        💪 Avg Strength: {cluster['avg_strength']:.0f}%<br/>
+                        📍 Sources: {', '.join(cluster['source_list'][:3])}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif nearest_adv_support:
+                dist = current_price - nearest_adv_support['price']
+                st.markdown(f"**Nearest:** ₹{nearest_adv_support['price']:,.0f} ({nearest_adv_support['type']})")
+
+        with col_adv2:
+            st.markdown("**🔴 ADVANCED SHORT ZONES**")
+
+            # Show top confluence cluster or nearest resistance
+            if resistance_clusters:
+                cluster = resistance_clusters[0]
+                cluster_price = cluster['price']
+                dist_to_cluster = cluster_price - current_price
+
+                if 0 <= dist_to_cluster <= 5:
+                    status = "🔴 ACTIVE"
+                    bg = "#3d1a1a"
+                else:
+                    status = "⬇️ BELOW" if dist_to_cluster < 0 else "⬆️ ABOVE"
+                    bg = "#1a1a2e"
+
+                st.markdown(f"""
+                <div style='background: {bg}; padding: 12px; border-radius: 8px; border-left: 4px solid #ff6666;'>
+                    <div style='font-size: 13px; color: #888;'>
+                        <strong>CONFLUENCE ZONE</strong> {status}
+                    </div>
+                    <div style='font-size: 18px; font-weight: bold; color: #ff6666; margin: 6px 0;'>
+                        ₹{cluster_price:,.0f} <span style='font-size: 13px; color: #888;'>(+{dist_to_cluster:.0f} pts)</span>
+                    </div>
+                    <div style='font-size: 12px; color: #aaa;'>
+                        🎯 {cluster['confluence_count']} sources agree<br/>
+                        💪 Avg Strength: {cluster['avg_strength']:.0f}%<br/>
+                        📍 Sources: {', '.join(cluster['source_list'][:3])}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif nearest_adv_resistance:
+                dist = nearest_adv_resistance['price'] - current_price
+                st.markdown(f"**Nearest:** ₹{nearest_adv_resistance['price']:,.0f} ({nearest_adv_resistance['type']})")
+
+        # Advanced Trading Action
+        st.markdown("---")
+
+        if nearest_adv_support and nearest_adv_resistance:
+            dist_to_adv_sup = current_price - nearest_adv_support['price']
+            dist_to_adv_res = nearest_adv_resistance['price'] - current_price
+
+            # LONG Setup
+            if dist_to_adv_sup <= 5 or (support_clusters and 0 <= (current_price - support_clusters[0]['price']) <= 5):
+                # Calculate smart SL and targets
+                atr = calculate_atr(df) if df is not None else 55
+
+                sl_calc = SmartSLCalculator(current_price, atr, "LONG")
+                smart_sl = sl_calc.calculate_smart_sl(
+                    entry_level=nearest_adv_support,
+                    pattern_data=active_pattern,
+                    regime=ml_regime.regime if ml_regime else None,
+                    atm_bias=atm_bias_data,
+                    sr_levels=adv_support_levels
+                )
+
+                target_calc = SmartTargetCalculator(
+                    entry_price=nearest_adv_support['price'],
+                    current_price=current_price,
+                    position_type="LONG"
+                )
+                smart_targets = target_calc.calculate_smart_targets(
+                    resistance_levels=adv_resistance_levels,
+                    support_levels=[],
+                    pattern_data=active_pattern,
+                    option_chain=option_chain if option_chain else {},
+                    confluence_clusters=resistance_clusters
+                )
+
+                # Display LONG setup
+                st.success(f"""
+**🟢 ADVANCED LONG SETUP ACTIVE**
+
+**Entry Zone:** ₹{nearest_adv_support['lower']:,.0f} - ₹{nearest_adv_support['upper']:,.0f}
+**Source:** {nearest_adv_support.get('type', 'Multi-Source')}
+**Confluence:** {support_clusters[0]['confluence_count'] if support_clusters else 1} sources
+
+**🛡️ SMART STOP LOSS:** ₹{smart_sl.price:,.0f}
+{smart_sl.reasoning}
+
+**🎯 SMART TARGETS:**
+{smart_targets[0].reasoning if len(smart_targets) > 0 else 'Calculating...'}
+
+{smart_targets[1].reasoning if len(smart_targets) > 1 else ''}
+
+{smart_targets[2].reasoning if len(smart_targets) > 2 else ''}
+
+**✅ 8-Point Confluence Check:**
+1. Pattern: {active_pattern['type'] if active_pattern else '❌ No pattern'}
+2. Regime: {ml_regime.regime if ml_regime else '❌ Unknown'}
+3. ATM Bias: {atm_bias_data.get('verdict', '❌ N/A') if atm_bias_data else '❌ N/A'}
+4. Volume Confirmation: {'✅ Check Volume Footprint' if volume_footprint_data else '❌ Not available'}
+5. RSI Divergence: {'✅ Check Ultimate RSI' if ultimate_rsi_data else '❌ Not available'}
+6. Money Flow: {'✅ Check Money Flow' if money_flow_data else '❌ Not available'}
+7. Delta: {'✅ Check DeltaFlow' if deltaflow_data else '❌ Not available'}
+8. Liquidity: {'✅ Check Liquidity Pools' if liquidity_sentiment else '❌ Not available'}
+                """)
+
+                # Send Advanced Telegram Alert
+                try:
+                    telegram = TelegramAlerts()
+
+                    confluence_info = {
+                        'confluence_count': support_clusters[0]['confluence_count'] if support_clusters else 1,
+                        'sources': support_clusters[0]['source_list'][:5] if support_clusters else [nearest_adv_support['type']],
+                        'avg_strength': support_clusters[0]['avg_strength'] if support_clusters else nearest_adv_support.get('strength', 70)
+                    }
+
+                    pattern_details = {}
+                    if active_pattern:
+                        pattern_type = active_pattern.get('type', '')
+                        if 'H&S' in pattern_type:
+                            pattern_details = {
+                                'left_shoulder': active_pattern.get('left_shoulder', 0),
+                                'head': active_pattern.get('head', 0),
+                                'right_shoulder': active_pattern.get('right_shoulder', 0),
+                                'neckline': active_pattern.get('neckline', 0)
+                            }
+
+                    telegram.send_advanced_entry_alert(
+                        signal_type="LONG",
+                        pattern_type=active_pattern['type'] if active_pattern else "Multi-Source Confluence",
+                        entry_zone=(nearest_adv_support['lower'], nearest_adv_support['upper']),
+                        smart_sl={
+                            'price': smart_sl.price,
+                            'buffer': smart_sl.buffer_points,
+                            'triggers': [t['description'] for t in smart_sl.invalidation_triggers[:3]]
+                        },
+                        smart_targets={
+                            'T1': {'price': smart_targets[0].price, 'confluence': smart_targets[0].confluence_count} if len(smart_targets) > 0 else {},
+                            'T2': {'price': smart_targets[1].price, 'confluence': smart_targets[1].confluence_count} if len(smart_targets) > 1 else {},
+                            'T3': {'price': smart_targets[2].price, 'confluence': smart_targets[2].confluence_count} if len(smart_targets) > 2 else {}
+                        },
+                        confluence=confluence_info,
+                        current_price=current_price,
+                        pattern_details=pattern_details if pattern_details else None
+                    )
+                    st.caption("📱 Advanced Telegram alert sent!")
+                except Exception as telegram_err:
+                    logger.warning(f"Could not send Advanced Telegram alert: {telegram_err}")
+
+            # SHORT Setup
+            elif dist_to_adv_res <= 5 or (resistance_clusters and 0 <= (resistance_clusters[0]['price'] - current_price) <= 5):
+                # Calculate smart SL and targets
+                atr = calculate_atr(df) if df is not None else 55
+
+                sl_calc = SmartSLCalculator(current_price, atr, "SHORT")
+                smart_sl = sl_calc.calculate_smart_sl(
+                    entry_level=nearest_adv_resistance,
+                    pattern_data=active_pattern,
+                    regime=ml_regime.regime if ml_regime else None,
+                    atm_bias=atm_bias_data,
+                    sr_levels=adv_resistance_levels
+                )
+
+                target_calc = SmartTargetCalculator(
+                    entry_price=nearest_adv_resistance['price'],
+                    current_price=current_price,
+                    position_type="SHORT"
+                )
+                smart_targets = target_calc.calculate_smart_targets(
+                    resistance_levels=[],
+                    support_levels=adv_support_levels,
+                    pattern_data=active_pattern,
+                    option_chain=option_chain if option_chain else {},
+                    confluence_clusters=support_clusters
+                )
+
+                # Display SHORT setup
+                st.error(f"""
+**🔴 ADVANCED SHORT SETUP ACTIVE**
+
+**Entry Zone:** ₹{nearest_adv_resistance['lower']:,.0f} - ₹{nearest_adv_resistance['upper']:,.0f}
+**Source:** {nearest_adv_resistance.get('type', 'Multi-Source')}
+**Confluence:** {resistance_clusters[0]['confluence_count'] if resistance_clusters else 1} sources
+
+**🛡️ SMART STOP LOSS:** ₹{smart_sl.price:,.0f}
+{smart_sl.reasoning}
+
+**🎯 SMART TARGETS:**
+{smart_targets[0].reasoning if len(smart_targets) > 0 else 'Calculating...'}
+
+{smart_targets[1].reasoning if len(smart_targets) > 1 else ''}
+
+{smart_targets[2].reasoning if len(smart_targets) > 2 else ''}
+
+**✅ 8-Point Confluence Check:**
+1. Pattern: {active_pattern['type'] if active_pattern else '❌ No pattern'}
+2. Regime: {ml_regime.regime if ml_regime else '❌ Unknown'}
+3. ATM Bias: {atm_bias_data.get('verdict', '❌ N/A') if atm_bias_data else '❌ N/A'}
+4. Volume Confirmation: {'✅ Check Volume Footprint' if volume_footprint_data else '❌ Not available'}
+5. RSI Divergence: {'✅ Check Ultimate RSI' if ultimate_rsi_data else '❌ Not available'}
+6. Money Flow: {'✅ Check Money Flow' if money_flow_data else '❌ Not available'}
+7. Delta: {'✅ Check DeltaFlow' if deltaflow_data else '❌ Not available'}
+8. Liquidity: {'✅ Check Liquidity Pools' if liquidity_sentiment else '❌ Not available'}
+                """)
+
+                # Send Advanced Telegram Alert
+                try:
+                    telegram = TelegramAlerts()
+
+                    confluence_info = {
+                        'confluence_count': resistance_clusters[0]['confluence_count'] if resistance_clusters else 1,
+                        'sources': resistance_clusters[0]['source_list'][:5] if resistance_clusters else [nearest_adv_resistance['type']],
+                        'avg_strength': resistance_clusters[0]['avg_strength'] if resistance_clusters else nearest_adv_resistance.get('strength', 70)
+                    }
+
+                    pattern_details = {}
+                    if active_pattern:
+                        pattern_type = active_pattern.get('type', '')
+                        if 'H&S' in pattern_type:
+                            pattern_details = {
+                                'left_shoulder': active_pattern.get('left_shoulder', 0),
+                                'head': active_pattern.get('head', 0),
+                                'right_shoulder': active_pattern.get('right_shoulder', 0),
+                                'neckline': active_pattern.get('neckline', 0)
+                            }
+
+                    telegram.send_advanced_entry_alert(
+                        signal_type="SHORT",
+                        pattern_type=active_pattern['type'] if active_pattern else "Multi-Source Confluence",
+                        entry_zone=(nearest_adv_resistance['lower'], nearest_adv_resistance['upper']),
+                        smart_sl={
+                            'price': smart_sl.price,
+                            'buffer': smart_sl.buffer_points,
+                            'triggers': [t['description'] for t in smart_sl.invalidation_triggers[:3]]
+                        },
+                        smart_targets={
+                            'T1': {'price': smart_targets[0].price, 'confluence': smart_targets[0].confluence_count} if len(smart_targets) > 0 else {},
+                            'T2': {'price': smart_targets[1].price, 'confluence': smart_targets[1].confluence_count} if len(smart_targets) > 1 else {},
+                            'T3': {'price': smart_targets[2].price, 'confluence': smart_targets[2].confluence_count} if len(smart_targets) > 2 else {}
+                        },
+                        confluence=confluence_info,
+                        current_price=current_price,
+                        pattern_details=pattern_details if pattern_details else None
+                    )
+                    st.caption("📱 Advanced Telegram alert sent!")
+                except Exception as telegram_err:
+                    logger.warning(f"Could not send Advanced Telegram alert: {telegram_err}")
+
+            else:
+                st.info(f"""
+**⚠️ MID-ZONE - WAIT FOR CONFLUENCE ZONES**
+
+**Current Price:** ₹{current_price:,.2f}
+**Nearest Support Confluence:** ₹{support_clusters[0]['price']:,.0f} ({support_clusters[0]['confluence_count']} sources) if support_clusters else nearest_adv_support['price'] (-{dist_to_adv_sup:.0f} pts)
+**Nearest Resistance Confluence:** ₹{resistance_clusters[0]['price']:,.0f} ({resistance_clusters[0]['confluence_count']} sources) if resistance_clusters else nearest_adv_resistance['price'] (+{dist_to_adv_res:.0f} pts)
+
+**🚫 WAIT FOR:**
+- Price to reach confluence zones (±5 pts)
+- 3+ sources agreeing at same level
+- Pattern confirmation
+
+**Advanced system requires high-probability setups only!**
+                """)
+
+    except Exception as e:
+        logger.error(f"Advanced S/R extraction failed: {e}")
+        st.warning("⚠️ Advanced analysis temporarily unavailable. Using Classic system.")
 
     st.markdown("---")
 
