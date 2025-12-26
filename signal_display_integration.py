@@ -1982,18 +1982,22 @@ def display_final_assessment(
                         'price_action': 'Support Bounce'
                     }
 
-                    telegram.send_classic_entry_alert(
+                    success = telegram.send_classic_entry_alert(
                         signal_type="LONG",
                         entry_zone=(nearest_support_multi['lower'], nearest_support_multi['upper']),
                         stop_loss=stop_loss_price,
-                        targets={'target1': target1_price, 'target2': target2_price},
+                        targets={'t1': target1_price, 't2': target2_price},
                         current_price=current_price,
                         source=nearest_support_multi['type'],
                         confirmations=confirmations
                     )
-                    st.caption("📱 Classic Telegram alert sent!")
+                    if success:
+                        st.caption("📱 Classic Telegram alert sent!")
+                    else:
+                        st.caption("⚠️ Classic Telegram alert failed (check credentials)")
                 except Exception as telegram_err:
                     logger.warning(f"Could not send Classic Telegram alert: {telegram_err}")
+                    st.caption(f"⚠️ Classic Telegram error: {telegram_err}")
 
             except Exception as e:
                 logger.warning(f"Could not auto-save signal: {e}")
@@ -2055,18 +2059,22 @@ def display_final_assessment(
                         'price_action': 'Resistance Rejection'
                     }
 
-                    telegram.send_classic_entry_alert(
+                    success = telegram.send_classic_entry_alert(
                         signal_type="SHORT",
                         entry_zone=(nearest_resistance_multi['lower'], nearest_resistance_multi['upper']),
                         stop_loss=stop_loss_price,
-                        targets={'target1': target1_price, 'target2': target2_price},
+                        targets={'t1': target1_price, 't2': target2_price},
                         current_price=current_price,
                         source=nearest_resistance_multi['type'],
                         confirmations=confirmations
                     )
-                    st.caption("📱 Classic Telegram alert sent!")
+                    if success:
+                        st.caption("📱 Classic Telegram alert sent!")
+                    else:
+                        st.caption("⚠️ Classic Telegram alert failed (check credentials)")
                 except Exception as telegram_err:
                     logger.warning(f"Could not send Classic Telegram alert: {telegram_err}")
+                    st.caption(f"⚠️ Classic Telegram error: {telegram_err}")
 
             except Exception as e:
                 logger.warning(f"Could not auto-save signal: {e}")
@@ -2290,10 +2298,17 @@ def display_final_assessment(
                 try:
                     telegram = TelegramAlerts()
 
+                    # Calculate risk percent
+                    entry_mid = (nearest_adv_support['lower'] + nearest_adv_support['upper']) / 2
+                    risk_pct = (smart_sl.buffer_points / entry_mid) * 100
+
+                    # Format confluence data
+                    conf_count = support_clusters[0]['confluence_count'] if support_clusters else 1
                     confluence_info = {
-                        'confluence_count': support_clusters[0]['confluence_count'] if support_clusters else 1,
-                        'sources': support_clusters[0]['source_list'][:5] if support_clusters else [nearest_adv_support['type']],
-                        'avg_strength': support_clusters[0]['avg_strength'] if support_clusters else nearest_adv_support.get('strength', 70)
+                        'score': support_clusters[0]['avg_strength'] if support_clusters else nearest_adv_support.get('strength', 70),
+                        'confirmed': min(conf_count, 8),
+                        'total': 8,
+                        'checks': {}  # Simplified for now
                     }
 
                     pattern_details = {}
@@ -2307,27 +2322,45 @@ def display_final_assessment(
                                 'neckline': active_pattern.get('neckline', 0)
                             }
 
-                    telegram.send_advanced_entry_alert(
+                    success = telegram.send_advanced_entry_alert(
                         signal_type="LONG",
                         pattern_type=active_pattern['type'] if active_pattern else "Multi-Source Confluence",
                         entry_zone=(nearest_adv_support['lower'], nearest_adv_support['upper']),
                         smart_sl={
                             'price': smart_sl.price,
-                            'buffer': smart_sl.buffer_points,
-                            'triggers': [t['description'] for t in smart_sl.invalidation_triggers[:3]]
+                            'reason': f"Pattern invalidation + {len(smart_sl.invalidation_triggers)} triggers",
+                            'risk_points': smart_sl.buffer_points,
+                            'risk_percent': risk_pct,
+                            'invalidation_triggers': [t['description'] for t in smart_sl.invalidation_triggers[:3]]
                         },
                         smart_targets={
-                            'T1': {'price': smart_targets[0].price, 'confluence': smart_targets[0].confluence_count} if len(smart_targets) > 0 else {},
-                            'T2': {'price': smart_targets[1].price, 'confluence': smart_targets[1].confluence_count} if len(smart_targets) > 1 else {},
-                            'T3': {'price': smart_targets[2].price, 'confluence': smart_targets[2].confluence_count} if len(smart_targets) > 2 else {}
+                            't1': {
+                                'price': smart_targets[0].price,
+                                'confluence': f"{len(smart_targets[0].sources)} sources",
+                                'source_count': len(smart_targets[0].sources)
+                            } if len(smart_targets) > 0 else {'price': entry_mid + 50, 'confluence': 'Fallback', 'source_count': 0},
+                            't2': {
+                                'price': smart_targets[1].price,
+                                'confluence': f"{len(smart_targets[1].sources)} sources",
+                                'source_count': len(smart_targets[1].sources)
+                            } if len(smart_targets) > 1 else {'price': entry_mid + 100, 'confluence': 'Fallback', 'source_count': 0},
+                            't3': {
+                                'price': smart_targets[2].price,
+                                'confluence': f"{len(smart_targets[2].sources)} sources",
+                                'source_count': len(smart_targets[2].sources)
+                            } if len(smart_targets) > 2 else {'price': entry_mid + 150, 'confluence': 'Fallback', 'source_count': 0}
                         },
                         confluence=confluence_info,
                         current_price=current_price,
                         pattern_details=pattern_details if pattern_details else None
                     )
-                    st.caption("📱 Advanced Telegram alert sent!")
+                    if success:
+                        st.caption("📱 Advanced Telegram alert sent!")
+                    else:
+                        st.caption("⚠️ Advanced Telegram alert failed (check credentials)")
                 except Exception as telegram_err:
                     logger.warning(f"Could not send Advanced Telegram alert: {telegram_err}")
+                    st.caption(f"⚠️ Advanced Telegram error: {telegram_err}")
 
             # SHORT Setup
             elif dist_to_adv_res <= 5 or (resistance_clusters and 0 <= (resistance_clusters[0]['price'] - current_price) <= 5):
@@ -2389,10 +2422,17 @@ def display_final_assessment(
                 try:
                     telegram = TelegramAlerts()
 
+                    # Calculate risk percent
+                    entry_mid = (nearest_adv_resistance['lower'] + nearest_adv_resistance['upper']) / 2
+                    risk_pct = (smart_sl.buffer_points / entry_mid) * 100
+
+                    # Format confluence data
+                    conf_count = resistance_clusters[0]['confluence_count'] if resistance_clusters else 1
                     confluence_info = {
-                        'confluence_count': resistance_clusters[0]['confluence_count'] if resistance_clusters else 1,
-                        'sources': resistance_clusters[0]['source_list'][:5] if resistance_clusters else [nearest_adv_resistance['type']],
-                        'avg_strength': resistance_clusters[0]['avg_strength'] if resistance_clusters else nearest_adv_resistance.get('strength', 70)
+                        'score': resistance_clusters[0]['avg_strength'] if resistance_clusters else nearest_adv_resistance.get('strength', 70),
+                        'confirmed': min(conf_count, 8),
+                        'total': 8,
+                        'checks': {}  # Simplified for now
                     }
 
                     pattern_details = {}
@@ -2406,27 +2446,45 @@ def display_final_assessment(
                                 'neckline': active_pattern.get('neckline', 0)
                             }
 
-                    telegram.send_advanced_entry_alert(
+                    success = telegram.send_advanced_entry_alert(
                         signal_type="SHORT",
                         pattern_type=active_pattern['type'] if active_pattern else "Multi-Source Confluence",
                         entry_zone=(nearest_adv_resistance['lower'], nearest_adv_resistance['upper']),
                         smart_sl={
                             'price': smart_sl.price,
-                            'buffer': smart_sl.buffer_points,
-                            'triggers': [t['description'] for t in smart_sl.invalidation_triggers[:3]]
+                            'reason': f"Pattern invalidation + {len(smart_sl.invalidation_triggers)} triggers",
+                            'risk_points': smart_sl.buffer_points,
+                            'risk_percent': risk_pct,
+                            'invalidation_triggers': [t['description'] for t in smart_sl.invalidation_triggers[:3]]
                         },
                         smart_targets={
-                            'T1': {'price': smart_targets[0].price, 'confluence': smart_targets[0].confluence_count} if len(smart_targets) > 0 else {},
-                            'T2': {'price': smart_targets[1].price, 'confluence': smart_targets[1].confluence_count} if len(smart_targets) > 1 else {},
-                            'T3': {'price': smart_targets[2].price, 'confluence': smart_targets[2].confluence_count} if len(smart_targets) > 2 else {}
+                            't1': {
+                                'price': smart_targets[0].price,
+                                'confluence': f"{len(smart_targets[0].sources)} sources",
+                                'source_count': len(smart_targets[0].sources)
+                            } if len(smart_targets) > 0 else {'price': entry_mid - 50, 'confluence': 'Fallback', 'source_count': 0},
+                            't2': {
+                                'price': smart_targets[1].price,
+                                'confluence': f"{len(smart_targets[1].sources)} sources",
+                                'source_count': len(smart_targets[1].sources)
+                            } if len(smart_targets) > 1 else {'price': entry_mid - 100, 'confluence': 'Fallback', 'source_count': 0},
+                            't3': {
+                                'price': smart_targets[2].price,
+                                'confluence': f"{len(smart_targets[2].sources)} sources",
+                                'source_count': len(smart_targets[2].sources)
+                            } if len(smart_targets) > 2 else {'price': entry_mid - 150, 'confluence': 'Fallback', 'source_count': 0}
                         },
                         confluence=confluence_info,
                         current_price=current_price,
                         pattern_details=pattern_details if pattern_details else None
                     )
-                    st.caption("📱 Advanced Telegram alert sent!")
+                    if success:
+                        st.caption("📱 Advanced Telegram alert sent!")
+                    else:
+                        st.caption("⚠️ Advanced Telegram alert failed (check credentials)")
                 except Exception as telegram_err:
                     logger.warning(f"Could not send Advanced Telegram alert: {telegram_err}")
+                    st.caption(f"⚠️ Advanced Telegram error: {telegram_err}")
 
             else:
                 st.info(f"""
