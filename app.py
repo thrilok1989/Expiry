@@ -808,9 +808,9 @@ if should_run_signal_check and (current_time - st.session_state.last_vob_check_t
                     # Add to active signals
                     st.session_state.active_vob_signals.append(nifty_signal)
 
-                    # Send telegram notification
-                    telegram_bot = TelegramBot()
-                    telegram_bot.send_vob_entry_signal(nifty_signal)
+                    # VOB Telegram notification disabled
+                    # telegram_bot = TelegramBot()
+                    # telegram_bot.send_vob_entry_signal(nifty_signal)
 
         # Fetch chart data and calculate VOB for SENSEX (using cached function)
         df_sensex = get_cached_chart_data('^BSESN', '1d', '1m')
@@ -860,9 +860,9 @@ if should_run_signal_check and (current_time - st.session_state.last_vob_check_t
                         # Add to active signals
                         st.session_state.active_vob_signals.append(sensex_signal)
 
-                        # Send telegram notification
-                        telegram_bot = TelegramBot()
-                        telegram_bot.send_vob_entry_signal(sensex_signal)
+                        # VOB Telegram notification disabled
+                        # telegram_bot = TelegramBot()
+                        # telegram_bot.send_vob_entry_signal(sensex_signal)
 
         # Clean up old signals (older than 30 minutes)
         st.session_state.active_vob_signals = [
@@ -1522,16 +1522,17 @@ with col2:
                             'trend': bear_strength['trend']
                         }
 
-            # Send to Telegram
-            if nifty_vob_summary or sensex_vob_summary:
-                telegram_bot = TelegramBot()
-                success = telegram_bot.send_vob_status_summary(nifty_vob_summary, sensex_vob_summary)
-                if success:
-                    st.success("✅ VOB status sent to Telegram!")
-                else:
-                    st.error("❌ Failed to send to Telegram. Check your Telegram credentials.")
-            else:
-                st.warning("⚠️ No VOB data available to send")
+            # VOB status Telegram notification disabled
+            # if nifty_vob_summary or sensex_vob_summary:
+            #     telegram_bot = TelegramBot()
+            #     success = telegram_bot.send_vob_status_summary(nifty_vob_summary, sensex_vob_summary)
+            #     if success:
+            #         st.success("✅ VOB status sent to Telegram!")
+            #     else:
+            #         st.error("❌ Failed to send to Telegram. Check your Telegram credentials.")
+            # else:
+            #     st.warning("⚠️ No VOB data available to send")
+            pass  # VOB Telegram alerts disabled
 
         except Exception as e:
             st.error(f"❌ Error sending VOB status: {str(e)}")
