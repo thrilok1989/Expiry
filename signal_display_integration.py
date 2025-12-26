@@ -1984,6 +1984,15 @@ def display_final_assessment(
                         'price_action': 'Support Bounce'
                     }
 
+                    # Calculate range zones if in ranging market
+                    range_zones = None
+                    if nearest_support_multi and nearest_resistance_multi:
+                        range_zones = {
+                            'low': nearest_support_multi['price'],
+                            'mid': (nearest_support_multi['price'] + nearest_resistance_multi['price']) / 2,
+                            'high': nearest_resistance_multi['price']
+                        }
+
                     success = telegram.send_classic_entry_alert(
                         signal_type="LONG",
                         entry_zone=(nearest_support_multi['lower'], nearest_support_multi['upper']),
@@ -1991,7 +2000,8 @@ def display_final_assessment(
                         targets={'t1': target1_price, 't2': target2_price},
                         current_price=current_price,
                         source=nearest_support_multi['type'],
-                        confirmations=confirmations
+                        confirmations=confirmations,
+                        range_zones=range_zones
                     )
                     if success:
                         st.caption("📱 Classic Telegram alert sent!")
@@ -2061,6 +2071,15 @@ def display_final_assessment(
                         'price_action': 'Resistance Rejection'
                     }
 
+                    # Calculate range zones if in ranging market
+                    range_zones = None
+                    if nearest_support_multi and nearest_resistance_multi:
+                        range_zones = {
+                            'low': nearest_support_multi['price'],
+                            'mid': (nearest_support_multi['price'] + nearest_resistance_multi['price']) / 2,
+                            'high': nearest_resistance_multi['price']
+                        }
+
                     success = telegram.send_classic_entry_alert(
                         signal_type="SHORT",
                         entry_zone=(nearest_resistance_multi['lower'], nearest_resistance_multi['upper']),
@@ -2068,7 +2087,8 @@ def display_final_assessment(
                         targets={'t1': target1_price, 't2': target2_price},
                         current_price=current_price,
                         source=nearest_resistance_multi['type'],
-                        confirmations=confirmations
+                        confirmations=confirmations,
+                        range_zones=range_zones
                     )
                     if success:
                         st.caption("📱 Classic Telegram alert sent!")
@@ -2324,6 +2344,15 @@ def display_final_assessment(
                                 'neckline': active_pattern.get('neckline', 0)
                             }
 
+                    # Calculate range zones if in ranging market
+                    range_zones_adv = None
+                    if nearest_adv_support and nearest_adv_resistance:
+                        range_zones_adv = {
+                            'low': nearest_adv_support['price'],
+                            'mid': (nearest_adv_support['price'] + nearest_adv_resistance['price']) / 2,
+                            'high': nearest_adv_resistance['price']
+                        }
+
                     success = telegram.send_advanced_entry_alert(
                         signal_type="LONG",
                         pattern_type=active_pattern['type'] if active_pattern else "Multi-Source Confluence",
@@ -2354,7 +2383,8 @@ def display_final_assessment(
                         },
                         confluence=confluence_info,
                         current_price=current_price,
-                        pattern_details=pattern_details if pattern_details else None
+                        pattern_details=pattern_details if pattern_details else None,
+                        range_zones=range_zones_adv
                     )
                     if success:
                         st.caption("📱 Advanced Telegram alert sent!")
@@ -2448,6 +2478,15 @@ def display_final_assessment(
                                 'neckline': active_pattern.get('neckline', 0)
                             }
 
+                    # Calculate range zones if in ranging market
+                    range_zones_adv = None
+                    if nearest_adv_support and nearest_adv_resistance:
+                        range_zones_adv = {
+                            'low': nearest_adv_support['price'],
+                            'mid': (nearest_adv_support['price'] + nearest_adv_resistance['price']) / 2,
+                            'high': nearest_adv_resistance['price']
+                        }
+
                     success = telegram.send_advanced_entry_alert(
                         signal_type="SHORT",
                         pattern_type=active_pattern['type'] if active_pattern else "Multi-Source Confluence",
@@ -2478,7 +2517,8 @@ def display_final_assessment(
                         },
                         confluence=confluence_info,
                         current_price=current_price,
-                        pattern_details=pattern_details if pattern_details else None
+                        pattern_details=pattern_details if pattern_details else None,
+                        range_zones=range_zones_adv
                     )
                     if success:
                         st.caption("📱 Advanced Telegram alert sent!")

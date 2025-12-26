@@ -217,7 +217,7 @@ class TelegramBot:
 
     def send_classic_entry_alert(self, signal_type: str, entry_zone: tuple, stop_loss: float,
                                  targets: dict, current_price: float, source: str,
-                                 confirmations: dict) -> bool:
+                                 confirmations: dict, range_zones: dict = None) -> bool:
         """
         Send CLASSIC entry alert (simple VOB-based)
 
@@ -229,6 +229,7 @@ class TelegramBot:
             current_price: Current market price
             source: Entry source (e.g., "VOB Resistance")
             confirmations: Dict with regime, atm_bias, volume, price_action status
+            range_zones: Optional dict with {'low': price, 'mid': price, 'high': price}
         """
         signal_emoji = "🟢" if signal_type == "LONG" else "🔴"
         direction_label = "LONG" if signal_type == "LONG" else "SHORT"
@@ -243,6 +244,17 @@ class TelegramBot:
         confirmed_count = sum(1 for v in confirmations.values() if '✅' in str(v))
         total_checks = len(confirmations)
 
+        # Format range zones if provided
+        range_info = ""
+        if range_zones:
+            range_info = f"""
+📊 <b>Range Zones:</b>
+   🟢 <b>Low (BUY):</b> ₹{range_zones.get('low', 0):,.0f}
+   ⚪ <b>Mid (AVOID):</b> ₹{range_zones.get('mid', 0):,.0f}
+   🔴 <b>High (SELL):</b> ₹{range_zones.get('high', 0):,.0f}
+
+"""
+
         message = f"""
 {signal_emoji} <b>CLASSIC {direction_label} SIGNAL - NIFTY</b>
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -253,8 +265,7 @@ class TelegramBot:
 🛑 <b>SL:</b> ₹{stop_loss:,.0f} ({'+' if signal_type == 'SHORT' else '-'}{sl_points:.0f}pts)
 🎯 <b>T1:</b> ₹{targets.get('t1', 0):,.0f} ({'+' if signal_type == 'LONG' else '-'}{t1_points:.0f}pts)
 🎯 <b>T2:</b> ₹{targets.get('t2', 0):,.0f} ({'+' if signal_type == 'LONG' else '-'}{t2_points:.0f}pts)
-
-✅ <b>Confirmations: {confirmed_count}/{total_checks}</b>
+{range_info}✅ <b>Confirmations: {confirmed_count}/{total_checks}</b>
 • <b>Regime:</b> {confirmations.get('regime', 'N/A')}
 • <b>ATM Bias:</b> {confirmations.get('atm_bias', 'N/A')}
 • <b>Volume:</b> {confirmations.get('volume', 'N/A')}
@@ -267,7 +278,8 @@ class TelegramBot:
 
     def send_advanced_entry_alert(self, signal_type: str, pattern_type: str, entry_zone: tuple,
                                   smart_sl: dict, smart_targets: dict, confluence: dict,
-                                  current_price: float, pattern_details: dict = None) -> bool:
+                                  current_price: float, pattern_details: dict = None,
+                                  range_zones: dict = None) -> bool:
         """
         Send ADVANCED entry alert (pattern-based with full confluence analysis)
 
@@ -281,6 +293,7 @@ class TelegramBot:
             confluence: {'score': float, 'confirmed': int, 'total': int, 'checks': {...}}
             current_price: Current market price
             pattern_details: Optional pattern metadata
+            range_zones: Optional dict with {'low': price, 'mid': price, 'high': price}
         """
         signal_emoji = "🚀" if signal_type == "LONG" else "🔴"
         direction_label = "LONG" if signal_type == "LONG" else "SHORT"
@@ -313,6 +326,18 @@ class TelegramBot:
    Head: ₹{pattern_details.get('head', 0):,.0f}
    Right Shoulder: ₹{pattern_details.get('right_shoulder', 0):,.0f}
    Neckline: ₹{pattern_details.get('neckline', 0):,.0f}
+
+"""
+
+        # Format range zones if provided
+        range_info = ""
+        if range_zones:
+            range_info = f"""
+📊 <b>Range Zones:</b>
+   🟢 <b>Low (BUY):</b> ₹{range_zones.get('low', 0):,.0f}
+   ⚪ <b>Mid (AVOID):</b> ₹{range_zones.get('mid', 0):,.0f}
+   🔴 <b>High (SELL):</b> ₹{range_zones.get('high', 0):,.0f}
+
 """
 
         message = f"""
@@ -335,10 +360,9 @@ class TelegramBot:
 
    <b>T3:</b> ₹{smart_targets['t3']['price']:,.0f} ({'+' if signal_type == 'LONG' else '-'}{t3_points:.0f}pts)
       └─ {smart_targets['t3']['confluence']} ({smart_targets['t3']['source_count']} sources)
-
-🔍 <b>Confluence:</b> {confluence['score']:.0f}% ({confluence['confirmed']}/{confluence['total']} confirmations)
+{range_info}{pattern_info}🔍 <b>Confluence:</b> {confluence['score']:.0f}% ({confluence['confirmed']}/{confluence['total']} confirmations)
 {checks_text}
-{pattern_info}
+
 ⏰ {get_current_time_ist().strftime('%I:%M %p IST')}
 📍 <b>Price:</b> ₹{current_price:,.0f}
         """
