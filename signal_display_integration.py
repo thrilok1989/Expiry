@@ -16,6 +16,7 @@ from src.xgboost_ml_analyzer import XGBoostMLAnalyzer
 from src.telegram_signal_manager import TelegramSignalManager
 from src.collapsible_signal_ui import display_collapsible_trading_signal
 from src.sr_integration import get_sr_data_for_signal_display, display_sr_trend_summary
+from telegram_alerts import TelegramAlerts
 
 logger = logging.getLogger(__name__)
 
@@ -1717,51 +1718,7 @@ def display_final_assessment(
     support_levels = []
     resistance_levels = []
 
-    # === SOURCE 1: VOLUME ORDER BLOCKS (Highest Priority) ===
-    if 'vob_data_nifty' in st.session_state and st.session_state.vob_data_nifty:
-        vob_data = st.session_state.vob_data_nifty
-
-        # Bullish VOB blocks (support zones)
-        bullish_blocks = vob_data.get('bullish_blocks', [])
-        for block in bullish_blocks:
-            if isinstance(block, dict):
-                block_upper = block.get('upper', 0)
-                block_lower = block.get('lower', 0)
-                block_mid = (block_upper + block_lower) / 2
-                volume_strength = block.get('volume', 0)
-
-                support_levels.append({
-                    'price': block_mid,
-                    'upper': block_upper,
-                    'lower': block_lower,
-                    'type': 'VOB Support',
-                    'source': 'Volume Order Block',
-                    'strength': 95,  # VOB has highest strength
-                    'volume': volume_strength,
-                    'priority': 1  # Highest priority
-                })
-
-        # Bearish VOB blocks (resistance zones)
-        bearish_blocks = vob_data.get('bearish_blocks', [])
-        for block in bearish_blocks:
-            if isinstance(block, dict):
-                block_upper = block.get('upper', 0)
-                block_lower = block.get('lower', 0)
-                block_mid = (block_upper + block_lower) / 2
-                volume_strength = block.get('volume', 0)
-
-                resistance_levels.append({
-                    'price': block_mid,
-                    'upper': block_upper,
-                    'lower': block_lower,
-                    'type': 'VOB Resistance',
-                    'source': 'Volume Order Block',
-                    'strength': 95,
-                    'volume': volume_strength,
-                    'priority': 1
-                })
-
-    # === SOURCE 2: HTF SUPPORT/RESISTANCE (Multi-Timeframe) ===
+    # === SOURCE 1: HTF SUPPORT/RESISTANCE (Multi-Timeframe - Highest Priority) ===
     if intraday_levels:
         for level in intraday_levels:
             level_price = level['price']
@@ -1771,16 +1728,16 @@ def display_final_assessment(
             # Determine timeframe strength (higher TF = higher strength)
             if '30min' in level_source or '30m' in level_source:
                 htf_strength = 90
-                priority = 2
+                priority = 1  # Highest priority
             elif '15min' in level_source or '15m' in level_source:
                 htf_strength = 85
-                priority = 3
+                priority = 1
             elif '5min' in level_source or '5m' in level_source:
                 htf_strength = 80
-                priority = 4
+                priority = 2
             else:
                 htf_strength = 75
-                priority = 5
+                priority = 2
 
             level_data = {
                 'price': level_price,
@@ -1797,7 +1754,7 @@ def display_final_assessment(
             else:
                 resistance_levels.append(level_data)
 
-    # === SOURCE 3: DEPTH-BASED S/R (Option Chain Depth) ===
+    # === SOURCE 2: DEPTH-BASED S/R (Option Chain Depth) ===
     if market_depth:
         depth_support = market_depth.get('support_level', 0)
         depth_resistance = market_depth.get('resistance_level', 0)
@@ -1810,7 +1767,7 @@ def display_final_assessment(
                 'type': 'Depth Support',
                 'source': 'Option Chain Depth',
                 'strength': 85,
-                'priority': 3
+                'priority': 2
             })
 
         if depth_resistance > 0:
@@ -1821,10 +1778,10 @@ def display_final_assessment(
                 'type': 'Depth Resistance',
                 'source': 'Option Chain Depth',
                 'strength': 85,
-                'priority': 3
+                'priority': 2
             })
 
-    # === SOURCE 4: FIBONACCI LEVELS (if available in session state) ===
+    # === SOURCE 3: FIBONACCI LEVELS (if available in session state) ===
     if 'fibonacci_levels' in st.session_state:
         fib_levels = st.session_state.fibonacci_levels
         for fib in fib_levels:
@@ -1844,7 +1801,7 @@ def display_final_assessment(
                 'type': f'Fibonacci {fib_ratio:.3f}',
                 'source': 'Fibonacci Retracement',
                 'strength': fib_strength,
-                'priority': 4
+                'priority': 3
             }
 
             if fib_price < current_price:
@@ -1852,7 +1809,7 @@ def display_final_assessment(
             else:
                 resistance_levels.append(level_data)
 
-    # === SOURCE 5: STRUCTURAL LEVELS (from key levels) ===
+    # === SOURCE 4: STRUCTURAL LEVELS (from key levels) ===
     if key_levels:
         for level in key_levels:
             if level['type'] in ['ATM Strike', 'Max Pain']:
@@ -1865,7 +1822,7 @@ def display_final_assessment(
                 'type': level['type'],
                 'source': level.get('source', 'Structural'),
                 'strength': level.get('strength', 70),
-                'priority': 5
+                'priority': 4
             }
 
             if level['price'] < current_price:
@@ -2012,6 +1969,29 @@ def display_final_assessment(
                 if signal_id:
                     st.caption(f"✅ Signal #{signal_id} automatically saved to trading history")
 
+                # Send Classic Telegram Alert
+                try:
+                    telegram = TelegramAlerts()
+                    confirmations = {
+                        'regime': ml_regime.regime if ml_regime else 'Unknown',
+                        'atm_bias': atm_bias_data.get('verdict', 'NEUTRAL') if atm_bias_data else 'NEUTRAL',
+                        'volume': 'Confirmed',  # Simplified for Classic
+                        'price_action': 'Support Bounce'
+                    }
+
+                    telegram.send_classic_entry_alert(
+                        signal_type="LONG",
+                        entry_zone=(nearest_support_multi['lower'], nearest_support_multi['upper']),
+                        stop_loss=stop_loss_price,
+                        targets={'target1': target1_price, 'target2': target2_price},
+                        current_price=current_price,
+                        source=nearest_support_multi['type'],
+                        confirmations=confirmations
+                    )
+                    st.caption("📱 Classic Telegram alert sent!")
+                except Exception as telegram_err:
+                    logger.warning(f"Could not send Classic Telegram alert: {telegram_err}")
+
             except Exception as e:
                 logger.warning(f"Could not auto-save signal: {e}")
         elif dist_to_res <= 5:
@@ -2061,6 +2041,29 @@ def display_final_assessment(
 
                 if signal_id:
                     st.caption(f"✅ Signal #{signal_id} automatically saved to trading history")
+
+                # Send Classic Telegram Alert
+                try:
+                    telegram = TelegramAlerts()
+                    confirmations = {
+                        'regime': ml_regime.regime if ml_regime else 'Unknown',
+                        'atm_bias': atm_bias_data.get('verdict', 'NEUTRAL') if atm_bias_data else 'NEUTRAL',
+                        'volume': 'Confirmed',  # Simplified for Classic
+                        'price_action': 'Resistance Rejection'
+                    }
+
+                    telegram.send_classic_entry_alert(
+                        signal_type="SHORT",
+                        entry_zone=(nearest_resistance_multi['lower'], nearest_resistance_multi['upper']),
+                        stop_loss=stop_loss_price,
+                        targets={'target1': target1_price, 'target2': target2_price},
+                        current_price=current_price,
+                        source=nearest_resistance_multi['type'],
+                        confirmations=confirmations
+                    )
+                    st.caption("📱 Classic Telegram alert sent!")
+                except Exception as telegram_err:
+                    logger.warning(f"Could not send Classic Telegram alert: {telegram_err}")
 
             except Exception as e:
                 logger.warning(f"Could not auto-save signal: {e}")
