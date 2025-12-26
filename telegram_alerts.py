@@ -700,3 +700,7 @@ async def send_ai_market_alert_async(report: Dict[str, Any], confidence_thresh: 
     if not bot.enabled:
         return False
     return await bot.send_ai_market_alert(report, confidence_thresh)
+
+
+# Alias for backward compatibility
+TelegramAlerts = TelegramBot
