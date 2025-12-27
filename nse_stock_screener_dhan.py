@@ -39,6 +39,21 @@ def _import_analysis_modules():
     )
     return True
 
+# Utility functions
+def safe_int(x, default=0):
+    """Safely convert to int"""
+    try:
+        return int(x)
+    except:
+        return default
+
+def safe_float(x, default=0.0):
+    """Safely convert to float"""
+    try:
+        return float(x)
+    except:
+        return default
+
 # NSE FNO Stocks list
 NSE_FNO_STOCKS = [
     'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY',

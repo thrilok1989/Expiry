@@ -4961,14 +4961,9 @@ with tab7:
 
 with tab8:
     st.markdown("# 🌐 Enhanced Market Data Analysis")
+    st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
     try:
-        st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
-
-        # DISABLED AUTO-FETCH - Only fetch when user clicks Refresh
-        # This prevents tab from hanging when Dhan API is down (holidays, weekends)
-        # Auto-fetch code commented out to prevent blank tabs
-
         # Control buttons
         col1, col2 = st.columns([1, 1])
 
@@ -4983,6 +4978,8 @@ with tab8:
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Failed to refresh data: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
 
         with col2:
             if 'enhanced_market_data' in st.session_state:
@@ -4997,10 +4994,10 @@ with tab8:
             except Exception as e:
                 st.error(f"❌ Error displaying enhanced data: {e}")
                 import traceback
-                st.error(traceback.format_exc())
+                st.code(traceback.format_exc())
         else:
             st.info("""
-            ℹ️ Enhanced market data will auto-load on first visit and refresh every 5 minutes.
+            ℹ️ **Click the 'Refresh Data' button above to load comprehensive market data**
 
             **Data Sources:**
             - 📊 **Dhan API:** India VIX, All Sector Indices (IT, Auto, Pharma, Metal, FMCG, Realty, Energy)
@@ -5027,6 +5024,7 @@ with tab8:
 
 with tab9:
     st.markdown("# 🔍 NSE Stock Screener")
+    st.caption("Comprehensive stock analysis with Real Option Chain, Bias Analysis, Chart Analysis & ML Regime Detection")
 
     try:
         from nse_stock_screener_dhan import render_nse_stock_screener_tab
