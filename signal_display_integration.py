@@ -2835,6 +2835,95 @@ def display_final_assessment(
                         'zone_type': distribution_zone
                     }
 
+            # ============================================
+            # 📐 FIBONACCI RETRACEMENT SMART ENTRY
+            # ============================================
+            # Detect when price is near key Fibonacci levels with confluence
+            # Golden Ratio (61.8%), Half (50%), and 38.2% are strongest levels
+
+            if not smart_entry_signal and fib_levels_for_advanced:
+                # Find Fibonacci levels near current price
+                for fib in fib_levels_for_advanced:
+                    fib_distance = abs(current_price - fib['price'])
+
+                    # Check if price is within 5-15pts of a key Fibonacci level
+                    if 5 <= fib_distance <= 15 and fib['ratio'] in [0.618, 0.5, 0.382, 0.786]:
+                        fib_signals = []
+                        fib_score = 60  # Base score
+
+                        # Determine if this is a support or resistance Fib level
+                        is_fib_support = fib['price'] < current_price
+                        is_fib_resistance = fib['price'] > current_price
+
+                        # Signal 1: Delta Flow confirmation
+                        if deltaflow_data:
+                            delta_verdict = deltaflow_data.get('verdict', '')
+                            if (is_fib_support and 'Bullish' in delta_verdict) or (is_fib_resistance and 'Bearish' in delta_verdict):
+                                fib_signals.append(f"Delta Flow: {delta_verdict}")
+                                fib_score += 15
+
+                        # Signal 2: Volume Footprint confirmation
+                        if volume_footprint_data:
+                            footprint_verdict = volume_footprint_data.get('verdict', '')
+                            buyer_strength = volume_footprint_data.get('buyer_strength', 0)
+                            seller_strength = volume_footprint_data.get('seller_strength', 0)
+                            if (is_fib_support and (buyer_strength > 60 or 'Buyers' in footprint_verdict)) or \
+                               (is_fib_resistance and (seller_strength > 60 or 'Sellers' in footprint_verdict)):
+                                fib_signals.append(f"Volume Footprint: {'Buyer' if is_fib_support else 'Seller'} strength")
+                                fib_score += 15
+
+                        # Signal 3: RSI confirmation
+                        if ultimate_rsi_data:
+                            rsi_value = ultimate_rsi_data.get('rsi', 50)
+                            if (is_fib_support and rsi_value < 45) or (is_fib_resistance and rsi_value > 55):
+                                fib_signals.append(f"RSI: {rsi_value:.0f} ({'Oversold' if is_fib_support else 'Overbought'})")
+                                fib_score += 10
+
+                        # Bonus for Golden Ratio (61.8%)
+                        if fib['ratio'] == 0.618:
+                            fib_signals.append("📐 Golden Ratio (61.8%) - Most powerful Fibonacci level!")
+                            fib_score += 15
+
+                        # Generate Fibonacci smart entry if we have 2+ confirmations
+                        if len(fib_signals) >= 2:
+                            fib_score = min(fib_score, 95)  # Cap at 95%
+
+                            if is_fib_support:
+                                # LONG entry at Fibonacci support
+                                smart_entry_signal = {
+                                    'type': 'LONG',
+                                    'reason': f'📐 Fibonacci {fib["level"]} Entry',
+                                    'entry_price': current_price,
+                                    'original_support': fib['price'],
+                                    'overshoot_distance': fib_distance,
+                                    'confirmations': fib_signals,
+                                    'confidence': fib_score,
+                                    'stop_loss': fib['price'] - 25,
+                                    'target': nearest_adv_resistance['price'] if nearest_adv_resistance else fib['price'] + 100,
+                                    'risk_reward': ((nearest_adv_resistance['price'] if nearest_adv_resistance else fib['price'] + 100) - current_price) / 25,
+                                    'pattern_type': f'Fibonacci {fib["level"]} Support',
+                                    'zone_type': 'fibonacci_support'
+                                }
+                                break  # Found valid Fib entry, stop searching
+
+                            elif is_fib_resistance:
+                                # SHORT entry at Fibonacci resistance
+                                smart_entry_signal = {
+                                    'type': 'SHORT',
+                                    'reason': f'📐 Fibonacci {fib["level"]} Entry',
+                                    'entry_price': current_price,
+                                    'original_resistance': fib['price'],
+                                    'overshoot_distance': fib_distance,
+                                    'confirmations': fib_signals,
+                                    'confidence': fib_score,
+                                    'stop_loss': fib['price'] + 25,
+                                    'target': nearest_adv_support['price'] if nearest_adv_support else fib['price'] - 100,
+                                    'risk_reward': (current_price - (nearest_adv_support['price'] if nearest_adv_support else fib['price'] - 100)) / 25,
+                                    'pattern_type': f'Fibonacci {fib["level"]} Resistance',
+                                    'zone_type': 'fibonacci_resistance'
+                                }
+                                break  # Found valid Fib entry, stop searching
+
             # Display SMART ENTRY SIGNAL (if detected)
             if smart_entry_signal:
                 signal_color = "#1a3d1a" if smart_entry_signal['type'] == "LONG" else "#3d1a1a"
@@ -2847,8 +2936,22 @@ def display_final_assessment(
                 is_reversal = 'Reversal' in smart_entry_signal['reason']
                 is_accumulation = 'Accumulation' in smart_entry_signal['reason']
                 is_distribution = 'Distribution' in smart_entry_signal['reason']
+                is_fibonacci = 'Fibonacci' in smart_entry_signal['reason']
 
-                if is_accumulation or is_distribution:
+                if is_fibonacci:
+                    subtitle = f"📐 FIBONACCI ENTRY - {pattern_type.upper()}"
+                    if '61.8%' in pattern_type:
+                        pattern_desc = "📐 Golden Ratio (61.8%) - Most powerful Fibonacci retracement level!"
+                    elif '50%' in pattern_type or '50.0%' in pattern_type:
+                        pattern_desc = "📐 Half Retracement (50%) - Psychological Fibonacci level"
+                    elif '38.2%' in pattern_type:
+                        pattern_desc = "📐 Fibonacci 38.2% - Strong retracement support/resistance"
+                    elif '78.6%' in pattern_type:
+                        pattern_desc = "📐 Deep Retracement (78.6%) - Last chance entry level"
+                    else:
+                        pattern_desc = f"📐 Fibonacci retracement level - Mathematical price structure"
+
+                elif is_accumulation or is_distribution:
                     subtitle = f"⚡ SMART MONEY DETECTED - {pattern_type.upper()}"
 
                     # Create zone-specific description
@@ -2919,7 +3022,10 @@ def display_final_assessment(
                     risk_pct = (risk_points / smart_entry_signal['entry_price']) * 100
 
                     # Determine SL reason based on pattern
-                    if is_accumulation or is_distribution:
+                    if is_fibonacci:
+                        sl_reason = f"Fibonacci level invalidated if breached"
+                        total_factors = 4  # Max 4 for Fibonacci (Delta, Volume, RSI, Golden Ratio bonus)
+                    elif is_accumulation or is_distribution:
                         sl_reason = f"{pattern_type} zone invalidated if breached"
                         total_factors = 5  # Max 5 for accumulation/distribution
                     else:
