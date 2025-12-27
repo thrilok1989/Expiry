@@ -4960,94 +4960,14 @@ with tab7:
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab8:
-    st.markdown("# 🌐 Enhanced Market Data Analysis")
-    st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
-
-    # Debug: This should always show
-    st.write("✅ Tab 8 is loading...")
-
-    try:
-        # Control buttons
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
-            if st.button("🔄 Refresh Data", type="primary", use_container_width=True, key="refresh_enhanced_data_btn"):
-                with st.spinner("Refreshing market data..."):
-                    try:
-                        from enhanced_market_data import get_enhanced_market_data
-                        enhanced_data = get_enhanced_market_data()
-                        st.session_state.enhanced_market_data = enhanced_data
-                        st.success("✅ Data refreshed successfully!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Failed to refresh data: {e}")
-                        import traceback
-                        st.code(traceback.format_exc())
-
-        with col2:
-            if 'enhanced_market_data' in st.session_state:
-                data = st.session_state.enhanced_market_data
-                st.caption(f"📅 Last Updated: {data['timestamp'].strftime('%Y-%m-%d %H:%M:%S IST')}")
-
-        # Display enhanced market data if available
-        if 'enhanced_market_data' in st.session_state:
-            try:
-                from enhanced_market_display import render_enhanced_market_data_tab
-                render_enhanced_market_data_tab(st.session_state.enhanced_market_data)
-            except Exception as e:
-                st.error(f"❌ Error displaying enhanced data: {e}")
-                import traceback
-                st.code(traceback.format_exc())
-        else:
-            st.info("""
-            ℹ️ **Click the 'Refresh Data' button above to load comprehensive market data**
-
-            **Data Sources:**
-            - 📊 **Dhan API:** India VIX, All Sector Indices (IT, Auto, Pharma, Metal, FMCG, Realty, Energy)
-            - 🌍 **Yahoo Finance:** Global Markets (S&P 500, Nasdaq, Dow, Nikkei, Hang Seng, etc.)
-            - 💰 **Intermarket:** USD Index, Crude Oil, Gold, USD/INR, US 10Y Treasury, Bitcoin
-
-            **Advanced Analysis:**
-            - ⚡ **India VIX Analysis:** Fear & Greed Index with sentiment scoring
-            - 🏢 **Sector Rotation Model:** Identify market leadership and rotation patterns
-            - 🎯 **Gamma Squeeze Detection:** Option market makers hedging analysis
-            - ⏰ **Intraday Seasonality:** Time-based trading recommendations
-            - 🌐 **Global Correlation:** How worldwide markets affect Indian markets
-
-            **All data is presented in comprehensive tables with bias scores and trading insights!**
-            """)
-    except Exception as e:
-        st.error(f"❌ Critical error in Enhanced Market Data tab: {e}")
-        import traceback
-        st.code(traceback.format_exc())
+    st.write("TAB 8 TEST")
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 9: NSE STOCK SCREENER
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab9:
-    st.markdown("# 🔍 NSE Stock Screener")
-    st.caption("Comprehensive stock analysis with Real Option Chain, Bias Analysis, Chart Analysis & ML Regime Detection")
-
-    # Debug: This should always show
-    st.write("✅ Tab 9 is loading...")
-
-    try:
-        from nse_stock_screener_dhan import render_nse_stock_screener_tab
-        render_nse_stock_screener_tab()
-    except Exception as e:
-        st.error(f"❌ Error loading NSE Stock Screener: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-
-        st.info("""
-        **NSE Stock Screener Not Available**
-
-        To use this feature:
-        1. Ensure nse_stock_screener_dhan.py is in the project root
-        2. Required modules: advanced_chart_analysis.py, bias_analysis.py, src/ml_market_regime.py, NiftyOptionScreener.py
-        3. Internet connection required for fetching stock data and Dhan API access
-        """)
+    st.write("TAB 9 TEST")
 
 # ═══════════════════════════════════════════════════════════════════════
 # FOOTER
