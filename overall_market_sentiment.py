@@ -973,37 +973,14 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
             })
 
     # SOURCE 4: FIBONACCI LEVELS (from advanced chart analysis)
-    if 'fibonacci_levels' in st.session_state and st.session_state.fibonacci_levels:
-        fib_levels = st.session_state.fibonacci_levels
+    try:
+        if 'fibonacci_levels' in st.session_state and st.session_state.fibonacci_levels:
+            fib_levels = st.session_state.fibonacci_levels
 
-        # Handle both dict format (legacy) and list format (new)
-        if isinstance(fib_levels, dict):
-            # Legacy dict format: {'0.618': 26150, '0.5': 26125, ...}
-            for level_name, level_price in fib_levels.items():
-                if isinstance(level_price, (int, float)) and level_price > 0:
-                    if level_price < current_price:
-                        all_support_levels.append({
-                            'price': level_price,
-                            'type': f'Fib {level_name}',
-                            'lower': level_price - 5,
-                            'upper': level_price + 5,
-                            'distance': current_price - level_price
-                        })
-                    elif level_price > current_price:
-                        all_resistance_levels.append({
-                            'price': level_price,
-                            'type': f'Fib {level_name}',
-                            'lower': level_price - 5,
-                            'upper': level_price + 5,
-                            'distance': level_price - current_price
-                        })
-        elif isinstance(fib_levels, list):
-            # New list format: [{'price': 26150, 'ratio': 0.618, 'level': '61.8%'}, ...]
-            for fib_item in fib_levels:
-                if isinstance(fib_item, dict) and 'price' in fib_item:
-                    level_price = fib_item['price']
-                    level_name = fib_item.get('level', f"{fib_item.get('ratio', 0)*100:.1f}%")
-
+            # Handle both dict format (legacy) and list format (new)
+            if isinstance(fib_levels, dict):
+                # Legacy dict format: {'0.618': 26150, '0.5': 26125, ...}
+                for level_name, level_price in fib_levels.items():
                     if isinstance(level_price, (int, float)) and level_price > 0:
                         if level_price < current_price:
                             all_support_levels.append({
@@ -1021,30 +998,63 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
                                 'upper': level_price + 5,
                                 'distance': level_price - current_price
                             })
+            elif isinstance(fib_levels, list):
+                # New list format: [{'price': 26150, 'ratio': 0.618, 'level': '61.8%'}, ...]
+                for fib_item in fib_levels:
+                    if isinstance(fib_item, dict) and 'price' in fib_item:
+                        level_price = fib_item['price']
+                        level_name = fib_item.get('level', f"{fib_item.get('ratio', 0)*100:.1f}%")
+
+                        if isinstance(level_price, (int, float)) and level_price > 0:
+                            if level_price < current_price:
+                                all_support_levels.append({
+                                    'price': level_price,
+                                    'type': f'Fib {level_name}',
+                                    'lower': level_price - 5,
+                                    'upper': level_price + 5,
+                                    'distance': current_price - level_price
+                                })
+                            elif level_price > current_price:
+                                all_resistance_levels.append({
+                                    'price': level_price,
+                                    'type': f'Fib {level_name}',
+                                    'lower': level_price - 5,
+                                    'upper': level_price + 5,
+                                    'distance': level_price - current_price
+                                })
+    except Exception as e:
+        # Silently skip fibonacci levels if there's an error
+        logger.warning(f"Error processing fibonacci_levels: {e}")
 
     # SOURCE 5: STRUCTURAL LEVELS (swing highs/lows)
-    if 'structural_levels' in st.session_state and st.session_state.structural_levels:
-        struct_levels = st.session_state.structural_levels
+    try:
+        if 'structural_levels' in st.session_state and st.session_state.structural_levels:
+            struct_levels = st.session_state.structural_levels
 
-        for swing_low in struct_levels.get('swing_lows', []):
-            if isinstance(swing_low, (int, float)) and swing_low < current_price:
-                all_support_levels.append({
-                    'price': swing_low,
-                    'type': 'Swing Low',
-                    'lower': swing_low - 10,
-                    'upper': swing_low + 10,
-                    'distance': current_price - swing_low
-                })
+            # Handle dict format with get() method
+            if isinstance(struct_levels, dict):
+                for swing_low in struct_levels.get('swing_lows', []):
+                    if isinstance(swing_low, (int, float)) and swing_low < current_price:
+                        all_support_levels.append({
+                            'price': swing_low,
+                            'type': 'Swing Low',
+                            'lower': swing_low - 10,
+                            'upper': swing_low + 10,
+                            'distance': current_price - swing_low
+                        })
 
-        for swing_high in struct_levels.get('swing_highs', []):
-            if isinstance(swing_high, (int, float)) and swing_high > current_price:
-                all_resistance_levels.append({
-                    'price': swing_high,
-                    'type': 'Swing High',
-                    'lower': swing_high - 10,
-                    'upper': swing_high + 10,
-                    'distance': swing_high - current_price
-                })
+                for swing_high in struct_levels.get('swing_highs', []):
+                    if isinstance(swing_high, (int, float)) and swing_high > current_price:
+                        all_resistance_levels.append({
+                            'price': swing_high,
+                            'type': 'Swing High',
+                            'lower': swing_high - 10,
+                            'upper': swing_high + 10,
+                            'distance': swing_high - current_price
+                        })
+    except Exception as e:
+        # Silently skip structural levels if there's an error
+        logger.warning(f"Error processing structural_levels: {e}")
 
     # SOURCE 6: MONEY FLOW POC (Point of Control)
     if 'money_flow_signals' in st.session_state:
