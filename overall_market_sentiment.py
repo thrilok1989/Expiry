@@ -976,24 +976,51 @@ def render_overall_market_sentiment(NSE_INSTRUMENTS=None):
     if 'fibonacci_levels' in st.session_state and st.session_state.fibonacci_levels:
         fib_levels = st.session_state.fibonacci_levels
 
-        for level_name, level_price in fib_levels.items():
-            if isinstance(level_price, (int, float)) and level_price > 0:
-                if level_price < current_price:
-                    all_support_levels.append({
-                        'price': level_price,
-                        'type': f'Fib {level_name}',
-                        'lower': level_price - 5,
-                        'upper': level_price + 5,
-                        'distance': current_price - level_price
-                    })
-                elif level_price > current_price:
-                    all_resistance_levels.append({
-                        'price': level_price,
-                        'type': f'Fib {level_name}',
-                        'lower': level_price - 5,
-                        'upper': level_price + 5,
-                        'distance': level_price - current_price
-                    })
+        # Handle both dict format (legacy) and list format (new)
+        if isinstance(fib_levels, dict):
+            # Legacy dict format: {'0.618': 26150, '0.5': 26125, ...}
+            for level_name, level_price in fib_levels.items():
+                if isinstance(level_price, (int, float)) and level_price > 0:
+                    if level_price < current_price:
+                        all_support_levels.append({
+                            'price': level_price,
+                            'type': f'Fib {level_name}',
+                            'lower': level_price - 5,
+                            'upper': level_price + 5,
+                            'distance': current_price - level_price
+                        })
+                    elif level_price > current_price:
+                        all_resistance_levels.append({
+                            'price': level_price,
+                            'type': f'Fib {level_name}',
+                            'lower': level_price - 5,
+                            'upper': level_price + 5,
+                            'distance': level_price - current_price
+                        })
+        elif isinstance(fib_levels, list):
+            # New list format: [{'price': 26150, 'ratio': 0.618, 'level': '61.8%'}, ...]
+            for fib_item in fib_levels:
+                if isinstance(fib_item, dict) and 'price' in fib_item:
+                    level_price = fib_item['price']
+                    level_name = fib_item.get('level', f"{fib_item.get('ratio', 0)*100:.1f}%")
+
+                    if isinstance(level_price, (int, float)) and level_price > 0:
+                        if level_price < current_price:
+                            all_support_levels.append({
+                                'price': level_price,
+                                'type': f'Fib {level_name}',
+                                'lower': level_price - 5,
+                                'upper': level_price + 5,
+                                'distance': current_price - level_price
+                            })
+                        elif level_price > current_price:
+                            all_resistance_levels.append({
+                                'price': level_price,
+                                'type': f'Fib {level_name}',
+                                'lower': level_price - 5,
+                                'upper': level_price + 5,
+                                'distance': level_price - current_price
+                            })
 
     # SOURCE 5: STRUCTURAL LEVELS (swing highs/lows)
     if 'structural_levels' in st.session_state and st.session_state.structural_levels:
