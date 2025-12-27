@@ -278,8 +278,23 @@ class AdvancedPriceAction:
         # Determine trend direction
         trend_up = highest['index'] < lowest['index']  # Low came after high = uptrend
 
+        # Extract numeric price values (defensive handling for nested dicts)
+        highest_price = highest['price']
+        if isinstance(highest_price, dict):
+            highest_price = highest_price.get('price', highest_price)
+        highest_price = float(highest_price) if not isinstance(highest_price, dict) else 0
+
+        lowest_price = lowest['price']
+        if isinstance(lowest_price, dict):
+            lowest_price = lowest_price.get('price', lowest_price)
+        lowest_price = float(lowest_price) if not isinstance(lowest_price, dict) else 0
+
+        # Validate prices
+        if highest_price == 0 or lowest_price == 0 or highest_price <= lowest_price:
+            return {'success': False, 'error': 'Invalid price values in swing points'}
+
         # Calculate Fibonacci levels
-        price_range = highest['price'] - lowest['price']
+        price_range = highest_price - lowest_price
 
         # Retracement levels (from high to low for downtrend, low to high for uptrend)
         fib_ratios = {
@@ -307,19 +322,19 @@ class AdvancedPriceAction:
         if trend_up:
             # Uptrend: retracements from recent low
             for label, ratio in fib_ratios.items():
-                retracement_levels[label] = lowest['price'] + (price_range * ratio)
+                retracement_levels[label] = lowest_price + (price_range * ratio)
 
             # Extensions above high
             for label, ratio in fib_extensions.items():
-                extension_levels[label] = lowest['price'] + (price_range * ratio)
+                extension_levels[label] = lowest_price + (price_range * ratio)
         else:
             # Downtrend: retracements from recent high
             for label, ratio in fib_ratios.items():
-                retracement_levels[label] = highest['price'] - (price_range * ratio)
+                retracement_levels[label] = highest_price - (price_range * ratio)
 
             # Extensions below low
             for label, ratio in fib_extensions.items():
-                extension_levels[label] = highest['price'] - (price_range * ratio)
+                extension_levels[label] = highest_price - (price_range * ratio)
 
         return {
             'success': True,
