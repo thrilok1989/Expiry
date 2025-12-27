@@ -4955,19 +4955,26 @@ with tab7:
         st.error(f"❌ Error rendering Nifty Option Screener: {e}")
         st.exception(e)
 
+    # Ensure tab7 completes cleanly
+    st.write("")  # Force tab completion
+
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 8: ENHANCED MARKET DATA
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab8:
-    st.write("TAB 8 TEST")
+    st.header("🌐 Enhanced Market Data Analysis")
+    st.write("This is Tab 8 - Enhanced Market Data")
+    st.button("Test Button Tab 8")
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 9: NSE STOCK SCREENER
 # ═══════════════════════════════════════════════════════════════════════
 
 with tab9:
-    st.write("TAB 9 TEST")
+    st.header("🔍 NSE Stock Screener")
+    st.write("This is Tab 9 - NSE Stock Screener")
+    st.button("Test Button Tab 9")
 
 # ═══════════════════════════════════════════════════════════════════════
 # FOOTER
