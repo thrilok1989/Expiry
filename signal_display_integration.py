@@ -2632,11 +2632,155 @@ def display_final_assessment(
                         'risk_reward': (current_price - nearest_adv_support['price']) / 25
                     }
 
+            # ============================================
+            # 💰 ACCUMULATION / DISTRIBUTION DETECTION
+            # ============================================
+            # Detect smart money accumulation at support or distribution at resistance
+            # Accumulation: Buying pressure at support (LONG setup)
+            # Distribution: Selling pressure at resistance (SHORT setup)
+
+            # Check for ACCUMULATION at Support (LONG opportunity)
+            # Price hovering near support with buying pressure
+            if not smart_entry_signal and 0 <= dist_to_adv_sup <= 20:
+                accumulation_signals = []
+                accumulation_score = 50  # Base score
+
+                # Signal 1: Delta Flow showing buying pressure
+                if deltaflow_data:
+                    delta_verdict = deltaflow_data.get('verdict', '')
+                    cumulative_delta = deltaflow_data.get('cumulative_delta', 0)
+                    if 'Bullish' in delta_verdict or cumulative_delta > 0:
+                        accumulation_signals.append(f"Delta Flow: {delta_verdict} (Cumulative: {cumulative_delta:+,.0f})")
+                        accumulation_score += 15
+
+                # Signal 2: Money Flow showing accumulation
+                if money_flow_data:
+                    money_flow_verdict = money_flow_data.get('verdict', '')
+                    mfi_value = money_flow_data.get('mfi', 0)
+                    if 'Accumulation' in money_flow_verdict or 'Bullish' in money_flow_verdict:
+                        accumulation_signals.append(f"Money Flow: {money_flow_verdict} (MFI: {mfi_value:.0f})")
+                        accumulation_score += 15
+
+                # Signal 3: Volume Footprint showing buyer absorption
+                if volume_footprint_data:
+                    footprint_verdict = volume_footprint_data.get('verdict', '')
+                    buyer_strength = volume_footprint_data.get('buyer_strength', 0)
+                    if 'Buyers' in footprint_verdict or buyer_strength > 60:
+                        accumulation_signals.append(f"Volume Footprint: Buyer absorption (Strength: {buyer_strength:.0f}%)")
+                        accumulation_score += 15
+
+                # Signal 4: Confluence cluster at support (multiple tests)
+                if support_clusters and support_clusters[0]['confluence_count'] >= 3:
+                    cluster_sources = support_clusters[0]['confluence_count']
+                    accumulation_signals.append(f"Multiple S/R sources tested ({cluster_sources} times) - Liquidity grab complete")
+                    accumulation_score += 10
+
+                # Signal 5: Ultimate RSI showing oversold reversal
+                if ultimate_rsi_data:
+                    rsi_verdict = ultimate_rsi_data.get('verdict', '')
+                    rsi_value = ultimate_rsi_data.get('rsi', 50)
+                    if rsi_value < 40 or 'Bullish' in rsi_verdict:
+                        accumulation_signals.append(f"RSI: Oversold reversal zone (RSI: {rsi_value:.0f})")
+                        accumulation_score += 10
+
+                # Generate ACCUMULATION signal if we have 2+ signals
+                if len(accumulation_signals) >= 2:
+                    accumulation_score = min(accumulation_score, 90)  # Cap at 90%
+
+                    smart_entry_signal = {
+                        'type': 'LONG',
+                        'reason': '💰 Smart Money Accumulation',
+                        'entry_price': current_price,
+                        'original_support': nearest_adv_support['price'],
+                        'overshoot_distance': dist_to_adv_sup,
+                        'confirmations': accumulation_signals,
+                        'confidence': accumulation_score,
+                        'stop_loss': nearest_adv_support['price'] - 30,  # Below accumulation zone
+                        'target': nearest_adv_resistance['price'],
+                        'risk_reward': (nearest_adv_resistance['price'] - current_price) / (current_price - (nearest_adv_support['price'] - 30)),
+                        'pattern_type': 'Accumulation Zone'
+                    }
+
+            # Check for DISTRIBUTION at Resistance (SHORT opportunity)
+            # Price hovering near resistance with selling pressure
+            elif not smart_entry_signal and 0 <= dist_to_adv_res <= 20:
+                distribution_signals = []
+                distribution_score = 50  # Base score
+
+                # Signal 1: Delta Flow showing selling pressure
+                if deltaflow_data:
+                    delta_verdict = deltaflow_data.get('verdict', '')
+                    cumulative_delta = deltaflow_data.get('cumulative_delta', 0)
+                    if 'Bearish' in delta_verdict or cumulative_delta < 0:
+                        distribution_signals.append(f"Delta Flow: {delta_verdict} (Cumulative: {cumulative_delta:+,.0f})")
+                        distribution_score += 15
+
+                # Signal 2: Money Flow showing distribution
+                if money_flow_data:
+                    money_flow_verdict = money_flow_data.get('verdict', '')
+                    mfi_value = money_flow_data.get('mfi', 0)
+                    if 'Distribution' in money_flow_verdict or 'Bearish' in money_flow_verdict:
+                        distribution_signals.append(f"Money Flow: {money_flow_verdict} (MFI: {mfi_value:.0f})")
+                        distribution_score += 15
+
+                # Signal 3: Volume Footprint showing seller pressure
+                if volume_footprint_data:
+                    footprint_verdict = volume_footprint_data.get('verdict', '')
+                    seller_strength = volume_footprint_data.get('seller_strength', 0)
+                    if 'Sellers' in footprint_verdict or seller_strength > 60:
+                        distribution_signals.append(f"Volume Footprint: Seller pressure (Strength: {seller_strength:.0f}%)")
+                        distribution_score += 15
+
+                # Signal 4: Confluence cluster at resistance (multiple tests)
+                if resistance_clusters and resistance_clusters[0]['confluence_count'] >= 3:
+                    cluster_sources = resistance_clusters[0]['confluence_count']
+                    distribution_signals.append(f"Multiple S/R sources tested ({cluster_sources} times) - Liquidity grab complete")
+                    distribution_score += 10
+
+                # Signal 5: Ultimate RSI showing overbought reversal
+                if ultimate_rsi_data:
+                    rsi_verdict = ultimate_rsi_data.get('verdict', '')
+                    rsi_value = ultimate_rsi_data.get('rsi', 50)
+                    if rsi_value > 60 or 'Bearish' in rsi_verdict:
+                        distribution_signals.append(f"RSI: Overbought reversal zone (RSI: {rsi_value:.0f})")
+                        distribution_score += 10
+
+                # Generate DISTRIBUTION signal if we have 2+ signals
+                if len(distribution_signals) >= 2:
+                    distribution_score = min(distribution_score, 90)  # Cap at 90%
+
+                    smart_entry_signal = {
+                        'type': 'SHORT',
+                        'reason': '💰 Smart Money Distribution',
+                        'entry_price': current_price,
+                        'original_resistance': nearest_adv_resistance['price'],
+                        'overshoot_distance': dist_to_adv_res,
+                        'confirmations': distribution_signals,
+                        'confidence': distribution_score,
+                        'stop_loss': nearest_adv_resistance['price'] + 30,  # Above distribution zone
+                        'target': nearest_adv_support['price'],
+                        'risk_reward': (current_price - nearest_adv_support['price']) / (nearest_adv_resistance['price'] + 30 - current_price),
+                        'pattern_type': 'Distribution Zone'
+                    }
+
             # Display SMART ENTRY SIGNAL (if detected)
             if smart_entry_signal:
                 signal_color = "#1a3d1a" if smart_entry_signal['type'] == "LONG" else "#3d1a1a"
                 signal_icon = "🟢" if smart_entry_signal['type'] == "LONG" else "🔴"
                 entry_label = "LONG" if smart_entry_signal['type'] == "LONG" else "SHORT"
+
+                # Determine pattern-specific display text
+                pattern_type = smart_entry_signal.get('pattern_type', 'Reversal')
+                is_reversal = 'Reversal' in smart_entry_signal['reason']
+                is_accumulation = 'Accumulation' in smart_entry_signal['reason']
+                is_distribution = 'Distribution' in smart_entry_signal['reason']
+
+                if is_accumulation or is_distribution:
+                    subtitle = f"⚡ SMART MONEY DETECTED - {pattern_type.upper()}"
+                    pattern_desc = f"Smart money {'accumulating at support' if is_accumulation else 'distributing at resistance'} - Strong institutional footprint"
+                else:
+                    subtitle = "⚡ SMART ENTRY DETECTED - HIGH PROBABILITY REVERSAL"
+                    pattern_desc = f"Price overshooting {'support' if smart_entry_signal['type'] == 'LONG' else 'resistance'} - Classic liquidity grab pattern"
 
                 st.markdown(f"""
                 <div style='background: {signal_color}; padding: 20px; border-radius: 12px; border: 3px solid {"#00ff88" if smart_entry_signal['type'] == "LONG" else "#ff6666"}; margin-bottom: 20px;'>
@@ -2644,15 +2788,15 @@ def display_final_assessment(
                         {signal_icon} {smart_entry_signal['reason']} - {entry_label} ENTRY
                     </div>
                     <div style='font-size: 16px; color: #ffffff; margin-bottom: 15px;'>
-                        <strong>⚡ SMART ENTRY DETECTED - HIGH PROBABILITY REVERSAL</strong>
+                        <strong>{subtitle}</strong>
                     </div>
                     <div style='background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
-                        <div style='font-size: 14px; color: #aaa; margin-bottom: 8px;'>Price overshooting {"support" if smart_entry_signal['type'] == "LONG" else "resistance"} - Classic liquidity grab pattern</div>
+                        <div style='font-size: 14px; color: #aaa; margin-bottom: 8px;'>{pattern_desc}</div>
                         <div style='font-size: 18px; font-weight: bold; color: #ffffff;'>
                             Original {"Support" if smart_entry_signal['type'] == "LONG" else "Resistance"}: ₹{smart_entry_signal['original_support' if smart_entry_signal['type'] == "LONG" else 'original_resistance']:,.0f}
                         </div>
                         <div style='font-size: 16px; color: #ffaa00;'>
-                            Current Price: ₹{smart_entry_signal['entry_price']:,.2f} (Overshoot: {smart_entry_signal['overshoot_distance']:.0f} pts)
+                            Current Price: ₹{smart_entry_signal['entry_price']:,.2f} ({'Distance: ' + str(int(smart_entry_signal['overshoot_distance'])) + ' pts' if is_reversal else 'At zone'})
                         </div>
                     </div>
                     <div style='background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
@@ -2682,14 +2826,23 @@ def display_final_assessment(
                 try:
                     telegram = TelegramAlerts()
 
-                    # Calculate risk percentage
-                    risk_pct = (25 / smart_entry_signal['entry_price']) * 100
+                    # Calculate risk points and percentage (depends on pattern type)
+                    risk_points = abs(smart_entry_signal['entry_price'] - smart_entry_signal['stop_loss'])
+                    risk_pct = (risk_points / smart_entry_signal['entry_price']) * 100
+
+                    # Determine SL reason based on pattern
+                    if is_accumulation or is_distribution:
+                        sl_reason = f"{pattern_type} zone invalidated if breached"
+                        total_factors = 5  # Max 5 for accumulation/distribution
+                    else:
+                        sl_reason = "Tight SL - reversal invalidated if breached"
+                        total_factors = 4  # Max 4 for stop hunt/fake breakout
 
                     # Build confluence info
                     confluence_info = {
                         'score': smart_entry_signal['confidence'],
                         'confirmed': len(smart_entry_signal['confirmations']),
-                        'total': 4,  # Max 4 confluence factors
+                        'total': total_factors,
                         'checks': {}
                     }
 
@@ -2706,8 +2859,8 @@ def display_final_assessment(
                         entry_zone=(smart_entry_signal['entry_price'] - 5, smart_entry_signal['entry_price'] + 5),
                         smart_sl={
                             'price': smart_entry_signal['stop_loss'],
-                            'reason': f"Tight SL - reversal invalidated if breached",
-                            'risk_points': 25,
+                            'reason': sl_reason,
+                            'risk_points': risk_points,
                             'risk_percent': risk_pct,
                             'invalidation_triggers': [smart_entry_signal['reason']]
                         },
