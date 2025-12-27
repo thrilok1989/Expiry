@@ -4963,6 +4963,9 @@ with tab8:
     st.markdown("# 🌐 Enhanced Market Data Analysis")
     st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
 
+    # Debug: This should always show
+    st.write("✅ Tab 8 is loading...")
+
     try:
         # Control buttons
         col1, col2 = st.columns([1, 1])
@@ -5025,6 +5028,9 @@ with tab8:
 with tab9:
     st.markdown("# 🔍 NSE Stock Screener")
     st.caption("Comprehensive stock analysis with Real Option Chain, Bias Analysis, Chart Analysis & ML Regime Detection")
+
+    # Debug: This should always show
+    st.write("✅ Tab 9 is loading...")
 
     try:
         from nse_stock_screener_dhan import render_nse_stock_screener_tab
