@@ -2126,6 +2126,133 @@ def display_final_assessment(
 
     # Extract S/R from all 14 sources
     try:
+        # ===== PREPARE DATA FOR ADVANCED S/R EXTRACTION =====
+        # Build key_levels for Structural source (Source 4)
+        key_levels_for_advanced = []
+
+        # 1. ATM Strike
+        key_levels_for_advanced.append({
+            'price': atm_strike,
+            'type': 'ATM Strike',
+            'strength': 100,
+            'source': 'Option Chain'
+        })
+
+        # 2. Max Pain
+        if nifty_screener_data and 'seller_max_pain' in nifty_screener_data:
+            max_pain_data = nifty_screener_data['seller_max_pain']
+            if isinstance(max_pain_data, dict) and 'max_pain_strike' in max_pain_data:
+                max_pain_strike = max_pain_data['max_pain_strike']
+                key_levels_for_advanced.append({
+                    'price': max_pain_strike,
+                    'type': 'Max Pain',
+                    'strength': 90,
+                    'source': 'Option Sellers'
+                })
+
+        # 3. Support/Resistance from simple calculation
+        support_level_simple = round((current_price - 100) / 50) * 50
+        resistance_level_simple = round((current_price + 100) / 50) * 50
+
+        if nifty_screener_data:
+            nearest_sup = nifty_screener_data.get('nearest_sup')
+            nearest_res = nifty_screener_data.get('nearest_res')
+            if nearest_sup and isinstance(nearest_sup, (int, float)) and nearest_sup < current_price:
+                support_level_simple = nearest_sup
+            if nearest_res and isinstance(nearest_res, (int, float)) and nearest_res > current_price:
+                resistance_level_simple = nearest_res
+
+        if support_level_simple > 0:
+            key_levels_for_advanced.append({
+                'price': support_level_simple,
+                'type': 'Support',
+                'strength': 75,
+                'source': 'HTF'
+            })
+
+        if resistance_level_simple > 0:
+            key_levels_for_advanced.append({
+                'price': resistance_level_simple,
+                'type': 'Resistance',
+                'strength': 75,
+                'source': 'HTF'
+            })
+
+        # 4. Calculate Fibonacci levels for Fibonacci source (Source 3)
+        fib_levels_for_advanced = []
+        swing_high = current_price + 200  # Simple fallback
+        swing_low = current_price - 200
+
+        # Try to get better swing points from liquidity
+        if liquidity_result and hasattr(liquidity_result, 'resistance_zones') and hasattr(liquidity_result, 'support_zones'):
+            resistance_zones = liquidity_result.resistance_zones
+            support_zones = liquidity_result.support_zones
+            if resistance_zones:
+                swing_high = max([r for r in resistance_zones if isinstance(r, (int, float))])
+            if support_zones:
+                swing_low = min([s for s in support_zones if isinstance(s, (int, float))])
+
+        # Calculate Fibonacci retracement levels
+        price_range = swing_high - swing_low
+        fib_ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
+
+        for ratio in fib_ratios:
+            fib_price = swing_high - (price_range * ratio)
+            fib_levels_for_advanced.append({
+                'price': fib_price,
+                'ratio': ratio
+            })
+
+        # Identify best Fibonacci entry points (near current price)
+        fib_entry_candidates = []
+        for fib in fib_levels_for_advanced:
+            distance = abs(fib['price'] - current_price)
+
+            # Only consider Fib levels within 100 points
+            if distance <= 100:
+                # Score based on Fibonacci ratio (61.8% = best)
+                if fib['ratio'] == 0.618:
+                    quality_score = 95  # Golden ratio - BEST
+                    grade = 'A+'
+                elif fib['ratio'] == 0.5:
+                    quality_score = 85  # Psychological level
+                    grade = 'A'
+                elif fib['ratio'] == 0.382:
+                    quality_score = 80  # Good level
+                    grade = 'B+'
+                elif fib['ratio'] == 0.786:
+                    quality_score = 75  # Deep retracement
+                    grade = 'B'
+                else:
+                    quality_score = 65  # Shallow
+                    grade = 'C'
+
+                # Determine if support or resistance
+                if fib['price'] < current_price:
+                    entry_type = 'LONG Entry (Buy Dip)'
+                    stop_below = swing_low - 20
+                else:
+                    entry_type = 'SHORT Entry (Sell Rally)'
+                    stop_below = swing_high + 20
+
+                fib_entry_candidates.append({
+                    'price': fib['price'],
+                    'ratio': fib['ratio'],
+                    'distance': distance,
+                    'quality_score': quality_score,
+                    'grade': grade,
+                    'entry_type': entry_type,
+                    'stop_loss': stop_below
+                })
+
+        # Sort by quality score (best first)
+        fib_entry_candidates = sorted(fib_entry_candidates, key=lambda x: -x['quality_score'])
+
+        # Save to session_state
+        st.session_state['key_levels'] = key_levels_for_advanced
+        st.session_state['fibonacci_levels'] = fib_levels_for_advanced
+        st.session_state['fibonacci_entry_points'] = fib_entry_candidates
+
         # Get additional data from session state
         volume_footprint_data = st.session_state.get('volume_footprint_data', {})
         ultimate_rsi_data = st.session_state.get('ultimate_rsi_data', {})
@@ -2172,6 +2299,116 @@ def display_final_assessment(
 - Support Confluence Clusters: {len(support_clusters)} (2+ sources agreeing)
 - Resistance Confluence Clusters: {len(resistance_clusters)} (2+ sources agreeing)
         """)
+
+        # Display Fibonacci Entry Points
+        if fib_entry_candidates:
+            st.markdown("### 📐 Fibonacci Entry Points")
+            st.caption(f"**Swing Range: ₹{swing_low:,.0f} - ₹{swing_high:,.0f} ({price_range:.0f} pts)**")
+
+            for i, fib_entry in enumerate(fib_entry_candidates[:3]):  # Show top 3
+                distance = fib_entry['distance']
+                ratio_pct = fib_entry['ratio'] * 100
+
+                # Choose color based on grade
+                if fib_entry['grade'] == 'A+':
+                    box_color = "#1a3d1a"  # Dark green
+                    emoji = "⭐"
+                elif fib_entry['grade'] == 'A':
+                    box_color = "#1a2e1a"
+                    emoji = "✅"
+                elif fib_entry['grade'] == 'B+':
+                    box_color = "#2e2e1a"
+                    emoji = "🟢"
+                else:
+                    box_color = "#2e1a1a"
+                    emoji = "⚠️"
+
+                # Calculate R:R
+                entry_price = fib_entry['price']
+                stop_loss = fib_entry['stop_loss']
+                risk = abs(entry_price - stop_loss)
+
+                if fib_entry['entry_type'].startswith('LONG'):
+                    reward_t1 = swing_high - entry_price
+                    direction_arrow = "🟢 ↑"
+                else:
+                    reward_t1 = entry_price - swing_low
+                    direction_arrow = "🔴 ↓"
+
+                rr_ratio = reward_t1 / risk if risk > 0 else 0
+
+                st.markdown(f"""
+                <div style='background: {box_color}; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid {"#00ff88" if "LONG" in fib_entry['entry_type'] else "#ff6666"};'>
+                    <div style='font-size: 14px; color: #888; margin-bottom: 6px;'>
+                        <strong>#{i+1} Fib {ratio_pct:.1f}%</strong> {emoji} Grade: {fib_entry['grade']} ({fib_entry['quality_score']}/100) | {distance:.0f} pts away
+                    </div>
+                    <div style='font-size: 20px; font-weight: bold; margin: 8px 0;'>
+                        {direction_arrow} ₹{entry_price:,.0f}
+                    </div>
+                    <div style='font-size: 13px; color: #aaa;'>
+                        📍 <strong>{fib_entry['entry_type']}</strong><br/>
+                        🛑 Stop Loss: ₹{stop_loss:,.0f} ({risk:.0f} pts risk)<br/>
+                        🎯 Target: ₹{swing_high if "LONG" in fib_entry['entry_type'] else swing_low:,.0f} ({reward_t1:.0f} pts reward)<br/>
+                        ⚡ <strong>R:R = {rr_ratio:.1f}:1</strong>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.caption("💡 **Golden Ratio (61.8%) = Best entry probability!**")
+        else:
+            st.warning("⚠️ No Fibonacci entry points within range (price moved too far from swings)")
+
+        # Debug: Show which data sources are available
+        with st.expander("🔍 Debug: Data Sources Status", expanded=False):
+            data_sources_status = {
+                'HTF Levels (intraday_levels)': len(intraday_levels) if intraday_levels else 0,
+                'Market Depth': 'Available' if market_depth and market_depth.get('orderbook') else 'Missing',
+                'Option Chain': 'Available' if option_chain and len(option_chain) > 0 else 'Missing',
+                'Volume Footprint': 'Available' if volume_footprint_data and len(volume_footprint_data) > 0 else 'Missing',
+                'Ultimate RSI': 'Available' if ultimate_rsi_data and len(ultimate_rsi_data) > 0 else 'Missing',
+                'OM Indicator': 'Available' if om_indicator_data and len(om_indicator_data) > 0 else 'Missing',
+                'Money Flow': 'Available' if money_flow_data and len(money_flow_data) > 0 else 'Missing',
+                'DeltaFlow': 'Available' if deltaflow_data and len(deltaflow_data) > 0 else 'Missing',
+                'Geometric Patterns': len(geometric_patterns) if geometric_patterns else 0,
+                'BOS/CHOCH': 'Available' if bos_choch_data and len(bos_choch_data) > 0 else 'Missing',
+                'Reversal Zones': len(reversal_zones) if reversal_zones else 0,
+                'Liquidity Sentiment': 'Available' if liquidity_sentiment and len(liquidity_sentiment) > 0 else 'Missing'
+            }
+
+            for source, status in data_sources_status.items():
+                if status == 'Missing' or status == 0:
+                    st.warning(f"❌ {source}: {status}")
+                else:
+                    st.success(f"✅ {source}: {status}")
+
+            st.caption("💡 **Tip:** Advanced signals require multiple data sources. Missing sources may reduce signal accuracy.")
+
+        # Fallback: Use Classic levels if Advanced finds nothing
+        if len(adv_support_levels) == 0 and support_levels:
+            st.warning("⚠️ **No Advanced support levels found. Using Classic support levels as fallback.**")
+            for classic_sup in support_levels[:3]:  # Use top 3 Classic supports
+                adv_support_levels.append({
+                    'price': classic_sup['price'],
+                    'lower': classic_sup.get('lower', classic_sup['price'] - 5),
+                    'upper': classic_sup.get('upper', classic_sup['price'] + 5),
+                    'type': f"Classic {classic_sup['type']}",
+                    'source': classic_sup.get('source', 'HTF'),
+                    'strength': classic_sup.get('strength', 75),
+                    'priority': classic_sup.get('priority', 2)
+                })
+
+        if len(adv_resistance_levels) == 0 and resistance_levels:
+            st.warning("⚠️ **No Advanced resistance levels found. Using Classic resistance levels as fallback.**")
+            for classic_res in resistance_levels[:3]:  # Use top 3 Classic resistances
+                adv_resistance_levels.append({
+                    'price': classic_res['price'],
+                    'lower': classic_res.get('lower', classic_res['price'] - 5),
+                    'upper': classic_res.get('upper', classic_res['price'] + 5),
+                    'type': f"Classic {classic_res['type']}",
+                    'source': classic_res.get('source', 'HTF'),
+                    'strength': classic_res.get('strength', 75),
+                    'priority': classic_res.get('priority', 2)
+                })
 
         # Find nearest levels
         nearest_adv_support = adv_support_levels[0] if adv_support_levels else None
