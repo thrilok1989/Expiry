@@ -2173,6 +2173,58 @@ def display_final_assessment(
 - Resistance Confluence Clusters: {len(resistance_clusters)} (2+ sources agreeing)
         """)
 
+        # Debug: Show which data sources are available
+        with st.expander("🔍 Debug: Data Sources Status", expanded=False):
+            data_sources_status = {
+                'HTF Levels (intraday_levels)': len(intraday_levels) if intraday_levels else 0,
+                'Market Depth': 'Available' if market_depth and market_depth.get('orderbook') else 'Missing',
+                'Option Chain': 'Available' if option_chain and len(option_chain) > 0 else 'Missing',
+                'Volume Footprint': 'Available' if volume_footprint_data and len(volume_footprint_data) > 0 else 'Missing',
+                'Ultimate RSI': 'Available' if ultimate_rsi_data and len(ultimate_rsi_data) > 0 else 'Missing',
+                'OM Indicator': 'Available' if om_indicator_data and len(om_indicator_data) > 0 else 'Missing',
+                'Money Flow': 'Available' if money_flow_data and len(money_flow_data) > 0 else 'Missing',
+                'DeltaFlow': 'Available' if deltaflow_data and len(deltaflow_data) > 0 else 'Missing',
+                'Geometric Patterns': len(geometric_patterns) if geometric_patterns else 0,
+                'BOS/CHOCH': 'Available' if bos_choch_data and len(bos_choch_data) > 0 else 'Missing',
+                'Reversal Zones': len(reversal_zones) if reversal_zones else 0,
+                'Liquidity Sentiment': 'Available' if liquidity_sentiment and len(liquidity_sentiment) > 0 else 'Missing'
+            }
+
+            for source, status in data_sources_status.items():
+                if status == 'Missing' or status == 0:
+                    st.warning(f"❌ {source}: {status}")
+                else:
+                    st.success(f"✅ {source}: {status}")
+
+            st.caption("💡 **Tip:** Advanced signals require multiple data sources. Missing sources may reduce signal accuracy.")
+
+        # Fallback: Use Classic levels if Advanced finds nothing
+        if len(adv_support_levels) == 0 and support_levels:
+            st.warning("⚠️ **No Advanced support levels found. Using Classic support levels as fallback.**")
+            for classic_sup in support_levels[:3]:  # Use top 3 Classic supports
+                adv_support_levels.append({
+                    'price': classic_sup['price'],
+                    'lower': classic_sup.get('lower', classic_sup['price'] - 5),
+                    'upper': classic_sup.get('upper', classic_sup['price'] + 5),
+                    'type': f"Classic {classic_sup['type']}",
+                    'source': classic_sup.get('source', 'HTF'),
+                    'strength': classic_sup.get('strength', 75),
+                    'priority': classic_sup.get('priority', 2)
+                })
+
+        if len(adv_resistance_levels) == 0 and resistance_levels:
+            st.warning("⚠️ **No Advanced resistance levels found. Using Classic resistance levels as fallback.**")
+            for classic_res in resistance_levels[:3]:  # Use top 3 Classic resistances
+                adv_resistance_levels.append({
+                    'price': classic_res['price'],
+                    'lower': classic_res.get('lower', classic_res['price'] - 5),
+                    'upper': classic_res.get('upper', classic_res['price'] + 5),
+                    'type': f"Classic {classic_res['type']}",
+                    'source': classic_res.get('source', 'HTF'),
+                    'strength': classic_res.get('strength', 75),
+                    'priority': classic_res.get('priority', 2)
+                })
+
         # Find nearest levels
         nearest_adv_support = adv_support_levels[0] if adv_support_levels else None
         nearest_adv_resistance = adv_resistance_levels[0] if adv_resistance_levels else None
