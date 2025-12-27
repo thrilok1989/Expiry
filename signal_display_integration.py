@@ -2203,9 +2203,55 @@ def display_final_assessment(
                 'ratio': ratio
             })
 
-        # Save to session_state so Advanced extractor can access
+        # Identify best Fibonacci entry points (near current price)
+        fib_entry_candidates = []
+        for fib in fib_levels_for_advanced:
+            distance = abs(fib['price'] - current_price)
+
+            # Only consider Fib levels within 100 points
+            if distance <= 100:
+                # Score based on Fibonacci ratio (61.8% = best)
+                if fib['ratio'] == 0.618:
+                    quality_score = 95  # Golden ratio - BEST
+                    grade = 'A+'
+                elif fib['ratio'] == 0.5:
+                    quality_score = 85  # Psychological level
+                    grade = 'A'
+                elif fib['ratio'] == 0.382:
+                    quality_score = 80  # Good level
+                    grade = 'B+'
+                elif fib['ratio'] == 0.786:
+                    quality_score = 75  # Deep retracement
+                    grade = 'B'
+                else:
+                    quality_score = 65  # Shallow
+                    grade = 'C'
+
+                # Determine if support or resistance
+                if fib['price'] < current_price:
+                    entry_type = 'LONG Entry (Buy Dip)'
+                    stop_below = swing_low - 20
+                else:
+                    entry_type = 'SHORT Entry (Sell Rally)'
+                    stop_below = swing_high + 20
+
+                fib_entry_candidates.append({
+                    'price': fib['price'],
+                    'ratio': fib['ratio'],
+                    'distance': distance,
+                    'quality_score': quality_score,
+                    'grade': grade,
+                    'entry_type': entry_type,
+                    'stop_loss': stop_below
+                })
+
+        # Sort by quality score (best first)
+        fib_entry_candidates = sorted(fib_entry_candidates, key=lambda x: -x['quality_score'])
+
+        # Save to session_state
         st.session_state['key_levels'] = key_levels_for_advanced
         st.session_state['fibonacci_levels'] = fib_levels_for_advanced
+        st.session_state['fibonacci_entry_points'] = fib_entry_candidates
 
         # Get additional data from session state
         volume_footprint_data = st.session_state.get('volume_footprint_data', {})
@@ -2253,6 +2299,64 @@ def display_final_assessment(
 - Support Confluence Clusters: {len(support_clusters)} (2+ sources agreeing)
 - Resistance Confluence Clusters: {len(resistance_clusters)} (2+ sources agreeing)
         """)
+
+        # Display Fibonacci Entry Points
+        if fib_entry_candidates:
+            st.markdown("### 📐 Fibonacci Entry Points")
+            st.caption(f"**Swing Range: ₹{swing_low:,.0f} - ₹{swing_high:,.0f} ({price_range:.0f} pts)**")
+
+            for i, fib_entry in enumerate(fib_entry_candidates[:3]):  # Show top 3
+                distance = fib_entry['distance']
+                ratio_pct = fib_entry['ratio'] * 100
+
+                # Choose color based on grade
+                if fib_entry['grade'] == 'A+':
+                    box_color = "#1a3d1a"  # Dark green
+                    emoji = "⭐"
+                elif fib_entry['grade'] == 'A':
+                    box_color = "#1a2e1a"
+                    emoji = "✅"
+                elif fib_entry['grade'] == 'B+':
+                    box_color = "#2e2e1a"
+                    emoji = "🟢"
+                else:
+                    box_color = "#2e1a1a"
+                    emoji = "⚠️"
+
+                # Calculate R:R
+                entry_price = fib_entry['price']
+                stop_loss = fib_entry['stop_loss']
+                risk = abs(entry_price - stop_loss)
+
+                if fib_entry['entry_type'].startswith('LONG'):
+                    reward_t1 = swing_high - entry_price
+                    direction_arrow = "🟢 ↑"
+                else:
+                    reward_t1 = entry_price - swing_low
+                    direction_arrow = "🔴 ↓"
+
+                rr_ratio = reward_t1 / risk if risk > 0 else 0
+
+                st.markdown(f"""
+                <div style='background: {box_color}; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid {"#00ff88" if "LONG" in fib_entry['entry_type'] else "#ff6666"};'>
+                    <div style='font-size: 14px; color: #888; margin-bottom: 6px;'>
+                        <strong>#{i+1} Fib {ratio_pct:.1f}%</strong> {emoji} Grade: {fib_entry['grade']} ({fib_entry['quality_score']}/100) | {distance:.0f} pts away
+                    </div>
+                    <div style='font-size: 20px; font-weight: bold; margin: 8px 0;'>
+                        {direction_arrow} ₹{entry_price:,.0f}
+                    </div>
+                    <div style='font-size: 13px; color: #aaa;'>
+                        📍 <strong>{fib_entry['entry_type']}</strong><br/>
+                        🛑 Stop Loss: ₹{stop_loss:,.0f} ({risk:.0f} pts risk)<br/>
+                        🎯 Target: ₹{swing_high if "LONG" in fib_entry['entry_type'] else swing_low:,.0f} ({reward_t1:.0f} pts reward)<br/>
+                        ⚡ <strong>R:R = {rr_ratio:.1f}:1</strong>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.caption("💡 **Golden Ratio (61.8%) = Best entry probability!**")
+        else:
+            st.warning("⚠️ No Fibonacci entry points within range (price moved too far from swings)")
 
         # Debug: Show which data sources are available
         with st.expander("🔍 Debug: Data Sources Status", expanded=False):
