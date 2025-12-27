@@ -2497,8 +2497,497 @@ def display_final_assessment(
             dist_to_adv_sup = current_price - nearest_adv_support['price']
             dist_to_adv_res = nearest_adv_resistance['price'] - current_price
 
-            # LONG Setup
-            if dist_to_adv_sup <= 5 or (support_clusters and 0 <= (current_price - support_clusters[0]['price']) <= 5):
+            # ============================================
+            # 🎯 SMART ENTRY: STOP HUNT & FAKE BREAKOUT DETECTION
+            # ============================================
+            # Detect when price overshoots S/R by 5-30pts then reverses
+            # User Issue: "spot price moves 20 points above resistance then reverses,
+            # or 20 points below support then reverses - not getting entry signal"
+
+            smart_entry_signal = None
+
+            # Check for STOP HUNT BELOW SUPPORT (LONG reversal opportunity)
+            # Price went 5-30pts below support, now reversing back up
+            if -30 <= dist_to_adv_sup < -5:  # Price is 5-30pts BELOW support
+                overshoot_distance = abs(dist_to_adv_sup)
+                confirmations = []
+                confidence_score = 60  # Base score
+
+                # Confluence Factor 1: Fibonacci level nearby (validate reversal zone)
+                fib_confirmation = None
+                if fib_levels_for_advanced:
+                    for fib in fib_levels_for_advanced:
+                        fib_distance = abs(current_price - fib['price'])
+                        # Look for deep retracement Fib levels (61.8%, 78.6%) near current price
+                        if fib_distance <= 15 and fib['ratio'] in [0.618, 0.786]:
+                            fib_confirmation = fib
+                            confirmations.append(f"Fib {fib['ratio']*100:.1f}% @ ₹{fib['price']:,.0f} ({fib_distance:.0f}pts)")
+                            confidence_score += 15
+                            break
+
+                # Confluence Factor 2: HTF support level nearby
+                htf_confirmation = False
+                if htf_support_level:
+                    htf_distance = abs(current_price - htf_support_level)
+                    if htf_distance <= 15:
+                        confirmations.append(f"HTF Support @ ₹{htf_support_level:,.0f} ({htf_distance:.0f}pts)")
+                        confidence_score += 10
+                        htf_confirmation = True
+
+                # Confluence Factor 3: Multiple S/R sources agree (confluence cluster)
+                cluster_confirmation = False
+                if support_clusters:
+                    cluster_distance = abs(current_price - support_clusters[0]['price'])
+                    if cluster_distance <= 20 and support_clusters[0]['confluence_count'] >= 2:
+                        confirmations.append(f"{support_clusters[0]['confluence_count']} sources agree @ ₹{support_clusters[0]['price']:,.0f}")
+                        confidence_score += (support_clusters[0]['confluence_count'] * 5)
+                        cluster_confirmation = True
+
+                # Confluence Factor 4: Volume footprint confirmation (if available)
+                volume_confirmation = False
+                if volume_footprint_data:
+                    confirmations.append("Volume Footprint: Check for buyer absorption")
+                    confidence_score += 5
+                    volume_confirmation = True
+
+                # Generate SMART ENTRY if we have 2+ confirmations
+                if len(confirmations) >= 2:
+                    confidence_score = min(confidence_score, 95)  # Cap at 95%
+
+                    smart_entry_signal = {
+                        'type': 'LONG',
+                        'reason': '🎯 Stop Hunt Reversal',
+                        'entry_price': current_price,
+                        'original_support': nearest_adv_support['price'],
+                        'overshoot_distance': overshoot_distance,
+                        'confirmations': confirmations,
+                        'confidence': confidence_score,
+                        'stop_loss': current_price - 25,  # Tight SL below reversal zone
+                        'target': nearest_adv_resistance['price'],
+                        'risk_reward': (nearest_adv_resistance['price'] - current_price) / 25
+                    }
+
+            # Check for FAKE BREAKOUT ABOVE RESISTANCE (SHORT reversal opportunity)
+            # Price went 5-30pts above resistance, now reversing back down
+            elif -30 <= dist_to_adv_res < -5:  # Price is 5-30pts ABOVE resistance (negative because it's above)
+                # Actually, if price is ABOVE resistance, dist_to_adv_res will be NEGATIVE
+                # Let me recalculate: dist_to_adv_res = resistance - current_price
+                # If price > resistance, then dist_to_adv_res < 0
+                # So we want: -30 <= dist_to_adv_res <= -5
+                overshoot_distance = abs(dist_to_adv_res)
+                confirmations = []
+                confidence_score = 60  # Base score
+
+                # Confluence Factor 1: Fibonacci level nearby (validate reversal zone)
+                fib_confirmation = None
+                if fib_levels_for_advanced:
+                    for fib in fib_levels_for_advanced:
+                        fib_distance = abs(current_price - fib['price'])
+                        # Look for shallow retracement Fib levels (23.6%, 38.2%) near current price
+                        if fib_distance <= 15 and fib['ratio'] in [0.236, 0.382]:
+                            fib_confirmation = fib
+                            confirmations.append(f"Fib {fib['ratio']*100:.1f}% @ ₹{fib['price']:,.0f} ({fib_distance:.0f}pts)")
+                            confidence_score += 15
+                            break
+
+                # Confluence Factor 2: HTF resistance level nearby
+                htf_confirmation = False
+                if htf_resistance_level:
+                    htf_distance = abs(current_price - htf_resistance_level)
+                    if htf_distance <= 15:
+                        confirmations.append(f"HTF Resistance @ ₹{htf_resistance_level:,.0f} ({htf_distance:.0f}pts)")
+                        confidence_score += 10
+                        htf_confirmation = True
+
+                # Confluence Factor 3: Multiple S/R sources agree (confluence cluster)
+                cluster_confirmation = False
+                if resistance_clusters:
+                    cluster_distance = abs(current_price - resistance_clusters[0]['price'])
+                    if cluster_distance <= 20 and resistance_clusters[0]['confluence_count'] >= 2:
+                        confirmations.append(f"{resistance_clusters[0]['confluence_count']} sources agree @ ₹{resistance_clusters[0]['price']:,.0f}")
+                        confidence_score += (resistance_clusters[0]['confluence_count'] * 5)
+                        cluster_confirmation = True
+
+                # Confluence Factor 4: Volume footprint confirmation (if available)
+                volume_confirmation = False
+                if volume_footprint_data:
+                    confirmations.append("Volume Footprint: Check for seller absorption")
+                    confidence_score += 5
+                    volume_confirmation = True
+
+                # Generate SMART ENTRY if we have 2+ confirmations
+                if len(confirmations) >= 2:
+                    confidence_score = min(confidence_score, 95)  # Cap at 95%
+
+                    smart_entry_signal = {
+                        'type': 'SHORT',
+                        'reason': '🎯 Fake Breakout Reversal',
+                        'entry_price': current_price,
+                        'original_resistance': nearest_adv_resistance['price'],
+                        'overshoot_distance': overshoot_distance,
+                        'confirmations': confirmations,
+                        'confidence': confidence_score,
+                        'stop_loss': current_price + 25,  # Tight SL above reversal zone
+                        'target': nearest_adv_support['price'],
+                        'risk_reward': (current_price - nearest_adv_support['price']) / 25
+                    }
+
+            # ============================================
+            # 💰 ACCUMULATION / DISTRIBUTION DETECTION
+            # ============================================
+            # Detect smart money accumulation or distribution in ANY zone
+            # Accumulation can happen:
+            #   1. AT support (0-20pts above) - Classic accumulation
+            #   2. BELOW support (5-30pts below) - Stop hunt accumulation (STRONGEST)
+            #   3. ABOVE resistance (5-30pts above) - Re-accumulation after breakout
+            # Distribution can happen:
+            #   1. AT resistance (0-20pts below) - Classic distribution
+            #   2. ABOVE resistance (5-30pts above) - Fake breakout distribution (STRONGEST)
+            #   3. BELOW support (5-30pts below) - Re-distribution after breakdown
+
+            # Check for ACCUMULATION (LONG opportunity) - ANY ZONE
+            # Look for buying pressure at support, below support, or above resistance
+            accumulation_zone = None
+            accumulation_zone_type = None
+
+            if not smart_entry_signal:
+                # Zone 1: AT Support (0-20pts above support)
+                if 0 <= dist_to_adv_sup <= 20:
+                    accumulation_zone = 'at_support'
+                    accumulation_zone_type = 'At Support'
+
+                # Zone 2: BELOW Support (5-30pts below support) - Stop Hunt Accumulation
+                elif -30 <= dist_to_adv_sup < -5:
+                    accumulation_zone = 'below_support'
+                    accumulation_zone_type = 'Stop Hunt Zone (Below Support)'
+
+                # Zone 3: ABOVE Resistance (5-30pts above resistance) - Re-Accumulation
+                elif -30 <= dist_to_adv_res < -5:
+                    accumulation_zone = 'above_resistance'
+                    accumulation_zone_type = 'Re-Accumulation (Above Resistance)'
+
+            if accumulation_zone:
+                accumulation_signals = []
+                accumulation_score = 50  # Base score
+
+                # Signal 1: Delta Flow showing buying pressure
+                if deltaflow_data:
+                    delta_verdict = deltaflow_data.get('verdict', '')
+                    cumulative_delta = deltaflow_data.get('cumulative_delta', 0)
+                    if 'Bullish' in delta_verdict or cumulative_delta > 0:
+                        accumulation_signals.append(f"Delta Flow: {delta_verdict} (Cumulative: {cumulative_delta:+,.0f})")
+                        accumulation_score += 15
+
+                # Signal 2: Money Flow showing accumulation
+                if money_flow_data:
+                    money_flow_verdict = money_flow_data.get('verdict', '')
+                    mfi_value = money_flow_data.get('mfi', 0)
+                    if 'Accumulation' in money_flow_verdict or 'Bullish' in money_flow_verdict:
+                        accumulation_signals.append(f"Money Flow: {money_flow_verdict} (MFI: {mfi_value:.0f})")
+                        accumulation_score += 15
+
+                # Signal 3: Volume Footprint showing buyer absorption
+                if volume_footprint_data:
+                    footprint_verdict = volume_footprint_data.get('verdict', '')
+                    buyer_strength = volume_footprint_data.get('buyer_strength', 0)
+                    if 'Buyers' in footprint_verdict or buyer_strength > 60:
+                        accumulation_signals.append(f"Volume Footprint: Buyer absorption (Strength: {buyer_strength:.0f}%)")
+                        accumulation_score += 15
+
+                # Signal 4: Confluence cluster at support (multiple tests)
+                if support_clusters and support_clusters[0]['confluence_count'] >= 3:
+                    cluster_sources = support_clusters[0]['confluence_count']
+                    accumulation_signals.append(f"Multiple S/R sources tested ({cluster_sources} times) - Liquidity grab complete")
+                    accumulation_score += 10
+
+                # Signal 5: Ultimate RSI showing oversold reversal
+                if ultimate_rsi_data:
+                    rsi_verdict = ultimate_rsi_data.get('verdict', '')
+                    rsi_value = ultimate_rsi_data.get('rsi', 50)
+                    if rsi_value < 40 or 'Bullish' in rsi_verdict:
+                        accumulation_signals.append(f"RSI: Oversold reversal zone (RSI: {rsi_value:.0f})")
+                        accumulation_score += 10
+
+                # Generate ACCUMULATION signal if we have 2+ signals
+                if len(accumulation_signals) >= 2:
+                    accumulation_score = min(accumulation_score, 90)  # Cap at 90%
+
+                    # Boost score for stop hunt accumulation (strongest pattern)
+                    if accumulation_zone == 'below_support':
+                        accumulation_score = min(accumulation_score + 10, 95)  # Bonus for stop hunt
+                        accumulation_signals.append("🔥 STOP HUNT ACCUMULATION - Strongest pattern!")
+
+                    # Calculate stop loss based on zone
+                    if accumulation_zone == 'at_support':
+                        stop_loss_price = nearest_adv_support['price'] - 30
+                    elif accumulation_zone == 'below_support':
+                        stop_loss_price = current_price - 25  # Tight SL - already below support
+                    else:  # above_resistance
+                        stop_loss_price = nearest_adv_resistance['price'] - 10  # SL at breakout level
+
+                    smart_entry_signal = {
+                        'type': 'LONG',
+                        'reason': '💰 Smart Money Accumulation',
+                        'entry_price': current_price,
+                        'original_support': nearest_adv_support['price'],
+                        'overshoot_distance': abs(dist_to_adv_sup) if accumulation_zone != 'above_resistance' else abs(dist_to_adv_res),
+                        'confirmations': accumulation_signals,
+                        'confidence': accumulation_score,
+                        'stop_loss': stop_loss_price,
+                        'target': nearest_adv_resistance['price'],
+                        'risk_reward': (nearest_adv_resistance['price'] - current_price) / abs(current_price - stop_loss_price),
+                        'pattern_type': f'Accumulation - {accumulation_zone_type}',
+                        'zone_type': accumulation_zone
+                    }
+
+            # Check for DISTRIBUTION (SHORT opportunity) - ANY ZONE
+            # Look for selling pressure at resistance, above resistance, or below support
+            distribution_zone = None
+            distribution_zone_type = None
+
+            if not smart_entry_signal:
+                # Zone 1: AT Resistance (0-20pts below resistance)
+                if 0 <= dist_to_adv_res <= 20:
+                    distribution_zone = 'at_resistance'
+                    distribution_zone_type = 'At Resistance'
+
+                # Zone 2: ABOVE Resistance (5-30pts above resistance) - Fake Breakout Distribution
+                elif -30 <= dist_to_adv_res < -5:
+                    distribution_zone = 'above_resistance'
+                    distribution_zone_type = 'Fake Breakout Zone (Above Resistance)'
+
+                # Zone 3: BELOW Support (5-30pts below support) - Re-Distribution
+                elif -30 <= dist_to_adv_sup < -5:
+                    distribution_zone = 'below_support'
+                    distribution_zone_type = 'Re-Distribution (Below Support)'
+
+            if distribution_zone:
+                distribution_signals = []
+                distribution_score = 50  # Base score
+
+                # Signal 1: Delta Flow showing selling pressure
+                if deltaflow_data:
+                    delta_verdict = deltaflow_data.get('verdict', '')
+                    cumulative_delta = deltaflow_data.get('cumulative_delta', 0)
+                    if 'Bearish' in delta_verdict or cumulative_delta < 0:
+                        distribution_signals.append(f"Delta Flow: {delta_verdict} (Cumulative: {cumulative_delta:+,.0f})")
+                        distribution_score += 15
+
+                # Signal 2: Money Flow showing distribution
+                if money_flow_data:
+                    money_flow_verdict = money_flow_data.get('verdict', '')
+                    mfi_value = money_flow_data.get('mfi', 0)
+                    if 'Distribution' in money_flow_verdict or 'Bearish' in money_flow_verdict:
+                        distribution_signals.append(f"Money Flow: {money_flow_verdict} (MFI: {mfi_value:.0f})")
+                        distribution_score += 15
+
+                # Signal 3: Volume Footprint showing seller pressure
+                if volume_footprint_data:
+                    footprint_verdict = volume_footprint_data.get('verdict', '')
+                    seller_strength = volume_footprint_data.get('seller_strength', 0)
+                    if 'Sellers' in footprint_verdict or seller_strength > 60:
+                        distribution_signals.append(f"Volume Footprint: Seller pressure (Strength: {seller_strength:.0f}%)")
+                        distribution_score += 15
+
+                # Signal 4: Confluence cluster at resistance (multiple tests)
+                if resistance_clusters and resistance_clusters[0]['confluence_count'] >= 3:
+                    cluster_sources = resistance_clusters[0]['confluence_count']
+                    distribution_signals.append(f"Multiple S/R sources tested ({cluster_sources} times) - Liquidity grab complete")
+                    distribution_score += 10
+
+                # Signal 5: Ultimate RSI showing overbought reversal
+                if ultimate_rsi_data:
+                    rsi_verdict = ultimate_rsi_data.get('verdict', '')
+                    rsi_value = ultimate_rsi_data.get('rsi', 50)
+                    if rsi_value > 60 or 'Bearish' in rsi_verdict:
+                        distribution_signals.append(f"RSI: Overbought reversal zone (RSI: {rsi_value:.0f})")
+                        distribution_score += 10
+
+                # Generate DISTRIBUTION signal if we have 2+ signals
+                if len(distribution_signals) >= 2:
+                    distribution_score = min(distribution_score, 90)  # Cap at 90%
+
+                    # Boost score for fake breakout distribution (strongest pattern)
+                    if distribution_zone == 'above_resistance':
+                        distribution_score = min(distribution_score + 10, 95)  # Bonus for fake breakout
+                        distribution_signals.append("🔥 FAKE BREAKOUT DISTRIBUTION - Strongest pattern!")
+
+                    # Calculate stop loss based on zone
+                    if distribution_zone == 'at_resistance':
+                        stop_loss_price = nearest_adv_resistance['price'] + 30
+                    elif distribution_zone == 'above_resistance':
+                        stop_loss_price = current_price + 25  # Tight SL - already above resistance
+                    else:  # below_support
+                        stop_loss_price = nearest_adv_support['price'] + 10  # SL at breakdown level
+
+                    smart_entry_signal = {
+                        'type': 'SHORT',
+                        'reason': '💰 Smart Money Distribution',
+                        'entry_price': current_price,
+                        'original_resistance': nearest_adv_resistance['price'],
+                        'overshoot_distance': abs(dist_to_adv_res) if distribution_zone != 'below_support' else abs(dist_to_adv_sup),
+                        'confirmations': distribution_signals,
+                        'confidence': distribution_score,
+                        'stop_loss': stop_loss_price,
+                        'target': nearest_adv_support['price'],
+                        'risk_reward': (current_price - nearest_adv_support['price']) / abs(stop_loss_price - current_price),
+                        'pattern_type': f'Distribution - {distribution_zone_type}',
+                        'zone_type': distribution_zone
+                    }
+
+            # Display SMART ENTRY SIGNAL (if detected)
+            if smart_entry_signal:
+                signal_color = "#1a3d1a" if smart_entry_signal['type'] == "LONG" else "#3d1a1a"
+                signal_icon = "🟢" if smart_entry_signal['type'] == "LONG" else "🔴"
+                entry_label = "LONG" if smart_entry_signal['type'] == "LONG" else "SHORT"
+
+                # Determine pattern-specific display text
+                pattern_type = smart_entry_signal.get('pattern_type', 'Reversal')
+                zone_type = smart_entry_signal.get('zone_type', '')
+                is_reversal = 'Reversal' in smart_entry_signal['reason']
+                is_accumulation = 'Accumulation' in smart_entry_signal['reason']
+                is_distribution = 'Distribution' in smart_entry_signal['reason']
+
+                if is_accumulation or is_distribution:
+                    subtitle = f"⚡ SMART MONEY DETECTED - {pattern_type.upper()}"
+
+                    # Create zone-specific description
+                    if is_accumulation:
+                        if zone_type == 'at_support':
+                            pattern_desc = "Smart money accumulating at support - Strong institutional buying"
+                        elif zone_type == 'below_support':
+                            pattern_desc = "🔥 STOP HUNT ACCUMULATION - Smart money buying during liquidity grab (STRONGEST PATTERN)"
+                        else:  # above_resistance
+                            pattern_desc = "Smart money re-accumulating above resistance - Breakout continuation"
+                    else:  # distribution
+                        if zone_type == 'at_resistance':
+                            pattern_desc = "Smart money distributing at resistance - Strong institutional selling"
+                        elif zone_type == 'above_resistance':
+                            pattern_desc = "🔥 FAKE BREAKOUT DISTRIBUTION - Smart money selling into retail FOMO (STRONGEST PATTERN)"
+                        else:  # below_support
+                            pattern_desc = "Smart money re-distributing below support - Breakdown continuation"
+                else:
+                    subtitle = "⚡ SMART ENTRY DETECTED - HIGH PROBABILITY REVERSAL"
+                    pattern_desc = f"Price overshooting {'support' if smart_entry_signal['type'] == 'LONG' else 'resistance'} - Classic liquidity grab pattern"
+
+                st.markdown(f"""
+                <div style='background: {signal_color}; padding: 20px; border-radius: 12px; border: 3px solid {"#00ff88" if smart_entry_signal['type'] == "LONG" else "#ff6666"}; margin-bottom: 20px;'>
+                    <div style='font-size: 24px; font-weight: bold; color: {"#00ff88" if smart_entry_signal['type'] == "LONG" else "#ff6666"}; margin-bottom: 10px;'>
+                        {signal_icon} {smart_entry_signal['reason']} - {entry_label} ENTRY
+                    </div>
+                    <div style='font-size: 16px; color: #ffffff; margin-bottom: 15px;'>
+                        <strong>{subtitle}</strong>
+                    </div>
+                    <div style='background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                        <div style='font-size: 14px; color: #aaa; margin-bottom: 8px;'>{pattern_desc}</div>
+                        <div style='font-size: 18px; font-weight: bold; color: #ffffff;'>
+                            Original {"Support" if smart_entry_signal['type'] == "LONG" else "Resistance"}: ₹{smart_entry_signal['original_support' if smart_entry_signal['type'] == "LONG" else 'original_resistance']:,.0f}
+                        </div>
+                        <div style='font-size: 16px; color: #ffaa00;'>
+                            Current Price: ₹{smart_entry_signal['entry_price']:,.2f} ({'Distance: ' + str(int(smart_entry_signal['overshoot_distance'])) + ' pts' if is_reversal else 'At zone'})
+                        </div>
+                    </div>
+                    <div style='background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                        <div style='font-size: 14px; font-weight: bold; color: #ffffff; margin-bottom: 8px;'>
+                            📊 Entry Details:
+                        </div>
+                        <div style='font-size: 13px; color: #ffffff; line-height: 1.8;'>
+                            🎯 <strong>Entry:</strong> ₹{smart_entry_signal['entry_price']:,.2f}<br/>
+                            🛡️ <strong>Stop Loss:</strong> ₹{smart_entry_signal['stop_loss']:,.2f} (25 pts risk)<br/>
+                            🏁 <strong>Target:</strong> ₹{smart_entry_signal['target']:,.0f}<br/>
+                            ⚖️ <strong>Risk:Reward:</strong> 1:{smart_entry_signal['risk_reward']:.1f}<br/>
+                            🎲 <strong>Confidence:</strong> {smart_entry_signal['confidence']}%
+                        </div>
+                    </div>
+                    <div style='background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;'>
+                        <div style='font-size: 14px; font-weight: bold; color: #ffffff; margin-bottom: 8px;'>
+                            ✅ Confluence Confirmations ({len(smart_entry_signal['confirmations'])} factors):
+                        </div>
+                        <div style='font-size: 13px; color: #00ff88; line-height: 1.8;'>
+                            {'<br/>'.join(['• ' + c for c in smart_entry_signal['confirmations']])}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Send Smart Entry Telegram Alert
+                try:
+                    telegram = TelegramAlerts()
+
+                    # Calculate risk points and percentage (depends on pattern type)
+                    risk_points = abs(smart_entry_signal['entry_price'] - smart_entry_signal['stop_loss'])
+                    risk_pct = (risk_points / smart_entry_signal['entry_price']) * 100
+
+                    # Determine SL reason based on pattern
+                    if is_accumulation or is_distribution:
+                        sl_reason = f"{pattern_type} zone invalidated if breached"
+                        total_factors = 5  # Max 5 for accumulation/distribution
+                    else:
+                        sl_reason = "Tight SL - reversal invalidated if breached"
+                        total_factors = 4  # Max 4 for stop hunt/fake breakout
+
+                    # Build confluence info
+                    confluence_info = {
+                        'score': smart_entry_signal['confidence'],
+                        'confirmed': len(smart_entry_signal['confirmations']),
+                        'total': total_factors,
+                        'checks': {}
+                    }
+
+                    # Calculate range zones
+                    range_zones_smart = {
+                        'low': nearest_adv_support['price'],
+                        'mid': (nearest_adv_support['price'] + nearest_adv_resistance['price']) / 2,
+                        'high': nearest_adv_resistance['price']
+                    }
+
+                    success = telegram.send_advanced_entry_alert(
+                        signal_type=smart_entry_signal['type'],
+                        pattern_type=f"⚡ {smart_entry_signal['reason']}",
+                        entry_zone=(smart_entry_signal['entry_price'] - 5, smart_entry_signal['entry_price'] + 5),
+                        smart_sl={
+                            'price': smart_entry_signal['stop_loss'],
+                            'reason': sl_reason,
+                            'risk_points': risk_points,
+                            'risk_percent': risk_pct,
+                            'invalidation_triggers': [smart_entry_signal['reason']]
+                        },
+                        smart_targets={
+                            't1': {
+                                'price': smart_entry_signal['target'],
+                                'confluence': f"Opposite S/R level ({len(smart_entry_signal['confirmations'])} confirmations)",
+                                'source_count': len(smart_entry_signal['confirmations'])
+                            },
+                            't2': {
+                                'price': smart_entry_signal['target'] + (50 if smart_entry_signal['type'] == 'SHORT' else -50),
+                                'confluence': 'Extended target',
+                                'source_count': 1
+                            },
+                            't3': {
+                                'price': smart_entry_signal['target'] + (100 if smart_entry_signal['type'] == 'SHORT' else -100),
+                                'confluence': 'Maximum extension',
+                                'source_count': 1
+                            }
+                        },
+                        confluence=confluence_info,
+                        current_price=current_price,
+                        pattern_details={
+                            'overshoot_distance': smart_entry_signal['overshoot_distance'],
+                            'original_level': smart_entry_signal['original_support' if smart_entry_signal['type'] == 'LONG' else 'original_resistance']
+                        },
+                        range_zones=range_zones_smart
+                    )
+
+                    if success:
+                        st.caption("📱 Smart Entry Telegram alert sent!")
+                    else:
+                        st.caption("⚠️ Smart Entry Telegram alert failed (check credentials)")
+                except Exception as telegram_err:
+                    logger.warning(f"Could not send Smart Entry Telegram alert: {telegram_err}")
+                    st.caption(f"⚠️ Smart Entry Telegram error: {telegram_err}")
+
+            # LONG Setup (Normal entry at support)
+            elif dist_to_adv_sup <= 5 or (support_clusters and 0 <= (current_price - support_clusters[0]['price']) <= 5):
                 # Calculate smart SL and targets
                 atr = calculate_atr(df) if df is not None else 55
 
