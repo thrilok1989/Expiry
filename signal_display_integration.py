@@ -2635,13 +2635,38 @@ def display_final_assessment(
             # ============================================
             # 💰 ACCUMULATION / DISTRIBUTION DETECTION
             # ============================================
-            # Detect smart money accumulation at support or distribution at resistance
-            # Accumulation: Buying pressure at support (LONG setup)
-            # Distribution: Selling pressure at resistance (SHORT setup)
+            # Detect smart money accumulation or distribution in ANY zone
+            # Accumulation can happen:
+            #   1. AT support (0-20pts above) - Classic accumulation
+            #   2. BELOW support (5-30pts below) - Stop hunt accumulation (STRONGEST)
+            #   3. ABOVE resistance (5-30pts above) - Re-accumulation after breakout
+            # Distribution can happen:
+            #   1. AT resistance (0-20pts below) - Classic distribution
+            #   2. ABOVE resistance (5-30pts above) - Fake breakout distribution (STRONGEST)
+            #   3. BELOW support (5-30pts below) - Re-distribution after breakdown
 
-            # Check for ACCUMULATION at Support (LONG opportunity)
-            # Price hovering near support with buying pressure
-            if not smart_entry_signal and 0 <= dist_to_adv_sup <= 20:
+            # Check for ACCUMULATION (LONG opportunity) - ANY ZONE
+            # Look for buying pressure at support, below support, or above resistance
+            accumulation_zone = None
+            accumulation_zone_type = None
+
+            if not smart_entry_signal:
+                # Zone 1: AT Support (0-20pts above support)
+                if 0 <= dist_to_adv_sup <= 20:
+                    accumulation_zone = 'at_support'
+                    accumulation_zone_type = 'At Support'
+
+                # Zone 2: BELOW Support (5-30pts below support) - Stop Hunt Accumulation
+                elif -30 <= dist_to_adv_sup < -5:
+                    accumulation_zone = 'below_support'
+                    accumulation_zone_type = 'Stop Hunt Zone (Below Support)'
+
+                # Zone 3: ABOVE Resistance (5-30pts above resistance) - Re-Accumulation
+                elif -30 <= dist_to_adv_res < -5:
+                    accumulation_zone = 'above_resistance'
+                    accumulation_zone_type = 'Re-Accumulation (Above Resistance)'
+
+            if accumulation_zone:
                 accumulation_signals = []
                 accumulation_score = 50  # Base score
 
@@ -2687,23 +2712,56 @@ def display_final_assessment(
                 if len(accumulation_signals) >= 2:
                     accumulation_score = min(accumulation_score, 90)  # Cap at 90%
 
+                    # Boost score for stop hunt accumulation (strongest pattern)
+                    if accumulation_zone == 'below_support':
+                        accumulation_score = min(accumulation_score + 10, 95)  # Bonus for stop hunt
+                        accumulation_signals.append("🔥 STOP HUNT ACCUMULATION - Strongest pattern!")
+
+                    # Calculate stop loss based on zone
+                    if accumulation_zone == 'at_support':
+                        stop_loss_price = nearest_adv_support['price'] - 30
+                    elif accumulation_zone == 'below_support':
+                        stop_loss_price = current_price - 25  # Tight SL - already below support
+                    else:  # above_resistance
+                        stop_loss_price = nearest_adv_resistance['price'] - 10  # SL at breakout level
+
                     smart_entry_signal = {
                         'type': 'LONG',
                         'reason': '💰 Smart Money Accumulation',
                         'entry_price': current_price,
                         'original_support': nearest_adv_support['price'],
-                        'overshoot_distance': dist_to_adv_sup,
+                        'overshoot_distance': abs(dist_to_adv_sup) if accumulation_zone != 'above_resistance' else abs(dist_to_adv_res),
                         'confirmations': accumulation_signals,
                         'confidence': accumulation_score,
-                        'stop_loss': nearest_adv_support['price'] - 30,  # Below accumulation zone
+                        'stop_loss': stop_loss_price,
                         'target': nearest_adv_resistance['price'],
-                        'risk_reward': (nearest_adv_resistance['price'] - current_price) / (current_price - (nearest_adv_support['price'] - 30)),
-                        'pattern_type': 'Accumulation Zone'
+                        'risk_reward': (nearest_adv_resistance['price'] - current_price) / abs(current_price - stop_loss_price),
+                        'pattern_type': f'Accumulation - {accumulation_zone_type}',
+                        'zone_type': accumulation_zone
                     }
 
-            # Check for DISTRIBUTION at Resistance (SHORT opportunity)
-            # Price hovering near resistance with selling pressure
-            elif not smart_entry_signal and 0 <= dist_to_adv_res <= 20:
+            # Check for DISTRIBUTION (SHORT opportunity) - ANY ZONE
+            # Look for selling pressure at resistance, above resistance, or below support
+            distribution_zone = None
+            distribution_zone_type = None
+
+            if not smart_entry_signal:
+                # Zone 1: AT Resistance (0-20pts below resistance)
+                if 0 <= dist_to_adv_res <= 20:
+                    distribution_zone = 'at_resistance'
+                    distribution_zone_type = 'At Resistance'
+
+                # Zone 2: ABOVE Resistance (5-30pts above resistance) - Fake Breakout Distribution
+                elif -30 <= dist_to_adv_res < -5:
+                    distribution_zone = 'above_resistance'
+                    distribution_zone_type = 'Fake Breakout Zone (Above Resistance)'
+
+                # Zone 3: BELOW Support (5-30pts below support) - Re-Distribution
+                elif -30 <= dist_to_adv_sup < -5:
+                    distribution_zone = 'below_support'
+                    distribution_zone_type = 'Re-Distribution (Below Support)'
+
+            if distribution_zone:
                 distribution_signals = []
                 distribution_score = 50  # Base score
 
@@ -2749,18 +2807,32 @@ def display_final_assessment(
                 if len(distribution_signals) >= 2:
                     distribution_score = min(distribution_score, 90)  # Cap at 90%
 
+                    # Boost score for fake breakout distribution (strongest pattern)
+                    if distribution_zone == 'above_resistance':
+                        distribution_score = min(distribution_score + 10, 95)  # Bonus for fake breakout
+                        distribution_signals.append("🔥 FAKE BREAKOUT DISTRIBUTION - Strongest pattern!")
+
+                    # Calculate stop loss based on zone
+                    if distribution_zone == 'at_resistance':
+                        stop_loss_price = nearest_adv_resistance['price'] + 30
+                    elif distribution_zone == 'above_resistance':
+                        stop_loss_price = current_price + 25  # Tight SL - already above resistance
+                    else:  # below_support
+                        stop_loss_price = nearest_adv_support['price'] + 10  # SL at breakdown level
+
                     smart_entry_signal = {
                         'type': 'SHORT',
                         'reason': '💰 Smart Money Distribution',
                         'entry_price': current_price,
                         'original_resistance': nearest_adv_resistance['price'],
-                        'overshoot_distance': dist_to_adv_res,
+                        'overshoot_distance': abs(dist_to_adv_res) if distribution_zone != 'below_support' else abs(dist_to_adv_sup),
                         'confirmations': distribution_signals,
                         'confidence': distribution_score,
-                        'stop_loss': nearest_adv_resistance['price'] + 30,  # Above distribution zone
+                        'stop_loss': stop_loss_price,
                         'target': nearest_adv_support['price'],
-                        'risk_reward': (current_price - nearest_adv_support['price']) / (nearest_adv_resistance['price'] + 30 - current_price),
-                        'pattern_type': 'Distribution Zone'
+                        'risk_reward': (current_price - nearest_adv_support['price']) / abs(stop_loss_price - current_price),
+                        'pattern_type': f'Distribution - {distribution_zone_type}',
+                        'zone_type': distribution_zone
                     }
 
             # Display SMART ENTRY SIGNAL (if detected)
@@ -2771,13 +2843,29 @@ def display_final_assessment(
 
                 # Determine pattern-specific display text
                 pattern_type = smart_entry_signal.get('pattern_type', 'Reversal')
+                zone_type = smart_entry_signal.get('zone_type', '')
                 is_reversal = 'Reversal' in smart_entry_signal['reason']
                 is_accumulation = 'Accumulation' in smart_entry_signal['reason']
                 is_distribution = 'Distribution' in smart_entry_signal['reason']
 
                 if is_accumulation or is_distribution:
                     subtitle = f"⚡ SMART MONEY DETECTED - {pattern_type.upper()}"
-                    pattern_desc = f"Smart money {'accumulating at support' if is_accumulation else 'distributing at resistance'} - Strong institutional footprint"
+
+                    # Create zone-specific description
+                    if is_accumulation:
+                        if zone_type == 'at_support':
+                            pattern_desc = "Smart money accumulating at support - Strong institutional buying"
+                        elif zone_type == 'below_support':
+                            pattern_desc = "🔥 STOP HUNT ACCUMULATION - Smart money buying during liquidity grab (STRONGEST PATTERN)"
+                        else:  # above_resistance
+                            pattern_desc = "Smart money re-accumulating above resistance - Breakout continuation"
+                    else:  # distribution
+                        if zone_type == 'at_resistance':
+                            pattern_desc = "Smart money distributing at resistance - Strong institutional selling"
+                        elif zone_type == 'above_resistance':
+                            pattern_desc = "🔥 FAKE BREAKOUT DISTRIBUTION - Smart money selling into retail FOMO (STRONGEST PATTERN)"
+                        else:  # below_support
+                            pattern_desc = "Smart money re-distributing below support - Breakdown continuation"
                 else:
                     subtitle = "⚡ SMART ENTRY DETECTED - HIGH PROBABILITY REVERSAL"
                     pattern_desc = f"Price overshooting {'support' if smart_entry_signal['type'] == 'LONG' else 'resistance'} - Classic liquidity grab pattern"
