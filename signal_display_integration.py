@@ -2126,6 +2126,87 @@ def display_final_assessment(
 
     # Extract S/R from all 14 sources
     try:
+        # ===== PREPARE DATA FOR ADVANCED S/R EXTRACTION =====
+        # Build key_levels for Structural source (Source 4)
+        key_levels_for_advanced = []
+
+        # 1. ATM Strike
+        key_levels_for_advanced.append({
+            'price': atm_strike,
+            'type': 'ATM Strike',
+            'strength': 100,
+            'source': 'Option Chain'
+        })
+
+        # 2. Max Pain
+        if nifty_screener_data and 'seller_max_pain' in nifty_screener_data:
+            max_pain_data = nifty_screener_data['seller_max_pain']
+            if isinstance(max_pain_data, dict) and 'max_pain_strike' in max_pain_data:
+                max_pain_strike = max_pain_data['max_pain_strike']
+                key_levels_for_advanced.append({
+                    'price': max_pain_strike,
+                    'type': 'Max Pain',
+                    'strength': 90,
+                    'source': 'Option Sellers'
+                })
+
+        # 3. Support/Resistance from simple calculation
+        support_level_simple = round((current_price - 100) / 50) * 50
+        resistance_level_simple = round((current_price + 100) / 50) * 50
+
+        if nifty_screener_data:
+            nearest_sup = nifty_screener_data.get('nearest_sup')
+            nearest_res = nifty_screener_data.get('nearest_res')
+            if nearest_sup and isinstance(nearest_sup, (int, float)) and nearest_sup < current_price:
+                support_level_simple = nearest_sup
+            if nearest_res and isinstance(nearest_res, (int, float)) and nearest_res > current_price:
+                resistance_level_simple = nearest_res
+
+        if support_level_simple > 0:
+            key_levels_for_advanced.append({
+                'price': support_level_simple,
+                'type': 'Support',
+                'strength': 75,
+                'source': 'HTF'
+            })
+
+        if resistance_level_simple > 0:
+            key_levels_for_advanced.append({
+                'price': resistance_level_simple,
+                'type': 'Resistance',
+                'strength': 75,
+                'source': 'HTF'
+            })
+
+        # 4. Calculate Fibonacci levels for Fibonacci source (Source 3)
+        fib_levels_for_advanced = []
+        swing_high = current_price + 200  # Simple fallback
+        swing_low = current_price - 200
+
+        # Try to get better swing points from liquidity
+        if liquidity_result and hasattr(liquidity_result, 'resistance_zones') and hasattr(liquidity_result, 'support_zones'):
+            resistance_zones = liquidity_result.resistance_zones
+            support_zones = liquidity_result.support_zones
+            if resistance_zones:
+                swing_high = max([r for r in resistance_zones if isinstance(r, (int, float))])
+            if support_zones:
+                swing_low = min([s for s in support_zones if isinstance(s, (int, float))])
+
+        # Calculate Fibonacci retracement levels
+        price_range = swing_high - swing_low
+        fib_ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
+
+        for ratio in fib_ratios:
+            fib_price = swing_high - (price_range * ratio)
+            fib_levels_for_advanced.append({
+                'price': fib_price,
+                'ratio': ratio
+            })
+
+        # Save to session_state so Advanced extractor can access
+        st.session_state['key_levels'] = key_levels_for_advanced
+        st.session_state['fibonacci_levels'] = fib_levels_for_advanced
+
         # Get additional data from session state
         volume_footprint_data = st.session_state.get('volume_footprint_data', {})
         ultimate_rsi_data = st.session_state.get('ultimate_rsi_data', {})
