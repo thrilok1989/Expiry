@@ -4961,10 +4961,6 @@ with tab7:
 
 with tab8:
     st.markdown("# 🌐 Enhanced Market Data Analysis")
-    st.markdown("### ✅ Tab 8 LOADED")
-    st.write("=" * 50)
-    st.info("If you see this, tab 8 is working!")
-    st.write("=" * 50)
 
     try:
         st.caption("Comprehensive market data from Dhan API + Yahoo Finance | India VIX, Sector Rotation, Global Markets, Intermarket Data, Gamma Squeeze, Intraday Timing")
@@ -5031,10 +5027,6 @@ with tab8:
 
 with tab9:
     st.markdown("# 🔍 NSE Stock Screener")
-    st.markdown("### ✅ Tab 9 LOADED")
-    st.write("=" * 50)
-    st.info("If you see this, tab 9 is working!")
-    st.write("=" * 50)
 
     try:
         from nse_stock_screener_dhan import render_nse_stock_screener_tab
