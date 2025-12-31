@@ -1165,14 +1165,33 @@ class AdvancedChartAnalysis:
 
     def _add_fibonacci(self, fig, df, fib_data, row, col):
         """Add Fibonacci retracement and extension levels to chart"""
-        x_start = fib_data['swing_low']['time']
+        # Extract swing points with defensive handling
+        swing_high = fib_data['swing_high']
+        swing_low = fib_data['swing_low']
+
+        # Extract numeric price values (defensive handling for nested dicts)
+        swing_high_price = swing_high['price']
+        if isinstance(swing_high_price, dict):
+            swing_high_price = swing_high_price.get('price', swing_high_price)
+        swing_high_price = float(swing_high_price) if not isinstance(swing_high_price, dict) else 0
+
+        swing_low_price = swing_low['price']
+        if isinstance(swing_low_price, dict):
+            swing_low_price = swing_low_price.get('price', swing_low_price)
+        swing_low_price = float(swing_low_price) if not isinstance(swing_low_price, dict) else 0
+
+        # If prices are invalid, skip rendering
+        if swing_high_price == 0 or swing_low_price == 0:
+            return
+
+        x_start = swing_low['time']
         x_end = df.index[-1]
 
         # Add swing high and low markers
         fig.add_trace(
             go.Scatter(
-                x=[fib_data['swing_high']['time']],
-                y=[fib_data['swing_high']['price']],
+                x=[swing_high['time']],
+                y=[swing_high_price],
                 mode='markers',
                 name='Swing High',
                 marker=dict(symbol='star', size=12, color='yellow'),
@@ -1183,8 +1202,8 @@ class AdvancedChartAnalysis:
 
         fig.add_trace(
             go.Scatter(
-                x=[fib_data['swing_low']['time']],
-                y=[fib_data['swing_low']['price']],
+                x=[swing_low['time']],
+                y=[swing_low_price],
                 mode='markers',
                 name='Swing Low',
                 marker=dict(symbol='star', size=12, color='blue'),
@@ -1211,6 +1230,17 @@ class AdvancedChartAnalysis:
 
         # Add retracement levels
         for label, price in fib_data['retracement_levels'].items():
+            # Defensive handling: ensure price is a float
+            if isinstance(price, dict):
+                price = price.get('price', 0)
+            try:
+                price = float(price)
+            except (ValueError, TypeError):
+                continue  # Skip invalid price values
+
+            if price == 0:
+                continue  # Skip zero prices
+
             fig.add_trace(
                 go.Scatter(
                     x=[x_start, x_end],
@@ -1243,6 +1273,17 @@ class AdvancedChartAnalysis:
 
         # Add extension levels (if calculated)
         for label, price in fib_data.get('extension_levels', {}).items():
+            # Defensive handling: ensure price is a float
+            if isinstance(price, dict):
+                price = price.get('price', 0)
+            try:
+                price = float(price)
+            except (ValueError, TypeError):
+                continue  # Skip invalid price values
+
+            if price == 0:
+                continue  # Skip zero prices
+
             fig.add_trace(
                 go.Scatter(
                     x=[x_start, x_end],
