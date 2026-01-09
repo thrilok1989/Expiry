@@ -58,9 +58,18 @@ class AdvancedPriceAction:
                     break
 
             if is_swing_high:
+                # Extract price value defensively (handle dict/object types)
+                price_value = df[high_col].iloc[i]
+                if isinstance(price_value, dict):
+                    price_value = price_value.get('price', price_value)
+                try:
+                    price_value = float(price_value)
+                except (ValueError, TypeError):
+                    continue  # Skip invalid price values
+
                 swing_highs.append({
                     'index': i,
-                    'price': df[high_col].iloc[i],
+                    'price': price_value,
                     'time': df.index[i]
                 })
 
@@ -72,9 +81,18 @@ class AdvancedPriceAction:
                     break
 
             if is_swing_low:
+                # Extract price value defensively (handle dict/object types)
+                price_value = df[low_col].iloc[i]
+                if isinstance(price_value, dict):
+                    price_value = price_value.get('price', price_value)
+                try:
+                    price_value = float(price_value)
+                except (ValueError, TypeError):
+                    continue  # Skip invalid price values
+
                 swing_lows.append({
                     'index': i,
-                    'price': df[low_col].iloc[i],
+                    'price': price_value,
                     'time': df.index[i]
                 })
 
@@ -140,29 +158,38 @@ class AdvancedPriceAction:
                     recent_swing_low = sl
                     break
 
+            # Extract current close price defensively
+            current_close = df[close_col].iloc[i]
+            if isinstance(current_close, dict):
+                current_close = current_close.get('price', current_close)
+            try:
+                current_close = float(current_close)
+            except (ValueError, TypeError):
+                continue  # Skip invalid price values
+
             # Check for bullish BOS (price breaks above recent swing high)
-            if recent_swing_high and df[close_col].iloc[i] > recent_swing_high['price']:
+            if recent_swing_high and current_close > recent_swing_high['price']:
                 # Check if we haven't already recorded this BOS
                 if not any(bos['type'] == 'BULLISH' and bos['structure_level'] == recent_swing_high['price']
                           for bos in bos_events):
                     bos_events.append({
                         'type': 'BULLISH',
                         'index': i,
-                        'price': df[close_col].iloc[i],
+                        'price': current_close,
                         'time': df.index[i],
                         'structure_level': recent_swing_high['price'],
                         'structure_time': recent_swing_high['time']
                     })
 
             # Check for bearish BOS (price breaks below recent swing low)
-            if recent_swing_low and df[close_col].iloc[i] < recent_swing_low['price']:
+            if recent_swing_low and current_close < recent_swing_low['price']:
                 # Check if we haven't already recorded this BOS
                 if not any(bos['type'] == 'BEARISH' and bos['structure_level'] == recent_swing_low['price']
                           for bos in bos_events):
                     bos_events.append({
                         'type': 'BEARISH',
                         'index': i,
-                        'price': df[close_col].iloc[i],
+                        'price': current_close,
                         'time': df.index[i],
                         'structure_level': recent_swing_low['price'],
                         'structure_time': recent_swing_low['time']
