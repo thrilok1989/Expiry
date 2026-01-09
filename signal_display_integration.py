@@ -2187,10 +2187,46 @@ def display_final_assessment(
         if liquidity_result and hasattr(liquidity_result, 'resistance_zones') and hasattr(liquidity_result, 'support_zones'):
             resistance_zones = liquidity_result.resistance_zones
             support_zones = liquidity_result.support_zones
+
+            # Extract numeric values from resistance_zones (defensive handling for dicts/objects)
             if resistance_zones:
-                swing_high = max([r for r in resistance_zones if isinstance(r, (int, float))])
+                resistance_values = []
+                for r in resistance_zones:
+                    if isinstance(r, (int, float)):
+                        resistance_values.append(float(r))
+                    elif isinstance(r, dict) and 'price' in r:
+                        price_val = r['price']
+                        if isinstance(price_val, (int, float)):
+                            resistance_values.append(float(price_val))
+                    elif hasattr(r, 'price'):
+                        price_val = r.price
+                        if isinstance(price_val, (int, float)):
+                            resistance_values.append(float(price_val))
+
+                if resistance_values:
+                    swing_high = max(resistance_values)
+
+            # Extract numeric values from support_zones (defensive handling for dicts/objects)
             if support_zones:
-                swing_low = min([s for s in support_zones if isinstance(s, (int, float))])
+                support_values = []
+                for s in support_zones:
+                    if isinstance(s, (int, float)):
+                        support_values.append(float(s))
+                    elif isinstance(s, dict) and 'price' in s:
+                        price_val = s['price']
+                        if isinstance(price_val, (int, float)):
+                            support_values.append(float(price_val))
+                    elif hasattr(s, 'price'):
+                        price_val = s.price
+                        if isinstance(price_val, (int, float)):
+                            support_values.append(float(price_val))
+
+                if support_values:
+                    swing_low = min(support_values)
+
+        # Ensure swing_high and swing_low are valid floats
+        swing_high = float(swing_high) if isinstance(swing_high, (int, float)) else current_price + 200
+        swing_low = float(swing_low) if isinstance(swing_low, (int, float)) else current_price - 200
 
         # Calculate Fibonacci retracement levels
         price_range = swing_high - swing_low
