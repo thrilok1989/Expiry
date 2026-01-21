@@ -26,6 +26,16 @@ class AdvancedPriceAction:
         """
         self.swing_length = swing_length
 
+    @staticmethod
+    def _safe_float(value, default=0.0):
+        """Safely extract numeric value from potentially nested dict/object structures"""
+        if isinstance(value, dict):
+            value = value.get('price', value)
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+
     # =========================================================================
     # SWING HIGH/LOW DETECTION
     # =========================================================================
@@ -52,47 +62,67 @@ class AdvancedPriceAction:
         for i in range(length, len(df) - length):
             # Check for swing high
             is_swing_high = True
+            current_high = df[high_col].iloc[i]
+            # Defensive: ensure current_high is a float for comparison
+            if isinstance(current_high, dict):
+                current_high = current_high.get('price', current_high)
+            try:
+                current_high = float(current_high)
+            except (ValueError, TypeError):
+                continue
+
             for j in range(i - length, i + length + 1):
-                if j != i and df[high_col].iloc[j] >= df[high_col].iloc[i]:
-                    is_swing_high = False
-                    break
+                if j != i:
+                    compare_high = df[high_col].iloc[j]
+                    # Defensive: ensure compare_high is a float
+                    if isinstance(compare_high, dict):
+                        compare_high = compare_high.get('price', compare_high)
+                    try:
+                        compare_high = float(compare_high)
+                    except (ValueError, TypeError):
+                        continue
+
+                    if compare_high >= current_high:
+                        is_swing_high = False
+                        break
 
             if is_swing_high:
-                # Extract price value defensively (handle dict/object types)
-                price_value = df[high_col].iloc[i]
-                if isinstance(price_value, dict):
-                    price_value = price_value.get('price', price_value)
-                try:
-                    price_value = float(price_value)
-                except (ValueError, TypeError):
-                    continue  # Skip invalid price values
-
                 swing_highs.append({
                     'index': i,
-                    'price': price_value,
+                    'price': current_high,
                     'time': df.index[i]
                 })
 
             # Check for swing low
             is_swing_low = True
+            current_low = df[low_col].iloc[i]
+            # Defensive: ensure current_low is a float for comparison
+            if isinstance(current_low, dict):
+                current_low = current_low.get('price', current_low)
+            try:
+                current_low = float(current_low)
+            except (ValueError, TypeError):
+                continue
+
             for j in range(i - length, i + length + 1):
-                if j != i and df[low_col].iloc[j] <= df[low_col].iloc[i]:
-                    is_swing_low = False
-                    break
+                if j != i:
+                    compare_low = df[low_col].iloc[j]
+                    # Defensive: ensure compare_low is a float
+                    if isinstance(compare_low, dict):
+                        compare_low = compare_low.get('price', compare_low)
+                    try:
+                        compare_low = float(compare_low)
+                    except (ValueError, TypeError):
+                        continue
+
+                    if compare_low <= current_low:
+                        is_swing_low = False
+                        break
 
             if is_swing_low:
-                # Extract price value defensively (handle dict/object types)
-                price_value = df[low_col].iloc[i]
-                if isinstance(price_value, dict):
-                    price_value = price_value.get('price', price_value)
-                try:
-                    price_value = float(price_value)
-                except (ValueError, TypeError):
-                    continue  # Skip invalid price values
-
                 swing_lows.append({
                     'index': i,
-                    'price': price_value,
+                    'price': current_low,
                     'time': df.index[i]
                 })
 
@@ -243,28 +273,62 @@ class AdvancedPriceAction:
             prev_high = swing_highs[i - 1]
             curr_high = swing_highs[i]
 
+            # Defensive: ensure prices are floats for comparison
+            prev_price = prev_high['price']
+            if isinstance(prev_price, dict):
+                prev_price = prev_price.get('price', prev_price)
+            try:
+                prev_price = float(prev_price)
+            except (ValueError, TypeError):
+                continue
+
+            curr_price = curr_high['price']
+            if isinstance(curr_price, dict):
+                curr_price = curr_price.get('price', curr_price)
+            try:
+                curr_price = float(curr_price)
+            except (ValueError, TypeError):
+                continue
+
             # In uptrend, CHOCH occurs when we fail to make higher high
-            if curr_high['price'] < prev_high['price']:
+            if curr_price < prev_price:
                 choch_events.append({
                     'type': 'BEARISH',  # Potential downtrend starting
                     'index': curr_high['index'],
-                    'price': curr_high['price'],
+                    'price': curr_price,
                     'time': curr_high['time'],
-                    'prev_structure': prev_high['price']
+                    'prev_structure': prev_price
                 })
 
         for i in range(1, len(swing_lows)):
             prev_low = swing_lows[i - 1]
             curr_low = swing_lows[i]
 
+            # Defensive: ensure prices are floats for comparison
+            prev_price = prev_low['price']
+            if isinstance(prev_price, dict):
+                prev_price = prev_price.get('price', prev_price)
+            try:
+                prev_price = float(prev_price)
+            except (ValueError, TypeError):
+                continue
+
+            curr_price = curr_low['price']
+            if isinstance(curr_price, dict):
+                curr_price = curr_price.get('price', curr_price)
+            try:
+                curr_price = float(curr_price)
+            except (ValueError, TypeError):
+                continue
+
             # In downtrend, CHOCH occurs when we fail to make lower low
-            if curr_low['price'] > prev_low['price']:
+            if curr_price > prev_price:
                 choch_events.append({
                     'type': 'BULLISH',  # Potential uptrend starting
                     'index': curr_low['index'],
-                    'price': curr_low['price'],
+                    'price': curr_price,
                     'time': curr_low['time'],
-                    'prev_structure': prev_low['price']
+                    'prev_structure': prev_price
                 })
 
         # Sort by index
@@ -407,29 +471,41 @@ class AdvancedPriceAction:
             head = swing_highs[i + 1]
             right_shoulder = swing_highs[i + 2]
 
-            # Check if head is higher than both shoulders
-            if head['price'] > left_shoulder['price'] and head['price'] > right_shoulder['price']:
-                # Check if shoulders are roughly equal (within tolerance)
-                shoulder_diff = abs(left_shoulder['price'] - right_shoulder['price'])
-                avg_shoulder = (left_shoulder['price'] + right_shoulder['price']) / 2
+            # Extract prices safely
+            ls_price = self._safe_float(left_shoulder['price'])
+            head_price = self._safe_float(head['price'])
+            rs_price = self._safe_float(right_shoulder['price'])
 
-                if shoulder_diff / avg_shoulder <= tolerance:
+            if ls_price == 0 or head_price == 0 or rs_price == 0:
+                continue  # Skip invalid prices
+
+            # Check if head is higher than both shoulders
+            if head_price > ls_price and head_price > rs_price:
+                # Check if shoulders are roughly equal (within tolerance)
+                shoulder_diff = abs(ls_price - rs_price)
+                avg_shoulder = (ls_price + rs_price) / 2
+
+                if avg_shoulder > 0 and shoulder_diff / avg_shoulder <= tolerance:
                     # Find neckline (lows between shoulders)
                     neckline_lows = [sl for sl in swing_lows
                                     if left_shoulder['index'] < sl['index'] < right_shoulder['index']]
 
                     if neckline_lows:
-                        neckline_price = sum(sl['price'] for sl in neckline_lows) / len(neckline_lows)
+                        neckline_prices = [self._safe_float(sl['price']) for sl in neckline_lows]
+                        neckline_prices = [p for p in neckline_prices if p > 0]  # Filter valid prices
 
-                        patterns.append({
-                            'type': 'HEAD_AND_SHOULDERS',
-                            'left_shoulder': left_shoulder,
-                            'head': head,
-                            'right_shoulder': right_shoulder,
-                            'neckline_price': neckline_price,
-                            'target': neckline_price - (head['price'] - neckline_price),  # Measured move
-                            'completed': False  # Will be true when neckline is broken
-                        })
+                        if neckline_prices:
+                            neckline_price = sum(neckline_prices) / len(neckline_prices)
+
+                            patterns.append({
+                                'type': 'HEAD_AND_SHOULDERS',
+                                'left_shoulder': left_shoulder,
+                                'head': head,
+                                'right_shoulder': right_shoulder,
+                                'neckline_price': neckline_price,
+                                'target': neckline_price - (head_price - neckline_price),  # Measured move
+                                'completed': False  # Will be true when neckline is broken
+                            })
 
         return patterns
 
@@ -456,29 +532,41 @@ class AdvancedPriceAction:
             head = swing_lows[i + 1]
             right_shoulder = swing_lows[i + 2]
 
-            # Check if head is lower than both shoulders
-            if head['price'] < left_shoulder['price'] and head['price'] < right_shoulder['price']:
-                # Check if shoulders are roughly equal
-                shoulder_diff = abs(left_shoulder['price'] - right_shoulder['price'])
-                avg_shoulder = (left_shoulder['price'] + right_shoulder['price']) / 2
+            # Extract prices safely
+            ls_price = self._safe_float(left_shoulder['price'])
+            head_price = self._safe_float(head['price'])
+            rs_price = self._safe_float(right_shoulder['price'])
 
-                if shoulder_diff / avg_shoulder <= tolerance:
+            if ls_price == 0 or head_price == 0 or rs_price == 0:
+                continue  # Skip invalid prices
+
+            # Check if head is lower than both shoulders
+            if head_price < ls_price and head_price < rs_price:
+                # Check if shoulders are roughly equal
+                shoulder_diff = abs(ls_price - rs_price)
+                avg_shoulder = (ls_price + rs_price) / 2
+
+                if avg_shoulder > 0 and shoulder_diff / avg_shoulder <= tolerance:
                     # Find neckline (highs between shoulders)
                     neckline_highs = [sh for sh in swing_highs
                                      if left_shoulder['index'] < sh['index'] < right_shoulder['index']]
 
                     if neckline_highs:
-                        neckline_price = sum(sh['price'] for sh in neckline_highs) / len(neckline_highs)
+                        neckline_prices = [self._safe_float(sh['price']) for sh in neckline_highs]
+                        neckline_prices = [p for p in neckline_prices if p > 0]  # Filter valid prices
 
-                        patterns.append({
-                            'type': 'INVERSE_HEAD_AND_SHOULDERS',
-                            'left_shoulder': left_shoulder,
-                            'head': head,
-                            'right_shoulder': right_shoulder,
-                            'neckline_price': neckline_price,
-                            'target': neckline_price + (neckline_price - head['price']),  # Measured move
-                            'completed': False
-                        })
+                        if neckline_prices:
+                            neckline_price = sum(neckline_prices) / len(neckline_prices)
+
+                            patterns.append({
+                                'type': 'INVERSE_HEAD_AND_SHOULDERS',
+                                'left_shoulder': left_shoulder,
+                                'head': head,
+                                'right_shoulder': right_shoulder,
+                                'neckline_price': neckline_price,
+                                'target': neckline_price + (neckline_price - head_price),  # Measured move
+                                'completed': False
+                            })
 
         return patterns
 
@@ -504,16 +592,28 @@ class AdvancedPriceAction:
         recent_highs = swing_highs[-6:]
         recent_lows = swing_lows[-6:]
 
-        # Calculate trendline slopes
+        # Calculate trendline slopes with defensive price extraction
         if len(recent_highs) >= 2:
-            high_slope = (recent_highs[-1]['price'] - recent_highs[0]['price']) / \
-                        (recent_highs[-1]['index'] - recent_highs[0]['index'])
+            rh_last_price = self._safe_float(recent_highs[-1]['price'])
+            rh_first_price = self._safe_float(recent_highs[0]['price'])
+            rh_index_diff = recent_highs[-1]['index'] - recent_highs[0]['index']
+
+            if rh_index_diff != 0 and rh_last_price > 0 and rh_first_price > 0:
+                high_slope = (rh_last_price - rh_first_price) / rh_index_diff
+            else:
+                high_slope = 0
         else:
             high_slope = 0
 
         if len(recent_lows) >= 2:
-            low_slope = (recent_lows[-1]['price'] - recent_lows[0]['price']) / \
-                       (recent_lows[-1]['index'] - recent_lows[0]['index'])
+            rl_last_price = self._safe_float(recent_lows[-1]['price'])
+            rl_first_price = self._safe_float(recent_lows[0]['price'])
+            rl_index_diff = recent_lows[-1]['index'] - recent_lows[0]['index']
+
+            if rl_index_diff != 0 and rl_last_price > 0 and rl_first_price > 0:
+                low_slope = (rl_last_price - rl_first_price) / rl_index_diff
+            else:
+                low_slope = 0
         else:
             low_slope = 0
 
@@ -572,8 +672,15 @@ class AdvancedPriceAction:
             flagpole_start = i - lookback
             flagpole_end = i
 
-            price_change = df[close_col].iloc[flagpole_end] - df[close_col].iloc[flagpole_start]
-            percent_change = (price_change / df[close_col].iloc[flagpole_start]) * 100
+            # Defensive extraction of price values
+            price_end = self._safe_float(df[close_col].iloc[flagpole_end])
+            price_start = self._safe_float(df[close_col].iloc[flagpole_start])
+
+            if price_end == 0 or price_start == 0:
+                continue  # Skip invalid prices
+
+            price_change = price_end - price_start
+            percent_change = (price_change / price_start) * 100
 
             # Look for strong moves (> 5% in lookback period)
             if abs(percent_change) > 5:
@@ -584,11 +691,24 @@ class AdvancedPriceAction:
                                      if flagpole_end < sl['index'] < flagpole_end + 15]
 
                 if len(consolidation_highs) >= 2 and len(consolidation_lows) >= 2:
-                    # Calculate slopes
-                    high_slope = (consolidation_highs[-1]['price'] - consolidation_highs[0]['price']) / \
-                                (consolidation_highs[-1]['index'] - consolidation_highs[0]['index'])
-                    low_slope = (consolidation_lows[-1]['price'] - consolidation_lows[0]['price']) / \
-                               (consolidation_lows[-1]['index'] - consolidation_lows[0]['index'])
+                    # Calculate slopes with defensive price extraction
+                    ch_last_price = self._safe_float(consolidation_highs[-1]['price'])
+                    ch_first_price = self._safe_float(consolidation_highs[0]['price'])
+                    ch_index_diff = consolidation_highs[-1]['index'] - consolidation_highs[0]['index']
+
+                    cl_last_price = self._safe_float(consolidation_lows[-1]['price'])
+                    cl_first_price = self._safe_float(consolidation_lows[0]['price'])
+                    cl_index_diff = consolidation_lows[-1]['index'] - consolidation_lows[0]['index']
+
+                    if ch_index_diff != 0 and ch_last_price > 0 and ch_first_price > 0:
+                        high_slope = (ch_last_price - ch_first_price) / ch_index_diff
+                    else:
+                        high_slope = 0
+
+                    if cl_index_diff != 0 and cl_last_price > 0 and cl_first_price > 0:
+                        low_slope = (cl_last_price - cl_first_price) / cl_index_diff
+                    else:
+                        low_slope = 0
 
                     # Check if slopes are parallel (flag) or converging (pennant)
                     slope_diff = abs(high_slope - low_slope)
@@ -607,7 +727,7 @@ class AdvancedPriceAction:
                         'percent_change': percent_change,
                         'consolidation_highs': consolidation_highs,
                         'consolidation_lows': consolidation_lows,
-                        'breakout_target': df[close_col].iloc[flagpole_end] + price_change  # Measured move
+                        'breakout_target': price_end + price_change  # Measured move
                     })
 
         return patterns
